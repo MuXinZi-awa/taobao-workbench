@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>查双百 v2</title>
+<script src="/vendor/xlsx.full.min.js"></script>
+<style>
+body { font-family:system-ui,"Microsoft YaHei",sans-serif; background:transparent; margin:0; padding:4px; color:#2A2622; font-size:13px; }
+h3 { margin:0 0 8px; font-size:14px; font-weight:500; }
+.tabs { display:flex; gap:2px; margin-bottom:8px; }
+.tab { padding:4px 16px; border-radius:6px 6px 0 0; cursor:pointer; color:#6B6158; border:.5px solid transparent; }
+.tab.active { background:#FBF7EE; color:#3F6179; font-weight:500; border-color:#D8CFBE; border-bottom:none; }
+.panel { display:none; }
+.panel.active { display:block; }
+.row { display:flex; gap:6px; margin-bottom:8px; }
+input { flex:1; border:.5px solid #D8CFBE; border-radius:4px; padding:4px 8px; font-size:13px; background:#FFFDF7; min-width:0; }
+button { border:.5px solid #D8CFBE; background:transparent; border-radius:4px; padding:4px 14px; font-size:13px; cursor:pointer; color:#537D96; }
+button:hover { background:rgba(83,125,150,.1); }
+button:disabled { opacity:.5; cursor:default; }
+.badge { display:inline-block; padding:1px 10px; border-radius:10px; font-size:12px; }
+.badge.ok { background:#4A6B4A; color:#FFFDF7; }
+.badge.no { background:#8B2C1F; color:#FFFDF7; }
+.badge.wait { background:#E8E6DC; color:#6B6158; }
+.dropzone { border:1px dashed #D8CFBE; border-radius:6px; padding:24px 14px; text-align:center; color:#6B6158; cursor:pointer; margin-bottom:10px; font-size:14px; line-height:1.8; }
+.dropzone:hover { border-color:#537D96; color:#3F6179; }
+.summary { background:#FBF7EE; border:.5px solid #D8CFBE; border-radius:6px; padding:8px 10px; margin:8px 0; font-size:12px; line-height:1.6; }
+.progress { height:6px; background:#E8E6DC; border-radius:3px; margin:6px 0; overflow:hidden; }
+.progress .bar { height:100%; background:#537D96; width:0; transition:width .2s; }
+table { border-collapse:collapse; width:100%; font-size:12px; margin-top:6px; }
+th,td { border:.5px solid #D8CFBE; padding:3px 6px; text-align:left; }
+th { background:#EFE8DB; font-weight:500; position:sticky; top:0; }
+.tblwrap { max-height:240px; overflow:auto; border:.5px solid #D8CFBE; border-radius:4px; }
+</style>
+</head>
+<body>
+<h3>查双百</h3>
+<div class="tabs">
+  <div class="tab active" data-t="one" onclick="sw('one')">单查</div>
+  <div class="tab" data-t="batch" onclick="sw('batch')">批量</div>
+</div>
+<div class="panel active" id="p-one">
+  <div class="row"><input id="lh" placeholder="料号（必填，如 1379668）"><input id="tid" placeholder="淘宝ID（可选）"><button onclick="checkOne()" id="btnOne">查</button></div>
+  <div id="resOne"></div>
+</div>
+<div class="panel" id="p-batch">
+  <div class="dropzone" id="dz">拖入 表格文件（csv / xlsx / xls）到此处 —— 自动识别料号列，逐行查双百<br><span style="font-size:11px;color:#6B6158">别人的原始表也能丢：自动找"料号/型号/编码"列，找不到就猜第一列</span></div>
+  <div id="batchCtrl" style="display:none">
+    <div style="font-size:12px;color:#6B6158" id="fileInfo"></div>
+    <div class="progress"><div class="bar" id="pbar"></div></div>
+    <div style="font-size:12px" id="pText">0 / 0</div>
+    <div id="batchBtn"></div>
+    <div id="batchSum"></div>
+    <div class="tblwrap"><table id="btable"><thead><tr><th>#</th><th>料号</th><th>状态</th><th>结果</th></tr></thead><tbody id="btbody"></tbody></table></div>
+  </div>
+</div>
+<script>
+let curTab='one', stopBatch=false, batchRows=[];
+function sw(t){ curTab=t; document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.t===t));
+ document.getElementById('p-one').classList.toggle('active',t==='one');
+ document.getElementById('p-batch').classList.toggle('active',t==='batch'); }
+async function api(url){ const r=await fetch(url); return r.json(); }
+function show(res,box){ box.style.display='block';
+ const badge=res.dual?'<span class="badge ok">已双百</span>':'<span class="badge no">未双百</span>';
+ box.innerHTML=badge+' <span style="color:#2A2622">'+res.lh+'</span><div class="summary">'+res.summary+'</div><div style="font-size:11px;color:#6B6158">'+res.result+'</div>'+(res.login===false?'<div style="color:#8B2C1F;margin-top:4px">⚠ 登录态失效——请重新登录 chrome_profile（打开一次千牛/万相台）</div>':''); }
+document.getElementById('lh').addEventListener('keydown',e=>{ if(e.key==='Enter')checkOne(); });
+document.getElementById('tid').addEventListener('keydown',e=>{ if(e.key==='Enter')checkOne(); });
+async function checkOne(){ const lh=document.getElementById('lh').value.trim(), tid=document.getElementById('tid').value.trim();
+ const box=document.getElementById('resOne');
+ if(!lh){ box.style.display='block'; box.innerHTML='<span style="color:#8B2C1F">填料号</span>'; return; }
+ box.style.display='block'; box.innerHTML='查询中…';
+ const d=await api('/api/plg/dual-check/check?lh='+encodeURIComponent(lh)+'&tid='+encodeURIComponent(tid));
+ if(d.ok) show(d,box); else box.innerHTML='<span style="color:#8B2C1F">'+(d.error||'失败')+'</span>'; }
+function guessLhCol(header, firstRow){
+ const kw=['料号','型号','编码','编号','part','partno','mpn','pn','型号'];
+ for(let i=0;i<header.length;i++){ const h=String(header[i]||'').toLowerCase();
+  if(kw.some(k=>h.includes(k))) return i; }
+ for(let i=0;i<firstRow.length;i++){ const v=String(firstRow[i]||'');
+  if(/^[A-Za-z0-9][A-Za-z0-9.\-\/]{2,25}$/.test(v) && /\d/.test(v)) return i; }
+ return 0; }
+function unquote(s){ s=String(s||'').trim(); if(s.length>=2&&s[0]==='"'&&s[s.length-1]==='"') return s.slice(1,-1).replace(/""/g,'"'); return s; }
+function processRows(rows,file,cb){
+ if(!rows||!rows.length){ cb({error:'表格为空'}); return; }
+ const col=guessLhCol(rows[0]||[], rows[1]||[]);
+ const lhs=[]; const seen={};
+ for(let i=1;i<rows.length;i++){ const v=String((rows[i]||[])[col]||'').trim();
+  if(v && !seen[v]){ seen[v]=1; lhs.push(v); } }
+ cb({rows:lhs, col, header:(rows[0]||[])[col], total:lhs.length, file:file.name});
+}
+function parseFile(file, cb){
+ if(/\.csv$/i.test(file.name)){
+  const r=new FileReader();
+  r.onload=e=>{
+   try{
+    const txt=String(r.result||'');
+    const rows=txt.split(/\r?\n/).filter(x=>x.trim()).map(l=>l.split(',').map(unquote));
+    processRows(rows,file,cb);
+   }catch(err){ cb({error:'csv 解析失败: '+err.message}); }
+  };
+  r.readAsText(file,'utf-8');
+  return;
+ }
+ const reader=new FileReader();
+ reader.onload=e=>{
+  try{
+   const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+   const ws=wb.Sheets[wb.SheetNames[0]];
+   const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+   processRows(rows,file,cb);
+  }catch(err){ cb({error:'解析失败: '+err.message}); }
+ };
+ reader.readAsArrayBuffer(file);
+}
+const dz=document.getElementById('dz');
+dz.ondragover=e=>{e.preventDefault();dz.style.borderColor='#537D96';};
+dz.ondrop=e=>{e.preventDefault();dz.style.borderColor='';const f=e.dataTransfer.files[0];
+ if(!f)return; parseFile(f,d=>{
+  if(d.error){alert(d.error);return;}
+  document.getElementById('batchCtrl').style.display='block';
+  document.getElementById('fileInfo').textContent='文件：'+d.file+' ｜ 料号列：'+(d.header||'第'+(d.col+1)+'列')+' ｜ 共 '+d.total+' 行';
+  batchRows=d.rows;
+  const btn=document.getElementById('batchBtn');
+  btn.innerHTML='<button id="runBtn" onclick="runBatch()">开始批量查</button> <button onclick="stopBatch=true;this.disabled=true">停止</button>';
+  document.getElementById('btbody').innerHTML=''; document.getElementById('batchSum').innerHTML='';
+  document.getElementById('pbar').style.width='0'; document.getElementById('pText').textContent='0 / '+d.total;
+ }); };
+dz.onclick=()=>{ const fi=document.createElement('input'); fi.type='file'; fi.accept='.csv,.xlsx,.xls';
+ fi.onchange=()=>{ if(fi.files[0]) dz.ondrop({preventDefault:()=>{},dataTransfer:{files:fi.files}}); }; fi.click(); };
+async function runBatch(){
+ const rows=batchRows; if(!rows.length)return;
+ document.getElementById('runBtn').disabled=true; stopBatch=false;
+ const tb=document.getElementById('btbody'); tb.innerHTML='';
+ let okC=0,noC=0,errC=0; const noList=[]; let done=0;
+ const doneOne=(row,dual,res)=>{ done++;
+  const tr=document.createElement('tr');
+  tr.innerHTML='<td>'+done+'</td><td>'+row+'</td><td>'+(dual?'<span class="badge ok">已双百</span>':'<span class="badge no">未双百</span>')+'</td><td>'+String(res||'').slice(0,50)+'</td>';
+  tb.appendChild(tr); tb.scrollTop=tb.scrollHeight;
+  document.getElementById('pbar').style.width=(done/rows.length*100)+'%';
+  document.getElementById('pText').textContent=done+' / '+rows.length;
+  if(dual)okC++; else {noC++; noList.push(row);} };
+ const CHUNK=20;
+ for(let s=0;s<rows.length;s+=CHUNK){
+  if(stopBatch) break;
+  const chunk=rows.slice(s,s+CHUNK);
+  document.getElementById('pText').textContent=done+' / '+rows.length+'（批量扫 '+(s+1)+'-'+Math.min(s+CHUNK,rows.length)+'）';
+  try{
+   const d=await api('/api/plg/dual-check/batch?lhs='+encodeURIComponent(chunk.join(',')));
+   if(d.ok&&d.results){ d.results.forEach(r=>doneOne(r.lh,r.dual,r.result)); }
+   else { errC+=chunk.length; chunk.forEach(r=>doneOne(r,false,'批量失败')); }
+  }catch(e){ errC+=chunk.length; chunk.forEach(r=>doneOne(r,false,'网络错')); }
+ }
+ document.getElementById('runBtn').disabled=false;
+ let sum='<div class="summary"><b>批量完成：</b>双百 <b style="color:#4A6B4A">'+okC+'</b> ｜ 未双百 <b style="color:#8B2C1F">'+noC+'</b> ｜ 失败/跳过 '+errC;
+ if(noList.length){ sum+='<br><b>未双百 '+(stopBatch?'（已停止——前':'')+noList.length+' 个需处理：</b>'+noList.slice(0,30).join('、')+(noList.length>30?' 等':'')+'<br><span style="color:#6B6158">处理：可能原因①缺必填属性（发布页补全）②无视频/主图缺失（无视频不双百）③素材/属性源：图库/AI送修/TE官网/renhotecrf</span>'; }
+ if(stopBatch){ sum+='<br><span style="color:#9D5F4D">已手动停止——重新点开始从头扫（后端单连接快）</span>'; stopBatch=false; }
+ document.getElementById('batchSum').innerHTML=sum+'</div>';
+}
+</script>
+</body>
+</html>
