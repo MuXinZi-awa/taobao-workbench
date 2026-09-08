@@ -27,6 +27,7 @@ def scan_plugins():
             if m.get("id"):
                 out.append({"id": m["id"], "name": m.get("name", m["id"]),
                             "icon": m.get("icon", ""), "panel": m.get("panel", ""),
+                    "log": m.get("log", ""),
                             "desc": m.get("desc", ""),
                             "readme": os.path.isfile(os.path.join(PLUGINS_DIR, m["id"], "README.md")),
                             "enabled": not os.path.isfile(os.path.join(PLUGINS_DIR, m["id"], ".disabled"))})
@@ -227,6 +228,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json({"error": "资源不存在"}, 404)
             if p == "/api/plugins":
                 return self._json({"plugins": scan_plugins()})
+            if p.startswith("/api/logtail"):
+                # 日志尾查看（运行日志 Tab——通用：读 推广一键跑/runtime/xxx.log 尾部）
+                import urllib.parse
+                q = urllib.parse.parse_qs(p.split("?", 1)[1])
+                fn = q.get("f", ["tg_panel.log"])[0]
+                log_root = r"C:\Users\jdt-pty\Desktop\推广一键跑\runtime"
+                fp2 = os.path.join(log_root, os.path.basename(fn))
+                tail_n = 300
+                if os.path.isfile(fp2):
+                    try:
+                        raw = open(fp2, "rb").read()
+                        txt = raw.decode("gbk", errors="replace")
+                        lines = txt.splitlines()
+                        tail = lines[-tail_n:]
+                        # 反向（新在下/在上由前端决定）——返回新到旧便于渲染，前端可倒
+                        return self._json({"ok": True, "lines": tail, "name": fn})
+                    except Exception as e:
+                        return self._json({"ok": False, "error": str(e)[:80]})
+                return self._json({"ok": False, "error": "日志不存在"})
             if p.startswith("/api/current/"):
                 lh = p[len("/api/current/"):].strip("/")
                 import urllib.parse

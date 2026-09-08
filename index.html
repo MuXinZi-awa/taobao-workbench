@@ -172,9 +172,7 @@ body[data-theme="dsh"] .about-row { border-color:rgba(90,80,60,.10); }body[data-
   <div class="col-side"><div class="cap">已装插件</div><div id="plugins"></div></div>
   <div class="col-main">
     <div class="viewtab"><div class="vt active" data-v="ws" onclick="switchView('ws')">工作区</div><div class="vt" data-v="log" onclick="switchView('log')">运行日志</div><div class="vt" data-v="prev" onclick="switchView('prev')">预览</div></div>
-    <div class="pane" id="logPane"><div class="logbox" id="log">—— 运行日志 ——
-（尚未接入流水线）接入后这里显示：查询 → 素材 → 属性 → 上品 → 推广 的阶段灯与逐品日志。
-当前暂无后台任务在跑。</div></div>
+    <div class="pane" id="logPane"><div class="prevhead"><span style="font-size:12px;color:var(--text-l)">运行日志</span><span style="margin-left:8px;font-size:11px;color:var(--text-m)" id="logf">tg_panel.log（推广批操作）</span><span style="margin-left:auto;display:flex;gap:4px"><select id="logSel" style="border:.5px solid var(--border);border-radius:6px;padding:2px 4px;font-size:11px;background:var(--card)" onchange="logFile(this.value)"><option value="tg_panel.log">推广批(tg_panel)</option><option value="opt_run.log">自动批(opt_run)</option><option value="publish_33482.log">publish</option></select><button class="iconbtn" onclick="logRefresh()" title="刷新" style="width:22px;height:20px">↻</button></span></div><div class="logbox" id="log" style="font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;overflow:auto;padding:8px 12px;line-height:1.5">加载日志…</div></div>
     <div class="pane active" id="wsPane"><div class="prevhead"><span id="wsName">插件工作区</span></div><div id="wsEmpty" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-m);font-size:12px">点左侧插件打开它的工作面板</div><div class="prevbody" id="wsBody" style="padding:4px"></div></div>
     <div class="pane" id="prevPane">
       <div class="prevhead"><span id="prevName">预览</span></div>
@@ -314,8 +312,9 @@ function renderCsv(txt,box){ const rows=txt.split(/\r?\n/).filter(x=>x).map(r=>r
  let h='<table><thead><tr>'; (rows[0]||[]).forEach(c=>h+='<th>'+c+'</th>'); h+='</tr></thead><tbody>';
  rows.slice(1,300).forEach(r=>{ h+='<tr>'; (r||[]).forEach(c=>h+='<td>'+c+'</td>'); h+='</tr>'; });
  box.innerHTML=h+'</tbody></table>'; }
+var curPlugin=null;
 function showPlugin(pl){
-  switchView('ws');
+  curPlugin=pl; switchView('ws');
   document.getElementById('wsName').textContent=pl.name;
   var body=document.getElementById('wsBody');
   var c=document.getElementById('plg-'+pl.id);
@@ -328,7 +327,16 @@ function showPlugin(pl){
   c.style.display='block';
   var e=document.getElementById('wsEmpty'); if(e) e.style.display='none';
 }
+let logFile_='tg_panel.log', logTimer=null;
+function logRefresh(){ const box=document.getElementById('log'); if(!box) return;
+ fetch(API+'/api/logtail?f='+encodeURIComponent(logFile_)).then(r=>r.json()).then(d=>{
+  if(d.ok){ box.innerHTML=(d.lines||[]).map(esc).join('\n')||'（空日志）'; box.scrollTop=box.scrollHeight; }
+ }).catch(()=>{}); }
+function logFileSel(f){ logFile_=f; var lf=document.getElementById('logf'); if(lf) lf.textContent=f+'（'+(curPlugin?curPlugin.name:'')+'）'; }
+function logFile(f){ logFileSel(f); logRefresh(); }
 function switchView(v){ document.querySelectorAll('.vt').forEach(x=>x.classList.toggle('active',x.dataset.v===v));
+ if(v==='log'){ if(curPlugin&&curPlugin.log) logFileSel(curPlugin.log);
+  if(!logTimer) logTimer=setInterval(logRefresh,3000); logRefresh(); }
  document.getElementById('logPane').classList.toggle('active',v==='log'); document.getElementById('wsPane').classList.toggle('active',v==='ws'); document.getElementById('prevPane').classList.toggle('active',v==='prev'); }
 function toggleDesk(){ document.getElementById('desk').classList.toggle('closed'); }
 function openFolder(){ const p=curDir||''; fetch(API+'/api/open?p='+encodeURIComponent(p)); }
