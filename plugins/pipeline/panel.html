@@ -1,0 +1,109 @@
+<!doctype html><meta charset="utf-8">
+<style>
+input, textarea, select { background:var(--card,#fffdf7); color:var(--text,#333); }
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus {
+ -webkit-box-shadow:0 0 0 30px var(--card,#fffdf7) inset !important;
+ -webkit-text-fill-color:var(--text,#333) !important; }
+input::placeholder { color:var(--text-m,#999); }
+
+ body{font-family:inherit;margin:0;background:transparent;color:var(--text,#333)}
+ .bar{display:flex;gap:8px;margin-bottom:10px}
+ input[type=text]{flex:1;border:.5px solid var(--border,#ccc);border-radius:6px;padding:7px 10px;font-size:13px;background:#fffdf7}
+ button{border:0;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;background:var(--accent,#4a7cf7);color:#fff}
+ button.ghost{background:transparent;border:.5px solid var(--border,#ccc);color:var(--text,#333)}
+ .drop{border:2px dashed var(--border,#aaa);border-radius:10px;min-height:130px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--text-l,#888);font-size:14px;margin-bottom:10px;cursor:pointer;background:#fffdf7;gap:6px;font-weight:600}
+ .drop.over{border-color:var(--accent,#4a7cf7);background:rgba(74,124,247,.06)}
+ .cur{font-size:12px;color:var(--text-l,#888);margin-bottom:4px;min-height:16px}
+ .stage{display:flex;align-items:center;gap:6px;padding:7px 10px;border:.5px solid var(--border,#ddd);border-radius:8px;background:var(--bg-card,#fbf9f4);margin-bottom:6px;flex-wrap:wrap}
+ .sdot{width:9px;height:9px;border-radius:50%;background:#ddd;flex:none;margin:0 2px}
+ .sdot.on{background:#f6b93b;box-shadow:0 0 5px rgba(246,185,59,.7)}
+ .sdot.done{background:#2a7a3a}
+ .sdot.fail{background:#d33}
+ .stagel{font-size:12px;color:var(--text,#333);margin:0 2px}
+ .stagenm{font-size:12px;font-weight:600;color:var(--accent,#4a7cf7);margin-right:10px;min-width:80px}
+ table{border-collapse:collapse;width:100%;font-size:12px}
+ th,td{border-bottom:.5px solid var(--border,#eee);padding:5px 6px;text-align:left;white-space:nowrap}
+ th{position:sticky;top:0;background:var(--bg-card,#fbf9f4);font-weight:600;color:var(--text-l,#666)}
+ tr.doing td{background:rgba(74,124,247,.08);outline:1.5px solid var(--accent,#4a7cf7)}
+ td.missing{color:#d33}
+ td.ok{color:#2a7a3a}
+ .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;border:.5px solid}
+ .pill.y{border-color:#d33;color:#d33}
+ .pill.n{border-color:#2a7a3a;color:#2a7a3a}
+</style>
+
+<div class="bar">
+  <input id="lh" type="text" placeholder="料号 或 淘宝 ID（单量回车）">
+  <button onclick="go()">查询</button>
+  <button class="ghost" onclick="demo()">试填</button>
+</div>
+<div class="drop" id="drop"><div>📥 拖入 csv / xlsx（批量）</div><div style="font-size:11px;color:var(--text-l,#999);font-weight:400">自动识别料号列，逐行扫描——点击或拖拽</div></div>
+<div class="stage" id="stage"><span class="stagenm" id="stnm">待命</span><span style="display:flex;align-items:center;gap:6px;flex:1;justify-content:center">
+ <span class="stagel">查询</span><span class="sdot" id="s0"></span><span class="stagel">素材</span><span class="sdot" id="s1"></span><span class="stagel">人工审核</span><span class="sdot" id="s2"></span><span class="stagel">上品/优化</span><span class="sdot" id="s3"></span><span class="stagel">推广</span><span class="sdot" id="s4"></span></span></div>
+<div class="cur" id="cur"></div>
+<div style="overflow:auto;max-height:52vh"><table id="tb">
+<thead><tr><th>料号</th><th>ID</th><th>标题</th><th>素材</th><th>人工审核</th><th>上品/优化</th><th>推广</th></tr></thead>
+<tbody></tbody></table></div>
+
+<script src="../../vendor/xlsx.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const P="/api/plg/pipeline/";
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const cell=(v,cls='')=>'<td class="'+cls+'">'+esc(v)+'</td>';
+
+function render(items){
+ const tb=$('#tb tbody');
+ tb.innerHTML=items.map((it,i)=>
+  '<tr id="r'+i+'">'+cell(it.lh)+cell(it.id||'—')+cell((it.title||'').slice(0,30)||'—')
+  +(it.素材==='齐'?cell('齐','ok'):cell(it.素材,'missing'))
+  +cell(it.审核||'待审')+cell(it['上品/优化']||'—')+cell(it.推广||'—')+'</tr>').join('');
+ if(!items.length) tb.innerHTML='<tr><td colspan=7 style="color:#aaa;text-align:center;padding:16px">空——拖入清单或输料号</td></tr>';
+}
+function highlight(i){ document.querySelectorAll('#tb tr').forEach(r=>r.classList.remove('doing'));
+ const r=document.getElementById('r'+i); if(r)r.classList.add('doing'); }
+
+const STAGES=['查询','素材','人工审核','上品/优化','推广'];
+function setStage(idx,st,nm){ for(let i=0;i<5;i++){ const d=document.getElementById('s'+i); d.className='sdot'+(i<idx?' done':i===idx?(' '+st):''); }
+ $('#stnm').textContent=nm||STAGES[idx]+'中'; }
+async function scan(lhs){
+ const items=[]; $('#cur').textContent='批量 '+lhs.length+' 品…';
+ for(let i=0;i<lhs.length;i++){ $('#cur').textContent='处理中：'+lhs[i]+'（'+(i+1)+'/'+lhs.length+'）'; $('#stnm').textContent=lhs[i]; setStage(0,'on',lhs[i]); highlight(i); await new Promise(r=>setTimeout(r,50)); setStage(1,'on',lhs[i]);
+  const d=await fetch(P+'scan?lhs='+encodeURIComponent(lhs[i])).then(r=>r.json());
+  if(d.ok&&d.items&&d.items[0]) items.push(d.items[0]); }
+ $('#cur').textContent='完成 '+items.length+' 品';
+ setStage(5,'done','完成');
+ render(items);
+}
+async function go(){
+ const v=$('#lh').value.trim(); if(!v)return;
+ $('#cur').textContent='查询 '+v+' …';
+ const d=await fetch(P+'scan?lhs='+encodeURIComponent(v)).then(r=>r.json());
+ render(d.ok?d.items:[]); $('#cur').textContent=d.ok?'完成':'错误: '+d.error; setStage(5,'done','完成');
+}
+function demo(){ $('#lh').value='DTM06-12SA'; go(); }
+
+function pickLhCol(head){ for(const h of head){ if(/料号|型号|part|mpn|sku/i.test(h)&&!/价|名/.test(h)) return head.indexOf(h); } return head.findIndex(h=>/料号/.test(h)); }
+$('#drop').onclick=()=>{ const f=document.createElement('input'); f.type='file';
+ f.onchange=()=>handleFile(f.files[0]); f.click(); };
+['dragover','drop'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.toggle('over',ev==='dragover');}));
+$('#drop').addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f)handleFile(f); });
+function handleFile(f){
+ const name=f.name.toLowerCase(); $('#cur').textContent='读文件 '+f.name+' …';
+ if(name.endsWith('.csv')){ const rd=new FileReader(); rd.onload=()=>parseCSV(rd.result); rd.readAsText(f); }
+ else if(name.endsWith('.xls')||name.endsWith('.xlsx')){ const rd=new FileReader(); rd.onload=()=>{ const wb=XLSX.read(new Uint8Array(rd.result),{type:'array'}); const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1}); parseRows(rows); }; rd.readAsArrayBuffer(f); }
+ else $('#cur').textContent='不支持的格式：'+f.name;
+}
+function parseCSV(text){ const rows=text.split(/\r?\n/).map(l=>l.split(',')).filter(r=>r.join('').trim()); parseRows(rows); }
+function parseRows(rows){
+ if(!rows.length) return; const ci=pickLhCol(rows[0]);
+ const lhs=rows.slice(1).map(r=>(r[ci]||'').trim()).filter(x=>x&&!/料号|合计|总计/.test(x));
+ $('#cur').textContent='识别到 '+lhs.length+' 个料号（列：'+rows[0][ci]+'）';
+ scan(lhs.slice(0,30)); // 本版单批最多 30，防拖垮
+}
+</script>
+<script>
+/* wb-theme 接收器：宿主切主题广播 CSS 变量 → 应用到自身 */
+window.addEventListener('message', function(e){ var d=e.data; if(!d||d.type!=='wb-theme'||!d.vars) return;
+ var st=document.documentElement.style; for(var k in d.vars){ if(d.vars[k]) st.setProperty(k, d.vars[k]); } });
+</script>

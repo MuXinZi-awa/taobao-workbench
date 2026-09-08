@@ -1,0 +1,9 @@
+{
+  "id": "tg-monitor",
+  "name": "推广监控",
+  "version": "0.1.0",
+  "desc": "推广监控台（物维网风格）：11 计划组容量看板 + 推广进度两源合并 + 登录态大灯",
+  "panel": "panel.html",
+  "has_server": true,
+  "icon": "📡"
+}

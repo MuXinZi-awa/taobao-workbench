@@ -1,0 +1,204 @@
+<!doctype html><meta charset="utf-8">
+<style>
+input, textarea, select { background:var(--card,#fffdf7); color:var(--text,#333); }
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus {
+ -webkit-box-shadow:0 0 0 30px var(--card,#fffdf7) inset !important;
+ -webkit-text-fill-color:var(--text,#333) !important; }
+input::placeholder { color:var(--text-m,#999); }
+
+ body{font-family:inherit;margin:0;background:transparent;color:var(--text,#333)}
+ .top{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+ .chip{border:.5px solid var(--border,#ddd);border-radius:8px;padding:6px 11px;font-size:12px;background:var(--bg-card,#fbf9f4);display:flex;align-items:center;gap:6px}
+ .dot{width:10px;height:10px;border-radius:50%;flex:none}
+ .ok{background:#2a7a3a}.bad{background:#d33}.run{background:#4a7cf7}
+ .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:8px}
+ .plan{border:.5px solid var(--border,#ddd);border-radius:8px;padding:8px 11px;background:var(--bg-card,#fbf9f4);font-size:12px}
+ .plan .id{font-weight:600}
+ .plan .id .sub{font-weight:400;font-size:10px;color:var(--text-l,#999)}
+ .plan .bar{height:6px;border-radius:3px;background:#eee;margin:6px 0 4px;overflow:hidden}
+ .plan .fill{height:100%;border-radius:3px}
+ .plan .cap{font-size:11px;color:var(--text-l,#888)}
+ .tag{font-size:10px;padding:1px 6px;border-radius:8px;margin-left:5px}
+ .tag.full{background:#fde8e8;color:#d33}.tag.near{background:#fdf3d7;color:#b8860b}
+ .sec{font-size:13px;font-weight:600;margin:16px 0 8px}
+ .eng{border:.5px solid var(--border,#ddd);border-radius:10px;padding:14px;margin-top:6px;background:var(--bg-card,#fbf9f4)}
+ .grp{border:.5px solid var(--border,#e5e2d8);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:#fffdf7}
+ .grp:last-child{margin-bottom:0}
+ .grpt{font-size:12px;font-weight:600;color:var(--text,#444);margin-bottom:8px}
+ .frow{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+ .frow label{font-size:11px;color:var(--text-l,#888)}
+ .frow input{border:.5px solid var(--border,#ccc);border-radius:6px;padding:7px 10px;font-size:13px;background:#fff}
+ .btnrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+ .btn{border:0;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer;white-space:nowrap}
+ .btn.g{border:.5px solid #2a7a3a;color:#2a7a3a;background:transparent}
+ .btn.r{border:.5px solid #d33;color:#d33;background:transparent}
+ .btn.g:hover{background:#2a7a3a;color:#fff}.btn.r:hover{background:#d33;color:#fff}
+ .btn.disabled{opacity:.5;cursor:not-allowed}
+ .drop{border:2px dashed var(--border,#aaa);border-radius:10px;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-l,#888);font-size:13px;cursor:pointer;background:#fffdf7;margin-bottom:8px;gap:4px}
+ .drop.over{border-color:#4a7cf7;background:rgba(74,124,247,.08);color:#4a7cf7}
+ .poolinfo{font-size:11px;color:var(--text-l,#888);margin:4px 0 8px}
+ .stbar{font-size:12px;line-height:1.7}
+ .stbar b{color:#2a7a3a}
+ .blist{font-size:11px;color:var(--text-l,#666);background:#fffdf7;border:.5px solid var(--border,#eee);border-radius:6px;padding:6px 10px;max-height:80px;overflow:auto;margin-top:8px;display:none;line-height:1.6}
+ .hint{font-size:11px;color:var(--text-l,#999);line-height:1.7;margin-top:10px}
+</style>
+
+<!-- 监控区 -->
+<div class="top">
+  <div class="chip" id="login"><span class="dot bad"></span>登录态检测中</div>
+  <div class="chip" id="proc"><span class="dot"></span>批次</div>
+  <div class="chip" id="rec">已推记录 —</div>
+  <div class="chip" id="units">计划单元 —</div>
+  <div class="chip" id="today">今日 +—</div>
+  <div class="chip" id="tm">—</div>
+  <button class="chip" style="cursor:pointer;border-color:#4a7cf7;color:#4a7cf7" onclick="refreshCap()">↻ 刷新容量</button>
+</div>
+<div class="sec">计划组（11）· 容量 count/500</div>
+<div class="grid" id="grid">加载中…</div>
+
+<!-- 推广工程区 -->
+<div class="sec">推广工程</div>
+<div class="eng">
+  <div class="grp">
+    <div class="grpt">单品推广</div>
+    <div class="frow"><label>料号（如 1928498059 / AT06-2S-CAP）</label>
+      <input type="text" id="slh" placeholder="输入料号"></div>
+    <div class="frow"><label>淘宝 ID（可留空——自动从池/搜索补）</label>
+      <input type="text" id="sid" placeholder="选填"></div>
+    <div class="btnrow"><button class="btn g" onclick="singleRun()">▶ 单品推广</button>
+      <span id="smsg" style="font-size:12px;color:#4a7cf7"></span></div>
+  </div>
+
+  <div class="grp">
+    <div class="grpt">批量推广</div>
+    <div class="drop" id="drop"><div>📥 拖 csv / xlsx 进来（自动识别料号列）</div><div style="font-size:11px">或点击选择文件</div></div>
+    <div class="poolinfo" id="poolinfo">默认池：读取中…</div>
+    <div class="btnrow">
+      <span style="font-size:12px;color:var(--text,#555)">每批数量</span>
+      <input type="number" id="bn" min="1" max="200" value="30" style="width:64px;border:.5px solid var(--border,#ccc);border-radius:6px;padding:6px;font-size:13px">
+      <button class="btn g" id="btnPool" onclick="startBatch(0)">▶ 跑默认池</button>
+      <button class="btn g" id="btnFile" onclick="startBatch(1)">▶ 跑拖入表</button>
+      <button class="btn r" onclick="stopBatch()">⏹ 停止</button>
+    </div>
+    <div class="stbar" id="bmsg">—</div>
+    <div class="blist" id="blist"></div>
+  </div>
+</div>
+<div class="hint">
+• <b>已推记录</b> = 累计推广过的料号（历史账）——推广记录.csv 权威全集（0908 并入早期全量汇总）<br>
+• <b>计划单元</b> = 当前在推单元总数（现时状态，含一物多计划）——probe 拉登录态连带刷新<br>
+• 批启动/日志留痕 推广一键跑\runtime\tg_panel.log；本次批料号清单见上方
+</div>
+
+<script>
+const P="/api/plg/tg-monitor/";
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+let curFile="", curFileName="", lastRec=null, lastRun=false;
+
+async function load(){
+ const d=await fetch(P+'status').then(r=>r.json()); if(!d.ok) return;
+ const lg=document.getElementById('login'); lg.innerHTML='<span class="dot '+(d.login?'ok':'bad')+'"></span>登录态 '+(d.login?'有效':'失效');
+ const pr=document.getElementById('proc'); pr.innerHTML='<span class="dot '+(d.running?'run':'')+'"></span>'+(d.running?'批次运转中':'空闲');
+ document.getElementById('rec').textContent='已推记录 '+d.stats.rec;
+ document.getElementById('units').textContent='计划单元 '+(d.stats.units!=null?d.stats.units:'—');
+ document.getElementById('today').textContent='今日 +'+d.stats.today;
+ document.getElementById('tm').textContent=d.time;
+ // 池进度
+ if(d.stats.pool){ const p=d.stats.pool;
+  document.getElementById('poolinfo').textContent='默认池：共 '+p.total+' 品 · 已跑 '+p.done+' · 剩 '+p.remain;
+ }
+ // 批结束检测（从运转→空闲 = 刚跑完 → 报告记录变化）
+ if(lastRun && !d.running){ lastRun=false;
+  const n=(d.stats.rec!=null?d.stats.rec:0)-(lastRec!=null?lastRec:0);
+  const bm=document.getElementById('bmsg');
+  bm.innerHTML='✅ <b>本批已结束</b>——本次新增推广记录 '+n+' 条'+(curFileName?'（源：'+esc(curFileName)+'）':'');
+ }
+ lastRec=d.stats.rec; if(d.running) lastRun=true;
+ // 计划卡
+ const g=document.getElementById('grid'); g.innerHTML='';
+ d.plans.forEach(p=>{
+  const full=p.count!=null?p.count>=500:p.full_known;
+  const pct=p.count!=null?Math.min(100,p.count/500*100):(p.full_known?100:0);
+  const col=full?'#d33':(p.count!=null&&p.count>=450?'#b8860b':'#2a7a3a');
+  const tag=full?'<span class="tag full">已满</span>':(p.count!=null&&p.count>=450?'<span class="tag near">接近满</span>':'');
+  const el=document.createElement('div'); el.className='plan';
+  el.innerHTML='<div class="id">'+(p.name||p.id)+tag+'<div class="sub">'+p.id+'</div></div>'+
+   '<div class="bar"><div class="fill" style="width:'+pct+'%;background:'+col+'"></div></div>'+
+   '<div class="cap">'+(p.count!=null?p.count+' / 500':'容量未知')+(p.time?' · '+p.time.slice(5,16):'')+'</div>';
+  g.appendChild(el);
+ });
+}
+function showBatch(list,source){
+ const b=document.getElementById('blist');
+ if(list&&list.length){ b.style.display='block';
+  b.innerHTML='<b>本批 '+list.length+' 品（源：'+esc(source||'')+'）</b><br>'+list.map(esc).join('、'); }
+ else b.style.display='none';
+}
+async function startBatch(useFile){
+ if(!useFile){ curFile=""; curFileName="默认池"; }
+ const n=parseInt(document.getElementById('bn').value)||30;
+ const bm=document.getElementById('bmsg');
+ bm.innerHTML='⏳ 启动中…';
+ let url=P+'start-batch?limit='+n;
+ if(useFile&&curFile) url+='&file='+encodeURIComponent(curFile);
+ const d=await fetch(url).then(r=>r.json());
+ if(d.ok){
+  bm.innerHTML='🚀 <b>已启动</b>：'+d.msg+'<br>🔄 跑批中——批次灯应变蓝，完成会提示本批新增数';
+  if(d.batch) showBatch(d.batch,d.source||curFileName);
+  setTimeout(load,4000);
+ } else bm.innerHTML='✗ '+(d.error||'启动失败');
+}
+async function singleRun(){
+ const lh=document.getElementById('slh').value.trim();
+ const id=document.getElementById('sid').value.trim();
+ if(!lh){ alert('输入料号'); return; }
+ const sm=document.getElementById('smsg'); sm.textContent='启动中…';
+ const d=await fetch(P+'single-run?lh='+encodeURIComponent(lh)+'&id='+encodeURIComponent(id)).then(r=>r.json());
+ sm.textContent=d.msg||('✗ '+(d.error||''));
+ if(d.ok&&d.lh){ showBatch([d.lh],'单品 '+d.lh); curFileName='单品'; curFile=""; }
+ setTimeout(load,4000);
+}
+async function stopBatch(){
+ if(!confirm('确定停止当前推广批？')) return;
+ const bm=document.getElementById('bmsg'); bm.innerHTML='⏹ 停止中…';
+ const d=await fetch(P+'stop-batch').then(r=>r.json());
+ bm.innerHTML=d.msg||('✗ '+(d.error||''));
+ setTimeout(load,3000);
+}
+async function refreshCap(){
+ const bm=document.getElementById('bmsg'); bm.innerHTML='⏳ 容量刷新中…（约30s，静默）';
+ const d=await fetch(P+'refresh-caps').then(r=>r.json());
+ bm.innerHTML=d.msg||d.error||'完成';
+ setTimeout(load,32000);
+}
+function pickLhCol(head){ for(let i=0;i<head.length;i++){ if(/料号|型号|part|mpn|sku/i.test(head[i])&&!/价|名/.test(head[i])) return i; } return head.findIndex(h=>/料号/.test(h)); }
+const drop=document.getElementById('drop');
+drop.onclick=()=>{ const f=document.createElement('input'); f.type='file';
+ f.onchange=()=>{ if(f.files[0]) readFile(f.files[0]); }; f.click(); };
+['dragover','dragleave'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.toggle('over',ev==='dragover');}));
+drop.addEventListener('drop',e=>{ e.preventDefault(); drop.classList.remove('over');
+ const f=e.dataTransfer.files[0]; if(f) readFile(f); });
+async function readFile(f){
+ const rd=new FileReader();
+ rd.onload=async ()=>{
+  const txt=rd.result; const rows=txt.split(/\r?\n/).map(l=>l.split(',')).filter(r=>r.join('').trim());
+  if(!rows.length){ alert('空文件'); return; }
+  const ci=pickLhCol(rows[0]);
+  const lhList=rows.slice(1).map(r=>(r[ci]||'').trim()).filter(x=>x&&!/料号|合计/.test(x));
+  if(!lhList.length){ alert('没识别到料号列'); return; }
+  const d=await fetch(P+'batch-save?content='+encodeURIComponent(txt)).then(r=>r.json());
+  if(d.ok){ curFile=d.file; curFileName=f.name;
+   const st=await fetch(P+'status').then(r=>r.json());
+   const doneCnt=lhList.filter(x=>{ /*粗略：无法精确——显示总数*/ return false; }).length;
+   drop.innerHTML='<div style="color:#2a7a3a;font-weight:600">✅ 已载 '+lhList.length+' 品</div><div style="font-size:11px;color:var(--text-l,#888)">'+f.name+' —— 点「跑拖入表」执行；已跑过的会自动跳过</div>';
+  } else alert(d.error||'保存失败');
+ };
+ rd.readAsText(f);
+}
+load(); setInterval(load,10000);
+</script>
+<script>
+/* wb-theme 接收器：宿主切主题广播 CSS 变量 → 应用到自身 */
+window.addEventListener('message', function(e){ var d=e.data; if(!d||d.type!=='wb-theme'||!d.vars) return;
+ var st=document.documentElement.style; for(var k in d.vars){ if(d.vars[k]) st.setProperty(k, d.vars[k]); } });
+</script>
