@@ -70,6 +70,16 @@ def _pool_stats(rec_lh):
     return {"total": total, "done": done, "remain": total - done}
 
 
+def _cleanup_probe():
+    """起批前清理：杀残留 probe_status.py（它占 chrome_profile——与批并发同 profile 会杀掉批的 Chrome）"""
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command",
+            "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*probe_status.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; 'ok'"],
+            capture_output=True, timeout=15)
+    except Exception:
+        pass
+
+
 _LG = {"v": None, "t": 0.0}
 
 
@@ -80,20 +90,15 @@ def _login():
     if _LG["v"] is not None and _t.time() - _LG["t"] < 90:
         return _LG["v"]
     try:
+        # 0908：万相台 headless probe 拿不到 csrf（新 profile 无头不授）——改 _dual_one（淘宝 mtop API headless 可用）
         r = subprocess.run([os.path.join(TG, "runtime", "python.exe"), "-X", "utf8", "-u",
-                            os.path.join(TG, "runtime", "probe_status.py")],
-                           capture_output=True, timeout=110)
+                            os.path.join(TG, "_dual_one.py"), "1379668", "", "--headless"],
+                           capture_output=True, timeout=90)
         out = (r.stdout or b"").decode("utf-8", "replace")
-        try:
-            j = json.loads(out.strip().splitlines()[-1])
-            ok = bool(j.get("login"))
-            _LG["v"] = ok
-            _LG["t"] = _t.time()
-            return ok
-        except Exception:
-            _LG["v"] = False
-            _LG["t"] = _t.time() - 60  # 解析失败 30s 后可重试
-            return False
+        ok = any(k in out for k in ("已双百", "未双百", "流量加速中", "未搜到"))
+        _LG["v"] = ok
+        _LG["t"] = _t.time()
+        return ok
     except Exception:
         return False
 
@@ -124,10 +129,14 @@ def status():
         ts = st.get("time", "")
         plans.append({"id": pid, "name": p["name"], "count": count, "time": ts,
                       "full_known": pid in ("72264315693", "83306736168")})
+    running = _running()
+    # 0908：login 只读缓存——自动探测已禁（probe headless 抢 chrome_profile → 批/手动 launch 全被顶掉）
+    # 登录态用手动「检测」按钮；批跑时状态看 running；容量批自更新+手动刷新
+    login = _LG["v"]
     return {
         "ok": True,
-        "login": _login(),
-        "running": _running(),
+        "login": login,
+        "running": running,
         "stats": {"rec": len(rec_lh), "today": rec_today, "units": _units_total(plan_state),
                  "pool": _pool_stats(rec_lh)},
         "plans": plans,
@@ -138,7 +147,12 @@ def handle(action, qs):
     if action == "status":
         return status()
     if action == "login-check":
-        return {"ok": True, "login": _login()}
+        """手动检测登录态（probe headless 起一次——慎用：会短暂占 profile，别在批跑时点）"""
+        import time as _t
+        if _running():
+            return {"ok": True, "login": None, "msg": "批运行中——跳过探测"}
+        _LG["v"] = _login()
+        return {"ok": True, "login": _LG["v"]}
     if action == "refresh-caps":
         # 刷新容量：subprocess detach 跑 refresh_caps.py（headless 静默——约 25-30s）
         import subprocess as _sp
@@ -152,6 +166,7 @@ def handle(action, qs):
     if action == "start-batch":
         """面板手动起批：默认池或指定 csv（qs.file=绝对路径）；返回本次待推清单头几个"""
         import subprocess as _sp
+        _cleanup_probe()  # 0908：起批前清残留 probe（防同 profile 冲突杀批）
         try:
             limit = int(qs.get("limit", "30") or 30)
         except Exception:
@@ -234,6 +249,7 @@ def handle(action, qs):
         camps = ",".join(_PLAN_ORDER[1:])
         out = os.path.join(TG, "runtime", "tg_panel.log")
         err = out.replace(".log", "_err.log")
+        _cleanup_probe()  # 0908：单品起批前清理
         try:
             proc = _sp.Popen([rt, "-X", "utf8", "-u", os.path.join(TG, "tuiguang_auto.py"),
                               "--liaohao", lh, "--taobao_id", iid, "--campaigns", camps, "--no-pop"],

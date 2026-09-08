@@ -45,7 +45,7 @@ input::placeholder { color:var(--text-m,#999); }
 
 <!-- 监控区 -->
 <div class="top">
-  <div class="chip" id="login"><span class="dot bad"></span>登录态检测中</div>
+  <div class="chip" id="login"><span class="dot bad"></span>登录态—</div><button class="chip" style="cursor:pointer;border-color:#4a7cf7;color:#4a7cf7" onclick="chkLogin()">检测登录</button>
   <div class="chip" id="proc"><span class="dot"></span>批次</div>
   <div class="chip" id="rec">已推记录 —</div>
   <div class="chip" id="units">计划单元 —</div>
@@ -97,7 +97,8 @@ let curFile="", curFileName="", lastRec=null, lastRun=false;
 
 async function load(){
  const d=await fetch(P+'status').then(r=>r.json()); if(!d.ok) return;
- const lg=document.getElementById('login'); lg.innerHTML='<span class="dot '+(d.login?'ok':'bad')+'"></span>登录态 '+(d.login?'有效':'失效');
+ const lg=document.getElementById('login');
+ lg.innerHTML='<span class="dot '+(d.login==null?'':(d.login?'ok':'bad'))+'"></span>登录态 '+(d.login==null?'未检测':(d.login?'有效':'失效'));
  const pr=document.getElementById('proc'); pr.innerHTML='<span class="dot '+(d.running?'run':'')+'"></span>'+(d.running?'批次运转中':'空闲');
  document.getElementById('rec').textContent='已推记录 '+d.stats.rec;
  document.getElementById('units').textContent='计划单元 '+(d.stats.units!=null?d.stats.units:'—');
@@ -194,6 +195,12 @@ async function readFile(f){
   } else alert(d.error||'保存失败');
  };
  rd.readAsText(f);
+}
+async function chkLogin(){
+ const lg=document.getElementById('login'); lg.innerHTML='<span class="dot"></span>检测中…(约30s)';
+ const d=await fetch(P+'login-check').then(r=>r.json());
+ if(d.msg){ alert(d.msg); }
+ load();
 }
 load(); setInterval(load,10000);
 </script>
