@@ -36,6 +36,10 @@ def handle(action, params):
             tail = (out.strip().splitlines()[-1] if out.strip() else "").strip()
             login = not ("未登录" in out or "登录过期" in out or "请手动登录" in out)
             dual = "已双百" in tail or ("流量加速中" in out and "未" not in tail)
+            try:
+                _wlog("单查 %s => %s (%s)" % (lh, "双百" if dual else "未双百", tail[:40]))
+            except Exception:
+                pass
             if dual:
                 return {"ok": True, "lh": lh, "dual": True,
                         "summary": "已双百（基础分100 + 扶优分100 满）——无需处理，可放心推广投放。",
