@@ -235,15 +235,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 fn = q.get("f", ["tg_panel.log"])[0]
                 log_root = r"C:\Users\jdt-pty\Desktop\推广一键跑\runtime"
                 fp2 = os.path.join(log_root, os.path.basename(fn))
-                tail_n = 300
+                all_mode = q.get("all", ["0"])[0] == "1"
                 if os.path.isfile(fp2):
                     try:
                         raw = open(fp2, "rb").read()
-                        txt = raw.decode("gbk", errors="replace")
+                        # 编码自适应：utf-8 BOM / utf-8 合法 → utf-8；否则 gbk（tuiguang 控制台输出是 gbk，dual_check/pipeline 是 utf-8）
+                        txt = None
+                        for enc in ("utf-8-sig", "utf-8", "gbk"):
+                            try:
+                                t2 = raw.decode(enc)
+                                if "\ufffd" not in t2:
+                                    txt = t2
+                                    break
+                            except Exception:
+                                continue
+                        if txt is None:
+                            txt = raw.decode("gbk", errors="replace")
                         lines = txt.splitlines()
-                        tail = lines[-tail_n:]
-                        # 反向（新在下/在上由前端决定）——返回新到旧便于渲染，前端可倒
-                        return self._json({"ok": True, "lines": tail, "name": fn})
+                        tail = lines if all_mode else lines[-300:]
+                        return self._json({"ok": True, "lines": tail, "name": fn, "all": all_mode})
                     except Exception as e:
                         return self._json({"ok": False, "error": str(e)[:80]})
                 return self._json({"ok": False, "error": "日志不存在"})

@@ -172,7 +172,7 @@ body[data-theme="dsh"] .about-row { border-color:rgba(90,80,60,.10); }body[data-
   <div class="col-side"><div class="cap">已装插件</div><div id="plugins"></div></div>
   <div class="col-main">
     <div class="viewtab"><div class="vt active" data-v="ws" onclick="switchView('ws')">工作区</div><div class="vt" data-v="log" onclick="switchView('log')">运行日志</div><div class="vt" data-v="prev" onclick="switchView('prev')">预览</div></div>
-    <div class="pane" id="logPane"><div class="prevhead"><span style="font-size:12px;color:var(--text-l)">运行日志</span><span style="margin-left:8px;font-size:11px;color:var(--text-m)" id="logf">tg_panel.log（推广批操作）</span><span style="margin-left:auto;display:flex;gap:4px;font-size:10px;color:var(--text-m)">自动跟随插件</span></span></div><div class="logbox" id="log" style="font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;overflow:auto;padding:8px 12px;line-height:1.5">加载日志…</div></div>
+    <div class="pane" id="logPane"><div class="prevhead"><span style="font-size:12px;color:var(--text-l)">运行日志</span><span style="margin-left:8px;font-size:11px;color:var(--text-m)" id="logf">tg_panel.log（推广批操作）</span><span style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:10px;color:var(--text-m)"><button class="iconbtn" id="logPauseBtn" onclick="logPause()" style="width:auto;padding:0 6px;font-size:10px" title="暂停/继续刷新">⏸</button><button class="iconbtn" onclick="logOpenAll()" style="width:auto;padding:0 6px;font-size:10px" title="显示全部日志">全部</button>自动跟随</span></span></div><div class="logbox" id="log" style="font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;overflow:auto;padding:8px 12px;line-height:1.5">加载日志…</div></div>
     <div class="pane active" id="wsPane"><div class="prevhead"><span id="wsName">插件工作区</span></div><div id="wsEmpty" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-m);font-size:12px">点左侧插件打开它的工作面板</div><div class="prevbody" id="wsBody" style="padding:4px"></div></div>
     <div class="pane" id="prevPane">
       <div class="prevhead"><span id="prevName">预览</span></div>
@@ -330,9 +330,19 @@ function showPlugin(pl){
 }
 let logFile_='tg_panel.log', logTimer=null;
 function logRefresh(){ const box=document.getElementById('log'); if(!box) return;
- fetch(API+'/api/logtail?f='+encodeURIComponent(logFile_)).then(r=>r.json()).then(d=>{
-  if(d.ok){ box.innerHTML=(d.lines||[]).map(esc).join('\n')||'（空日志）'; box.scrollTop=box.scrollHeight; }
+ fetch(API+'/api/logtail?f='+encodeURIComponent(logFile_)+(logAll?'&all=1':'')).then(r=>r.json()).then(d=>{
+  if(d.ok){ const atBottom=(box.scrollTop+box.clientHeight>=box.scrollHeight-40);
+   box.innerHTML=(d.lines||[]).map(esc).join('\n')||'（空日志）';
+   if(atBottom||logAll) box.scrollTop=box.scrollHeight; }
  }).catch(()=>{}); }
+var logPaused=false, logAll=false;
+function logPause(){ logPaused=!logPaused;
+ var b=document.getElementById('logPauseBtn'); if(b) b.textContent=logPaused?'▶':'⏸';
+ if(logPaused&&logTimer){ clearInterval(logTimer); logTimer=null; }
+ else if(!logPaused&&!logTimer){ logTimer=setInterval(logRefresh,3000); logRefresh(); } }
+function logOpenAll(){ logAll=!logAll;
+ var lf=document.getElementById('logf'); if(lf) lf.textContent=logFile_+(logAll?'（全部）':'');
+ logRefresh(); }
 function logFileSel(f){ logFile_=f; var lf=document.getElementById('logf'); if(lf) lf.textContent=f+'（'+(curPlugin?curPlugin.name:'')+'）'; }
 function logFile(f){ logFileSel(f); logRefresh(); }
 function switchView(v){ document.querySelectorAll('.vt').forEach(x=>x.classList.toggle('active',x.dataset.v===v));
