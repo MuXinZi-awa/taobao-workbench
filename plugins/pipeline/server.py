@@ -95,6 +95,7 @@ def scan_batch(lhs):
             "id": rec.get("id", ""),
             "title": rec.get("title", ""),
             "ref": _ref_for(lh, rec.get("audit", "")),
+            "orig": _ref_for(lh, ""),
             "审核": rec.get("audit", ""),
             "上品/优化": rec.get("sp", ""),
             "推广": tg.get(lh, ""),
@@ -240,6 +241,8 @@ def classify_batch(lhs):
                 m = scan_material(lh)
                 item["素材"] = "缺:" + ",".join(m["缺失"]) if m["缺失"] else "齐"
                 item["缺列表"] = m["缺失"]
+                item["orig"] = _ref_for(lh, "")
+                item["ref"] = _ref_for(lh, item.get("type", ""))
             except Exception:
                 pass
             try:
