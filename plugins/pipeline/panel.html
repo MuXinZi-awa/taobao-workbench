@@ -81,7 +81,7 @@ function highlight(i){ document.querySelectorAll('#tb tr').forEach(r=>r.classLis
  const r=document.getElementById('r'+i); if(r)r.classList.add('doing'); }
 
 const STAGES=['查询','素材','人工审核','上品/优化','推广'];
-function setStage(idx,st,nm){ for(let i=0;i<5;i++){ const d=document.getElementById('s'+i); d.className='sdot'+(i<idx?' done':i===idx?(' '+st):''); }
+function setStage(idx,st,nm){ if(idx>=0&&idx<5){ const d=document.getElementById('s'+idx); if(d) d.className='sdot '+st; }
  $('#stnm').textContent=nm||STAGES[idx]+'中'; }
 var curLhs=[];
 async function scan(lhs){
@@ -137,7 +137,6 @@ window.addEventListener('message', function(e){ var d=e.data;
   // 人工审核完成 = 无在途处理（送修/换源都处理完）——全放行/无在途即绿
   if(!fixN && !srcN){ setStage(2,'done','审核完成'); }
   else { setStage(2,'on','审核中-送修'+fixN+'/换源'+srcN+'待处理'); }
-  setStage(3,'on','待上品/优化');
   $('#cur').textContent='审核提交：放行'+passN+' 送修'+fixN+' 换源'+srcN+'（需审'+d.total+'）';
   if(v) scan(v.split(',')); }
 });
