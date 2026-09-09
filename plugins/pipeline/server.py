@@ -107,6 +107,23 @@ def _maybe_rotate():
         _rot_day = today
     except Exception:
         pass
+    # 0909 清理：超期归档删除（保留天数 log_keep_days.json 默认 30）
+    try:
+        import glob as _g3, time as _t3
+        _kd = 30
+        try:
+            _kd = int(open(r"C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime\\log_keep_days.json", encoding="utf-8").read().strip())
+        except Exception:
+            pass
+        _base = _LOG_FP.replace(".log", "")
+        for _f in _g3.glob(_base + "_*.log"):
+            if _t3.time() - os.path.getmtime(_f) > _kd * 86400:
+                try:
+                    os.remove(_f)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 
 def _wlog(msg):

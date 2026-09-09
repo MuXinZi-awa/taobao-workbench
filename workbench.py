@@ -168,6 +168,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         f.write(zf.read(n))
                 return self._json({"ok": True, "id": pid, "name": m.get("name", pid),
                                    "desc": m.get("desc", ""), "readme": os.path.isfile(os.path.join(base, "README.md"))})
+            if p == "/api/logkeep":
+                # 写日志保留天数
+                try:
+                    import urllib.parse
+                    length = int(self.headers.get("Content-Length") or 0)
+                    body = self.rfile.read(length).decode("utf-8", "replace")
+                    q = urllib.parse.parse_qs(body)
+                    days = int(q.get("days", ["30"])[0])
+                    days = max(1, min(days, 365))
+                    open(r"C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime\\log_keep_days.json", "w", encoding="utf-8").write(str(days))
+                    return self._json({"ok": True, "days": days})
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)[:80]})
             return self._json({"ok": False, "error": "未知 POST"}, 404)
         except Exception as e:
             return self._json({"error": str(e)[:100]}, 500)
@@ -228,6 +241,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json({"error": "资源不存在"}, 404)
             if p == "/api/plugins":
                 return self._json({"plugins": scan_plugins()})
+            if p == "/api/logkeep":
+                # 日志保留天数（0909——设置-通用可改；清理归档超期删除）
+                try:
+                    v = int(open(r"C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime\\log_keep_days.json", encoding="utf-8").read().strip())
+                except Exception:
+                    v = 30
+                return self._json({"ok": True, "days": v})
             if p.startswith("/api/logtail"):
                 # 日志尾查看（运行日志 Tab——通用：读 推广一键跑/runtime/xxx.log 尾部）
                 import urllib.parse
