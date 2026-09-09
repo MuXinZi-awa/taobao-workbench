@@ -89,7 +89,28 @@ import datetime as _dt
 _LOG_FP = r"C:\Users\jdt-pty\Desktop\推广一键跑\runtime\pipeline.log"
 
 
+_rot_day = None
+
+
+def _maybe_rotate():
+    """0909 按天归档：日志文件日期≠今天 → 改名加日期保留"""
+    import datetime as _dt2, os as _os2
+    global _rot_day
+    try:
+        today = _dt2.date.today()
+        if _rot_day == today:
+            return
+        if _os2.path.isfile(_LOG_FP):
+            m = _dt2.date.fromtimestamp(_os2.path.getmtime(_LOG_FP))
+            if m != today:
+                _os2.rename(_LOG_FP, _LOG_FP.replace(".log", "_%s.log" % m.strftime("%Y%m%d")))
+        _rot_day = today
+    except Exception:
+        pass
+
+
 def _wlog(msg):
+    _maybe_rotate()
     try:
         with io.open(_LOG_FP, "a", encoding="utf-8") as f:
             f.write("[%s] %s\n" % (_dt.datetime.now().strftime("%m-%d %H:%M:%S"), msg))
