@@ -612,6 +612,9 @@ document.addEventListener('keydown',function(e){
  if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A'){ adNav(-1); }
  else if(e.key==='ArrowRight'||e.key==='d'||e.key==='D'){ adNav(1); }
  else if(e.key==='Enter'){ adConfirm(); }
+ else if(e.key==='1'){ adMark('放行'); }
+ else if(e.key==='2'){ adMark('送修'); }
+ else if(e.key==='3'){ adMark('换源'); }
 });
 function adForceTg(){ AD.force=document.getElementById('adForce').checked; adRender(); }
 function adMark(res){

@@ -86,7 +86,7 @@ function setStage(idx,st,nm){ for(let i=0;i<5;i++){ const d=document.getElementB
 var curLhs=[];
 async function scan(lhs){
  curLhs=lhs; const items=[]; $('#cur').textContent='批量 '+lhs.length+' 品…';
- for(let i=0;i<lhs.length;i++){ $('#cur').textContent='处理中：'+lhs[i]+'（'+(i+1)+'/'+lhs.length+'）'; $('#stnm').textContent=lhs[i]; setStage(0,'on',lhs[i]); highlight(i); await new Promise(r=>setTimeout(r,50)); setStage(1,'on',lhs[i]);
+ for(let i=0;i<lhs.length;i++){ $('#cur').textContent='处理中：'+lhs[i]+'（'+(i+1)+'/'+lhs.length+'）'; $('#stnm').textContent=lhs[i]; highlight(i); await new Promise(r=>setTimeout(r,50));
   const d=await fetch(P+'scan?lhs='+encodeURIComponent(lhs[i])).then(r=>r.json());
   if(d.ok&&d.items&&d.items[0]) items.push(d.items[0]); }
  $('#cur').textContent='素材扫描完成 '+items.length+' 品（灯等查询分流后亮）';
