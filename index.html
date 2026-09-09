@@ -502,11 +502,20 @@ let ED={fs:16,w:720,h1:28,h2:21,h3:18,lh:1.5,pad:24,font:'ui'};
 function edFont(){ const f=ED.font||'ui'; return f==='serif'?'Georgia,"Noto Serif SC",serif':f==='mono'?'Consolas,monospace':'inherit'; }
 function edLoad(){ try{ ED=Object.assign(ED,JSON.parse(localStorage.getItem(EDKEY)||'{}')); }catch(e){} }
 
+function logKeepLoad(){
+ fetch(API+'/api/logkeep').then(r=>r.json()).then(d=>{
+  var e=document.getElementById('logKeepDays'); if(e&&d.ok) e.value=d.days; }); }
+function logKeepSave(){
+ var e=document.getElementById('logKeepDays'); var v=e?e.value:30;
+ fetch(API+'/api/logkeep',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+  body:'days='+encodeURIComponent(v)}).then(r=>r.json()).then(d=>{ alert(d.ok?('已保存：保留 '+d.days+' 天日志'):('失败 '+(d.error||''))); }); }
 function renderGeneral(c){
  c.innerHTML='<h3>通用</h3><div class="desc">启动与后台</div>'
  +'<div style="background:var(--bg-card);border:.5px solid var(--border);border-radius:var(--r);padding:8px 12px">'
+ +'<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div style="font-size:13px">日志保留</div><div style="font-size:11px;color:var(--text-m)">归档日志自动删除前的保留天数（默认30）</div></div><input id="logKeepDays" type="number" min="1" max="365" value="30" style="width:60px;border:.5px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px"><button class="iconbtn" onclick="logKeepSave()" style="width:auto;padding:0 8px;font-size:12px">保存</button></div>'
  +'<div style="display:flex;align-items:center;padding:6px 0;border-bottom:.5px solid rgba(0,0,0,.05)"><div style="flex:1"><div style="font-size:13px">开机自启</div><div style="font-size:11px;color:var(--text-m)">登录 Windows 时自动启动工作台（8900）</div></div><button class="iconbtn" style="width:auto;padding:3px 12px" onclick="setAutoStart()">启用</button></div>'
  +'<div style="display:flex;align-items:center;padding:6px 0"><div style="flex:1"><div style="font-size:13px">锁屏/后台保持运行</div><div style="font-size:11px;color:var(--text-m)">工作台是本地服务——锁屏照常跑（勿睡眠/休眠）</div></div><span style="font-size:11px;color:var(--green)">始终运行</span></div></div>'; }
+ logKeepLoad();
 async function setAutoStart(){ const d=await api('/api/autostart'); alert(d.msg||d.error||'完成'); }
 uiApply();
 function renderAbout(c){ c.innerHTML='<h3>关于</h3><div class="desc">优化管理工作台</div>'
