@@ -89,7 +89,10 @@ async function scan(lhs){
  for(let i=0;i<lhs.length;i++){ $('#cur').textContent='处理中：'+lhs[i]+'（'+(i+1)+'/'+lhs.length+'）'; $('#stnm').textContent=lhs[i]; highlight(i); await new Promise(r=>setTimeout(r,50));
   const d=await fetch(P+'scan?lhs='+encodeURIComponent(lhs[i])).then(r=>r.json());
   if(d.ok&&d.items&&d.items[0]) items.push(d.items[0]); }
- $('#cur').textContent='素材扫描完成 '+items.length+' 品（灯等查询分流后亮）';
+ var missN=items.filter(function(x){return x.素材!=='齐'&&x.素材!=='—';}).length;
+ if(missN===0){ setStage(1,'done','素材齐'); }
+ else { setStage(1,'on','素材缺'+missN+'品'); }
+ $('#cur').textContent='素材扫描完成 '+items.length+' 品（缺素材 '+missN+'——黄灯提示待补）';
  render(items);
 }
 function typeCell(t){
