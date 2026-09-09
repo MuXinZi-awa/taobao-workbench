@@ -40,9 +40,11 @@ def scan_material(lh):
     out = {"封面": False, "主图": False, "规格书": False, "视频": False, "详情图": False, "文件": [], "缺失": []}
     if not os.path.isdir(d):
         out["缺失"] = ["整个目录"]
+        out["文件路径"] = []
         return out
     names = os.listdir(d)
     out["文件"] = sorted(names)
+    out["文件路径"] = [os.path.join(d, n) for n in out["文件"]]
     for n in names:
         low = n.lower()
         if "封面" in n or "cover" in low: out["封面"] = True
@@ -54,6 +56,21 @@ def scan_material(lh):
     for k in ("封面", "主图", "规格书", "视频"):
         if not out[k]:
             out["缺失"].append(k)
+    # 参考图：封面/主图1 原图（排除 _标注 加工图 / _白底 AI返图）——默认审核看的图
+    ref = ""
+    for pat in ("%s_主图1", "%s_封面", "%s_主图"):
+        for n in sorted(names):
+            if pat % lh == n.split(".")[0] and "标注" not in n and "白底" not in n and n.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                ref = os.path.join(d, n)
+                break
+        if ref:
+            break
+    if not ref:
+        for n in sorted(names):
+            if "标注" not in n and "白底" not in n and n.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                ref = os.path.join(d, n)
+                break
+    out["参考图"] = ref
     return out
 
 def scan_batch(lhs):
@@ -74,6 +91,9 @@ def scan_batch(lhs):
             "title": rec.get("title", ""),
             "素材": "缺:" + ",".join(m["缺失"]) if m["缺失"] else "齐",
             "缺列表": m["缺失"],
+            "type": rec.get("type", ""),
+            "id": rec.get("id", ""),
+            "title": rec.get("title", ""),
             "审核": rec.get("audit", ""),
             "上品/优化": rec.get("sp", ""),
             "推广": tg.get(lh, ""),
@@ -135,10 +155,116 @@ def _wlog(msg):
         pass
 
 
+def classify_batch(lhs):
+    """0909 查询分流：每料号搜商品(老/新) + 老品查双百 → type（MtopClient 单连循环）"""
+    try:
+        sys.path.insert(0, TG)
+        from _mtop_api import MtopClient
+    except Exception as e:
+        return [], "导入失败: %s" % str(e)[:60]
+    mc = MtopClient()
+    try:
+        mc.open()
+    except Exception as e:
+        return [], "Mtop 打开失败: %s" % str(e)[:60]
+    items = []
+    try:
+        for lh in lhs:
+            lh = (lh or "").strip()
+            if not lh:
+                continue
+            item = {"lh": lh, "id": "", "title": "", "type": "", "dual": None, "素材": "—", "缺列表": [], "note": ""}
+            try:
+                rows, st = mc.search_items(lh, page=1, page_size=3)
+                if rows:
+                    hit = None
+                    for r in rows:
+                        t = str(r.get("title", ""))
+                        if lh.replace("-", "").lower() in t.replace("-", "").lower():
+                            hit = r
+                            break
+                    hit = hit or rows[0]
+                    item["id"] = str(hit.get("itemId", ""))
+                    item["title"] = str(hit.get("title", ""))[:40]
+                    try:
+                        out, _ = mc.check_dual(lh)
+                        if out:
+                            sl = out[0].get("scoreLabel", "")
+                            item["dual"] = sl == "流量加速中"
+                            item["type"] = "老品-双百跳过" if item["dual"] else "老品-需优化"
+                            item["note"] = sl[:20]
+                        else:
+                            item["type"] = "老品-需优化"
+                            item["note"] = "无双百信息"
+                    except Exception as e:
+                        item["type"] = "老品-需优化"
+                        item["note"] = "双百异常:%s" % str(e)[:25]
+                else:
+                    item["type"] = "新品-待上架"
+                    item["note"] = "店铺搜不到该料号"
+            except Exception as e:
+                item["type"] = "查询异常"
+                item["note"] = str(e)[:30]
+            try:
+                m = scan_material(lh)
+                item["素材"] = "缺:" + ",".join(m["缺失"]) if m["缺失"] else "齐"
+                item["缺列表"] = m["缺失"]
+            except Exception:
+                pass
+            try:
+                st = load_state()
+                st["items"].setdefault(lh, {})["type"] = item["type"]
+                if item.get("id"):
+                    st["items"][lh]["id"] = item["id"]
+                if item.get("title"):
+                    st["items"][lh]["title"] = item["title"]
+                save_state(st)
+            except Exception:
+                pass
+            items.append(item)
+    finally:
+        try:
+            mc.close()
+        except Exception:
+            pass
+    try:
+        _wlog("查询分流 %d 品: %s" % (len(items), " | ".join("%s=%s" % (i["lh"], i["type"]) for i in items)))
+    except Exception:
+        pass
+    return items, ""
+
+
 def handle(action, qs):
     if action == "scan":
         lhs = qs.get("lhs", "").split(",") if qs.get("lhs") else []
         return {"ok": True, "items": scan_batch(lhs)}
+    if action == "audit":
+        # 审核标记：lh + 结果(放行/送修/换源) + 备注（可反悔改标——覆盖写）
+        lh = (qs.get("lh") or "").strip()
+        res = (qs.get("res") or "").strip()
+        note = (qs.get("note") or "").strip()
+        if not lh or not res:
+            return {"ok": False, "error": "需要 lh + res"}
+        st = load_state()
+        it = st["items"].setdefault(lh, {})
+        it["audit"] = res
+        if note:
+            it["audit_note"] = note
+        it["audit_time"] = _dt.datetime.now().strftime("%m-%d %H:%M:%S")
+        save_state(st)
+        try:
+            _wlog("审核 %s => %s%s" % (lh, res, ("：" + note[:30]) if note else ""))
+        except Exception:
+            pass
+        return {"ok": True, "lh": lh, "audit": res}
+    if action == "classify":
+        lhs = qs.get("lhs", "").split(",") if qs.get("lhs") else []
+        if not lhs:
+            return {"ok": False, "error": "需要 lhs"}
+        items, err = classify_batch(lhs)
+        if err:
+            return {"ok": False, "error": err}
+        return {"ok": True, "items": items}
     if action == "material":
         lh = qs.get("lh", "")
         if lh:
