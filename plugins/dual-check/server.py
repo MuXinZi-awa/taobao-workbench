@@ -11,6 +11,18 @@ TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
 RT = os.path.join(TG, "runtime", "python.exe")
 
 
+import datetime as _dt
+_LOG_FP = r"C:\Users\jdt-pty\Desktop\推广一键跑\runtime\dual_check.log"
+
+
+def _wlog(msg):
+    try:
+        with open(_LOG_FP, "a", encoding="utf-8") as f:
+            f.write("[%s] %s\n" % (_dt.datetime.now().strftime("%m-%d %H:%M:%S"), msg))
+    except Exception as _e:
+        pass
+
+
 def handle(action, params):
     if action == "check":
         lh = (params.get("lh") or "").strip()
@@ -85,6 +97,11 @@ def handle(action, params):
                             results.append({"lh": lh, "dual": False, "result": "未搜到"})
                     except Exception as e:
                         results.append({"lh": lh, "dual": False, "result": "异常:%s" % str(e)[:40]})
+                # 0909：每品结果落日志（工作流日志——老 opt_server 风格）
+                try:
+                    _wlog("查双百 共%d品: %s" % (len(lhs), " | ".join("%s=%s" % (r["lh"], r["result"][:20]) for r in results)))
+                except Exception:
+                    pass
             finally:
                 try:
                     mc.close()

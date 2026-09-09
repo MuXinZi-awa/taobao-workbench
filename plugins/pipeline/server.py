@@ -79,7 +79,23 @@ def scan_batch(lhs):
             "推广": tg.get(lh, ""),
             "stage": s,
         })
+    try:
+        _wlog("流水线扫描 %d 品: %s" % (len(items), " | ".join("%s=%s" % (i["lh"], i["素材"][:16]) for i in items[:10])))
+    except Exception:
+        pass
     return items
+
+import datetime as _dt
+_LOG_FP = r"C:\Users\jdt-pty\Desktop\推广一键跑\runtime\pipeline.log"
+
+
+def _wlog(msg):
+    try:
+        with io.open(_LOG_FP, "a", encoding="utf-8") as f:
+            f.write("[%s] %s\n" % (_dt.datetime.now().strftime("%m-%d %H:%M:%S"), msg))
+    except Exception:
+        pass
+
 
 def handle(action, qs):
     if action == "scan":
