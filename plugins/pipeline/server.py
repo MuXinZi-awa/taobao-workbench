@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """流水线插件 server：状态读取（只读调用层）"""
-import json, os, io, sys, csv
+import json, os, io, sys, csv, subprocess
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATE_FP = os.path.join(ROOT, "state.json")
@@ -94,6 +94,7 @@ def scan_batch(lhs):
             "type": rec.get("type", ""),
             "id": rec.get("id", ""),
             "title": rec.get("title", ""),
+            "ref": _ref_for(lh, rec.get("audit", "")),
             "审核": rec.get("audit", ""),
             "上品/优化": rec.get("sp", ""),
             "推广": tg.get(lh, ""),
@@ -154,6 +155,36 @@ def _wlog(msg):
     except Exception:
         pass
 
+
+
+
+def _ref_for(lh, audit):
+    """审核参考图：待复检品看白底待复检产物；否则封面/主图1 原图"""
+    import glob as _g
+    d = os.path.join(SUCAI, lh)
+    if not os.path.isdir(d):
+        return ""
+    if audit == "待复检":
+        # 白底待复检产物（最新）
+        fs = sorted(_g.glob(os.path.join(d, "*_白底_待复检*.*")))
+        if fs:
+            return fs[-1]
+        fs = sorted(_g.glob(os.path.join(d, "*白底*.*")))
+        if fs:
+            return fs[-1]
+    try:
+        names = sorted(os.listdir(d))
+    except Exception:
+        return ""
+    for pat in ("%s_主图1", "%s_封面", "%s_主图"):
+        for n in names:
+            base = n.split(".")[0]
+            if pat % lh == base and all(k not in n for k in ("标注", "白底", "待复核", "待复检")) and n.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                return os.path.join(d, n)
+    for n in names:
+        if all(k not in n for k in ("标注", "白底", "待复核", "待复检")) and n.lower().endswith((".png", ".jpg", ".jpeg")):
+            return os.path.join(d, n)
+    return ""
 
 def classify_batch(lhs):
     """0909 查询分流：每料号搜商品(老/新) + 老品查双百 → type（MtopClient 单连循环）"""
@@ -265,6 +296,35 @@ def handle(action, qs):
         if err:
             return {"ok": False, "error": err}
         return {"ok": True, "items": items}
+    if action == "repair":
+        """送修批：读 state 标'送修'的品 → AI 修图（repair_batch.py detach 后台跑——产物白底待复检落素材）"""
+        rt = os.path.join(TG, "runtime", "python.exe")
+        rb = os.path.join(TG, "runtime", "repair_batch.py")
+        logf = os.path.join(TG, "runtime", "repair.log")
+        try:
+            # 读送修品数（提示用）
+            n = 0
+            try:
+                st = load_state()
+                n = len([lh for lh, v in st.get("items", {}).items() if v.get("audit") == "送修"])
+            except Exception:
+                pass
+            errf = logf.replace(".log", "_err.log")
+            subprocess.Popen([rt, "-X", "utf8", "-u", rb], cwd=TG,
+                             stdout=open(logf, "a", encoding="utf-8"), stderr=open(errf, "a", encoding="utf-8"))
+            return {"ok": True, "msg": "送修批已启动（%d 品标送修）——AI 修图约 2-3 分/品，完成自动落素材并标待复检（日志 runtime/repair.log）" % n}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:80]}
+    if action == "repair-status":
+        try:
+            import json as _j
+            fp = os.path.join(TG, "runtime", "repair_state.json")
+            if os.path.isfile(fp):
+                st = _j.load(io.open(fp, encoding="utf-8"))
+                return {"ok": True, "state": st}
+            return {"ok": True, "state": None}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:80]}
     if action == "material":
         lh = qs.get("lh", "")
         if lh:

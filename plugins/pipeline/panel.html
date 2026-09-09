@@ -50,13 +50,14 @@ input::placeholder { color:var(--text-m,#999); }
 
 <div class="bar">
   <input id="lh" type="text" placeholder="料号 或 淘宝 ID（单量回车）">
-  <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button onclick="adStartFrom(0)">📋 开始审核</button>
+  <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button onclick="adStartFrom(0)">📋 开始审核</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button>
   <button class="ghost" onclick="demo()">试填</button>
 </div>
 <div class="drop" id="drop"><div>📥 拖入 csv / xlsx（批量）</div><div style="font-size:11px;color:var(--text-l,#999);font-weight:400">自动识别料号列，逐行扫描——点击或拖拽</div></div>
 <div class="stage" id="stage"><span class="stagenm" id="stnm">待命</span><span style="display:flex;align-items:center;gap:6px;flex:1;justify-content:center">
  <span class="stagel">查询</span><span class="sdot" id="s0"></span><span class="stagel">素材</span><span class="sdot" id="s1"></span><span class="stagel">人工审核</span><span class="sdot" id="s2"></span><span class="stagel">上品/优化</span><span class="sdot" id="s3"></span><span class="stagel">推广</span><span class="sdot" id="s4"></span></span></div>
 <div class="cur" id="cur"></div>
+<div id="repairBar" style="display:none;padding:5px 10px;border:.5px solid #b8860b;border-radius:6px;margin-bottom:6px;font-size:12px;color:#b8860b;background:rgba(184,134,11,.06)"></div>
 <div style="overflow:auto;max-height:52vh"><table id="tb">
 <thead><tr><th>料号</th><th>类型</th><th>ID</th><th>素材</th><th>人工审核</th><th>上品/优化</th><th>推广</th></tr></thead>
 <tbody></tbody></table></div>
@@ -140,9 +141,30 @@ window.addEventListener('message', function(e){ var d=e.data;
   // 人工审核完成 = 无在途处理（送修/换源都处理完）——全放行/无在途即绿
   if(!fixN && !srcN){ setStage(2,'done','审核完成'); }
   else { setStage(2,'on','审核中-送修'+fixN+'/换源'+srcN+'待处理'); }
+  var rb=document.getElementById('rpBtn');
+  if(rb) rb.style.display=(fixN>0)?'':'none';
+  if(fixN>0) $('#cur').textContent='有 '+fixN+' 品标送修——点「🛠 送修处理」触发 AI 修图（回来走复检）';
   $('#cur').textContent='审核提交：放行'+passN+' 送修'+fixN+' 换源'+srcN+'（需审'+d.total+'）';
   if(v) scan(v.split(',')); }
 });
+async function repairRun(){
+ var d=await fetch(P+'repair').then(function(r){return r.json();});
+ $('#cur').textContent=d.msg||('✗ '+(d.error||''));
+}
+function repairPoll(){
+ fetch(P+'repair-status').then(function(r){return r.json();}).then(function(d){
+  var bar=document.getElementById('repairBar'); if(!bar) return;
+  var st=d.state;
+  if(st&&st.total>0&&(st.done+st.fail<st.total||st.cur)){
+   bar.style.display='block';
+   bar.innerHTML='🛠 送修中 '+st.done+'/'+st.total+'（当前 '+(st.cur||'—')+'，失败 '+st.fail+'）——完成后自动标待复检';
+  } else if(st&&st.total>0&&st.done+st.fail>=st.total&&st.total>0&&st.msg){
+   bar.style.display='block';
+   bar.innerHTML='✅ 送修批结束：'+st.msg+'——待复检品进审核复检';
+  } else if(st&&(!st.total||st.total===0)){ bar.style.display='none'; }
+ });
+}
+setInterval(repairPoll,5000);
 async function go(){
  const v=$('#lh').value.trim(); if(!v)return;
  $('#cur').textContent='查询 '+v+' …';
