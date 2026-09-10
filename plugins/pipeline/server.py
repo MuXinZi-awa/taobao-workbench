@@ -34,10 +34,25 @@ def _read_tg_rec():
         pass
     return out
 
+try:
+    sys.path.insert(0, TG + r"\runtime")
+    import lib_images  # 本地图库索引 F:\连接图图库
+except Exception:
+    lib_images = None
+
+
 def scan_material(lh):
     """素材目录清点 → 缺啥补啥看板"""
     d = os.path.join(SUCAI, lh)
     out = {"封面": False, "主图": False, "规格书": False, "视频": False, "详情图": False, "文件": [], "缺失": []}
+    lib = []
+    try:
+        if lib_images:
+            lib = lib_images.find(lh)
+    except Exception:
+        lib = []
+    out["图库"] = lib
+    out["图库数"] = len(lib)
     if not os.path.isdir(d):
         out["缺失"] = ["整个目录"]
         out["文件路径"] = []
@@ -56,6 +71,8 @@ def scan_material(lh):
     for k in ("封面", "主图", "规格书", "视频"):
         if not out[k]:
             out["缺失"].append(k)
+            if k in ("封面", "主图") and out["图库数"]:
+                out["可换源"] = True  # 图库有图——主图/封面可从库补
     # 参考图：封面/主图1 原图（排除 _标注 加工图 / _白底 AI返图）——默认审核看的图
     ref = ""
     for pat in ("%s_主图1", "%s_封面", "%s_主图"):
@@ -167,10 +184,10 @@ def _ref_for(lh, audit):
     if not os.path.isdir(d):
         return ""
     if audit == "待复检":
-        # 白底待复检产物（最新）
-        fs = sorted(_g.glob(os.path.join(d, "*_白底_待复检*.*")))
+        # 待复检产物（白底/库源/换源——最新）
+        fs = sorted(_g.glob(os.path.join(d, "*_待复检*.*")))
         if fs:
-            return fs[-1]
+            return fs[0]  # 库源1 在前（首图）
         fs = sorted(_g.glob(os.path.join(d, "*白底*.*")))
         if fs:
             return fs[-1]
@@ -242,6 +259,9 @@ def classify_batch(lhs):
                 m = scan_material(lh)
                 item["素材"] = "缺:" + ",".join(m["缺失"]) if m["缺失"] else "齐"
                 item["缺列表"] = m["缺失"]
+                item["图库数"] = m.get("图库数", 0)
+                if m.get("图库数"):
+                    item["素材"] += "(库%d)" % m["图库数"]
                 item["orig"] = _ref_for(lh, "")
                 try:
                     _st0 = load_state()
