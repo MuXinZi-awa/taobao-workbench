@@ -260,6 +260,17 @@ async function load(){
     return;
   }
   DATA=d; updateMeta(d); render();
+  if(d.refreshing){ pollUntilDone(); }
+}
+async function pollUntilDone(){
+  let n=0;
+  const t=setInterval(async()=>{
+    n++;
+    let dd;
+    try{ dd=await fetch(P+'report').then(x=>x.json()); }catch(e){}
+    if(dd && dd.ok && !dd.refreshing){ clearInterval(t); DATA=dd; updateMeta(dd); render(); }
+    else if(n>=48){ clearInterval(t); }
+  }, 5000);
 }
 function updateMeta(d){
   document.getElementById('meta').textContent =
@@ -268,7 +279,7 @@ function updateMeta(d){
 }
 async function refreshNow(){
   const btn=document.getElementById('rfbtn');
-  if(btn){ btn.textContent='采集中…'; btn.disabled=true; }
+  if(btn){ btn.textContent='更新今日中…'; btn.disabled=true; }
   let r;
   try{ r = await fetch(P+'refresh').then(x=>x.json()); }catch(e){ r={ok:false}; }
   if(!r.ok){ alert('启动采集失败：'+(r.error||'')); if(btn){btn.textContent='刷新';btn.disabled=false;} return; }
@@ -282,7 +293,7 @@ async function refreshNow(){
       if(btn){ btn.textContent='刷新'; btn.disabled=false; }
     } else if(n>=48){
       clearInterval(t); if(btn){ btn.textContent='刷新'; btn.disabled=false; } load();
-    } else if(btn){ btn.textContent='采集中…('+(n*5)+'s)'; }
+    } else if(btn){ btn.textContent='更新中…('+(n*5)+'s)'; }
   }, 5000);
 }
 window.addEventListener('message', function(e){ var d=e.data; if(!d||d.type!=='wb-theme'||!d.vars) return;
