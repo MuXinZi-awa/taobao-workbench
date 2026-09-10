@@ -445,7 +445,7 @@ function connFormHtml(d){
   +'<option value="custom"'+(ty==='custom'?' selected':'')+'>其他</option></select></div>'
   +row('名称','cfName',d.name,'连接器专业 / 公司ERP');
  if(ty==='odoo'){
-  body+=row('URL','cfUrl',d.url,'http://erp.xxx.com')
+  body+=row('URL','cfUrl',d.url,'https://erp.xxx.com（服务器根，别带 /odoo 等网站路径）')
    +row('端口','cfPort',d.port,'8069')
    +row('数据库','cfDb',d.dbname,'odoo 库名')
    +row('账号','cfUser',d.username,'登录账号')
