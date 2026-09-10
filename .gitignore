@@ -9,3 +9,8 @@ plugins/*/state.json
 data/*.db
 data/*.sqlite
 
+# 运行时/临时（勿提交）
+_err.txt
+_out.txt
+plugins/adreport/预览-*.png
+
