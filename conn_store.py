@@ -56,17 +56,22 @@ def _conn():
     c = sqlite3.connect(DB)
     c.execute("""CREATE TABLE IF NOT EXISTS conn(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT, name TEXT, url TEXT, dbname TEXT,
-        username TEXT, secret BLOB, note TEXT,
+        type TEXT, name TEXT, url TEXT, port TEXT, dbname TEXT,
+        username TEXT, secret BLOB, note TEXT, profile TEXT,
         active INTEGER DEFAULT 0, created TEXT)""")
+    # 迁移：旧库补列
+    cols = [r[1] for r in c.execute("PRAGMA table_info(conn)").fetchall()]
+    for col, ddl in (("port", "TEXT"), ("profile", "TEXT")):
+        if col not in cols:
+            c.execute("ALTER TABLE conn ADD COLUMN %s %s" % (col, ddl))
     return c
 
 def list_all(mask=True):
     c = _conn()
-    rows = c.execute("SELECT id,type,name,url,dbname,username,note,active,created FROM conn ORDER BY id").fetchall()
+    rows = c.execute("SELECT id,type,name,url,port,dbname,username,note,active,created,profile FROM conn ORDER BY id").fetchall()
     c.close()
-    return [{"id": r[0], "type": r[1], "name": r[2], "url": r[3], "dbname": r[4],
-             "username": r[5], "note": r[6], "active": bool(r[7]), "created": r[8]} for r in rows]
+    return [{"id": r[0], "type": r[1], "name": r[2], "url": r[3], "port": r[4], "dbname": r[5],
+             "username": r[6], "note": r[7], "active": bool(r[8]), "created": r[9], "profile": r[10]} for r in rows]
 
 def get_secret(cid):
     c = _conn()
@@ -81,12 +86,12 @@ def save(d):
     if cid:
         cur = c.execute("SELECT secret FROM conn WHERE id=?", (cid,)).fetchone()
         sec = dpapi_encrypt(d["secret"]) if d.get("secret") else (cur[0] if cur else None)
-        c.execute("UPDATE conn SET type=?,name=?,url=?,dbname=?,username=?,secret=?,note=? WHERE id=?",
-                  (d.get("type"), d.get("name"), d.get("url"), d.get("dbname"), d.get("username"), sec, d.get("note"), cid))
+        c.execute("UPDATE conn SET type=?,name=?,url=?,port=?,dbname=?,username=?,secret=?,note=?,profile=? WHERE id=?",
+                  (d.get("type"), d.get("name"), d.get("url"), d.get("port"), d.get("dbname"), d.get("username"), sec, d.get("note"), d.get("profile"), cid))
     else:
         sec = dpapi_encrypt(d.get("secret", ""))
-        c.execute("INSERT INTO conn(type,name,url,dbname,username,secret,note,active,created) VALUES(?,?,?,?,?,?,?,0,?)",
-                  (d.get("type"), d.get("name"), d.get("url"), d.get("dbname"), d.get("username"), sec, d.get("note"),
+        c.execute("INSERT INTO conn(type,name,url,port,dbname,username,secret,note,profile,active,created) VALUES(?,?,?,?,?,?,?,?,?,0,?)",
+                  (d.get("type"), d.get("name"), d.get("url"), d.get("port"), d.get("dbname"), d.get("username"), sec, d.get("note"), d.get("profile"),
                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M")))
         cid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
     c.commit()
@@ -109,12 +114,12 @@ def activate(cid):
 def active_of(ctype):
     """某类型的当前激活连接（含明文密码——仅供脚本调用）"""
     c = _conn()
-    r = c.execute("SELECT id,type,name,url,dbname,username,secret,note FROM conn WHERE active=1 AND type=?", (ctype,)).fetchone()
+    r = c.execute("SELECT id,type,name,url,port,dbname,username,secret,note,profile FROM conn WHERE active=1 AND type=?", (ctype,)).fetchone()
     c.close()
     if not r:
         return None
-    return {"id": r[0], "type": r[1], "name": r[2], "url": r[3], "dbname": r[4],
-            "username": r[5], "secret": dpapi_decrypt(r[6]), "note": r[7]}
+    return {"id": r[0], "type": r[1], "name": r[2], "url": r[3], "port": r[4], "dbname": r[5],
+            "username": r[6], "secret": dpapi_decrypt(r[7]), "note": r[8], "profile": r[9]}
 
 if __name__ == "__main__":
     import sys
