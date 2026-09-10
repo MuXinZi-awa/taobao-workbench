@@ -45,6 +45,7 @@ td{padding:6px 12px;border-bottom:.5px solid var(--border,#eee);font-variant-num
 .legend{font-size:11px;color:var(--text-m,#888);display:flex;gap:14px;margin-top:6px}
 .legend i{display:inline-block;width:12px;height:0;border-top-width:2px;border-top-style:solid;vertical-align:middle;margin-right:4px}
 .empty{color:var(--text-m,#888);text-align:center;padding:30px 0;font-size:13px;line-height:1.9}
+.warnacc{color:#c0392b;font-weight:600}
 #tip{position:fixed;display:none;background:#2A2622;color:#fff;font-size:11.5px;padding:5px 9px;border-radius:6px;
   pointer-events:none;z-index:99;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 </style></head>
@@ -273,9 +274,13 @@ async function pollUntilDone(){
   }, 5000);
 }
 function updateMeta(d){
-  document.getElementById('meta').textContent =
-    '共 '+ (d.days||[]).length +' 天有数据' + (d.range? '（报表查询 '+d.range.start.slice(5)+' ~ '+d.range.end.slice(5)+'）':'')
-    + '　采集于 ' + esc((d.fetchedAt||'').replace('T',' '));
+  const who = [esc(d.accountName||''), d.memberId? '账号 '+esc(d.memberId) : ''].filter(Boolean).join(' · ');
+  const warn = (d.accountMatch === false)
+    ? '　<span class="warnacc">⚠ 数据属于「'+esc(d.memberId||'?')+'」，与当前激活连接不一致（连接绑定 '+esc(d.activeMember||'?')+'）—— 点右上「刷新」采集当前账户</span>'
+    : '';
+  document.getElementById('meta').innerHTML =
+    (who? who+'　|　' : '') + '共 '+ (d.days||[]).length +' 天有数据' + (d.range? '（报表查询 '+d.range.start.slice(5)+' ~ '+d.range.end.slice(5)+'）':'')
+    + '　采集于 ' + esc((d.fetchedAt||'').replace('T',' ')) + warn;
 }
 async function refreshNow(){
   const btn=document.getElementById('rfbtn');

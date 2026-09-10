@@ -22,6 +22,19 @@ DATA_DIR = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\数据"
 PORT = 8900
 
 
+def core_version():
+    """内核版本 = CHANGELOG 首条 ## vX.Y.Z（单一来源，永不滞后）"""
+    try:
+        with open(os.path.join(BASE, "CHANGELOG.md"), encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r"##\s*v([0-9][0-9.]*)", line)
+                if m:
+                    return m.group(1)
+    except Exception:
+        pass
+    return "0.0.0"
+
+
 def scan_plugins():
     """扫 plugins/*/manifest.json → [{id, name, icon, panel, desc}]"""
     out = []
@@ -333,7 +346,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:120]})
             if p == "/api/plugins":
-                return self._json({"plugins": scan_plugins()})
+                return self._json({"plugins": scan_plugins(), "core": core_version()})
             if p == "/api/logkeep":
                 # 日志保留天数（0909——设置-通用可改；清理归档超期删除）
                 try:
