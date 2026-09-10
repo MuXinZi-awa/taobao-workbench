@@ -1,7 +1,7 @@
 {
   "id": "pipeline",
   "name": "流水线",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "desc": "上品/优化/推广 一条龙状态机：拖入清单 → 查询 → 素材整理 → 人工审核 → 上品/优化 → 推广",
   "panel": "panel.html",
   "entry": "panel.html",

@@ -5,6 +5,9 @@ import json, os, io, sys, csv, subprocess
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATE_FP = os.path.join(ROOT, "state.json")
 TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+PBASE = os.path.dirname(os.path.abspath(__file__))   # 插件目录
+SCRIPTS = os.path.join(PBASE, "scripts")             # 插件内脚本（自包含）
+PY = sys.executable                                  # 工作台 python（含依赖）
 SUCAI = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\产品素材"
 TG_REC = os.path.join(TG, "推广记录.csv")
 
@@ -35,7 +38,7 @@ def _read_tg_rec():
     return out
 
 try:
-    sys.path.insert(0, TG + r"\runtime")
+    sys.path.insert(0, SCRIPTS)
     import lib_images  # 本地图库索引 F:\连接图图库
 except Exception:
     lib_images = None
@@ -203,12 +206,20 @@ def _ref_for(lh, audit):
     for n in names:
         if all(k not in n for k in ("标注", "白底", "待复核", "待复检")) and n.lower().endswith((".png", ".jpg", ".jpeg")):
             return os.path.join(d, n)
+    # 素材目录无图 → 图库兜底（自有实拍——审核仍能看到产品图）
+    try:
+        if lib_images:
+            lib = lib_images.find(lh)
+            if lib:
+                return lib[0]
+    except Exception:
+        pass
     return ""
 
 def classify_batch(lhs):
     """0909 查询分流：每料号搜商品(老/新) + 老品查双百 → type（MtopClient 单连循环）"""
     try:
-        sys.path.insert(0, TG)
+        sys.path.insert(0, SCRIPTS)
         from _mtop_api import MtopClient
     except Exception as e:
         return [], "导入失败: %s" % str(e)[:60]
@@ -261,7 +272,12 @@ def classify_batch(lhs):
                 item["缺列表"] = m["缺失"]
                 item["图库数"] = m.get("图库数", 0)
                 if m.get("图库数"):
-                    item["素材"] += "(库%d)" % m["图库数"]
+                    _only_img = [x for x in m["缺失"] if x in ("封面", "主图")]
+                    if _only_img and len(_only_img) == len(m["缺失"]):
+                        # 只缺图且有库源——标可补（不算硬缺）
+                        item["素材"] = "缺:%s[库%d→可补]" % (",".join(m["缺失"]), m["图库数"])
+                    else:
+                        item["素材"] += "(库%d)" % m["图库数"]
                 item["orig"] = _ref_for(lh, "")
                 try:
                     _st0 = load_state()
@@ -329,7 +345,7 @@ def handle(action, qs):
         """repair_state.json 有在跑批（total>done+fail）→ True"""
         import json as _j
         try:
-            fp = os.path.join(TG, "runtime", "repair_state.json")
+            fp = os.path.join(SCRIPTS, "repair_state.json")
             if os.path.isfile(fp):
                 st = _j.load(io.open(fp, encoding="utf-8"))
                 if st.get("total", 0) > 0 and st.get("done", 0) + st.get("fail", 0) < st.get("total", 0):
@@ -343,9 +359,9 @@ def handle(action, qs):
         _bs = _batch_busy()
         if _bs:
             return {"ok": False, "error": "已有批在跑（%s）——先等完成或停掉" % _bs}
-        rt = os.path.join(TG, "runtime", "python.exe")
-        rb = os.path.join(TG, "runtime", "repair_batch.py")
-        logf = os.path.join(TG, "runtime", "repair.log")
+        rt = PY
+        rb = os.path.join(SCRIPTS, "repair_batch.py")
+        logf = os.path.join(SCRIPTS, "repair.log")
         try:
             # 读送修品数（提示用）
             n = 0
@@ -355,7 +371,7 @@ def handle(action, qs):
             except Exception:
                 pass
             errf = logf.replace(".log", "_err.log")
-            subprocess.Popen([rt, "-X", "utf8", "-u", rb], cwd=TG,
+            subprocess.Popen([rt, "-X", "utf8", "-u", rb], cwd=SCRIPTS,
                              stdout=open(logf, "a", encoding="utf-8"), stderr=open(errf, "a", encoding="utf-8"))
             return {"ok": True, "msg": "送修批已启动（%d 品标送修）——AI 修图约 2-3 分/品，完成自动落素材并标待复检（日志 runtime/repair.log）" % n}
         except Exception as e:
@@ -365,9 +381,9 @@ def handle(action, qs):
         _bs = _batch_busy()
         if _bs:
             return {"ok": False, "error": "已有批在跑（%s）——先等完成或停掉" % _bs}
-        rt = os.path.join(TG, "runtime", "python.exe")
-        sb = os.path.join(TG, "runtime", "switch_src.py")
-        logf = os.path.join(TG, "runtime", "repair.log")
+        rt = PY
+        sb = os.path.join(SCRIPTS, "switch_src.py")
+        logf = os.path.join(SCRIPTS, "repair.log")
         try:
             n = 0
             try:
@@ -376,7 +392,7 @@ def handle(action, qs):
             except Exception:
                 pass
             errf = logf.replace(".log", "_err.log")
-            subprocess.Popen([rt, "-X", "utf8", "-u", sb], cwd=TG,
+            subprocess.Popen([rt, "-X", "utf8", "-u", sb], cwd=SCRIPTS,
                              stdout=open(logf, "a", encoding="utf-8"), stderr=open(errf, "a", encoding="utf-8"))
             return {"ok": True, "msg": "换源批已启动（%d 品标换源）——TE官网/立创找干净源，完成标待复检（日志 repair.log）" % n}
         except Exception as e:
@@ -394,7 +410,7 @@ def handle(action, qs):
     if action == "repair-status":
         try:
             import json as _j
-            fp = os.path.join(TG, "runtime", "repair_state.json")
+            fp = os.path.join(SCRIPTS, "repair_state.json")
             if os.path.isfile(fp):
                 st = _j.load(io.open(fp, encoding="utf-8"))
                 return {"ok": True, "state": st}
