@@ -493,7 +493,7 @@ async function renderPlugins(c){ c.innerHTML='<h3>插件</h3><div class="desc">�
  const d=await api('/api/plugins'); const pls=d.plugins||[]; const list=document.getElementById('plugList');
  if(!pls.length){ list.innerHTML='<div style="font-size:12px;color:var(--text-m)">暂无已装插件——拖 zip 安装</div>'; return; }
  pls.forEach(p=>{ const el=document.createElement('div'); el.className='plug-item';
-  el.innerHTML='<div style="flex:1;min-width:0"><div class="pn">'+p.name+' <span class="pv">v0.1.0</span></div><div class="pd">'+(p.desc||'')+'</div></div><span class="tag">'+(p.enabled===false?'已禁用':'已启用')+'</span><span style="margin-left:6px;cursor:pointer;font-size:11px;color:var(--accent-h)" onclick="event.stopPropagation();togglePlug('+p.id+',this)">切换</span>';
+  el.innerHTML='<div style="flex:1;min-width:0"><div class="pn">'+p.name+' <span class="pv">v'+(p.version||'0.0.0')+'</span></div><div class="pd">'+(p.desc||'')+'</div></div><span class="tag">'+(p.enabled===false?'已禁用':'已启用')+'</span><span style="margin-left:6px;cursor:pointer;font-size:11px;color:var(--accent-h)" onclick="event.stopPropagation();togglePlug('+p.id+',this)">切换</span>';
   el.onclick=()=>showPlugDetail(c,p); list.appendChild(el); }); }
 async function togglePlug(id,el){ const on=el.textContent==='已禁用';
  const d=await api('/api/plugin-toggle?id='+encodeURIComponent(id)+'&on='+(on?'1':'0'));
