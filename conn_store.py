@@ -61,17 +61,18 @@ def _conn():
         active INTEGER DEFAULT 0, created TEXT)""")
     # 迁移：旧库补列
     cols = [r[1] for r in c.execute("PRAGMA table_info(conn)").fetchall()]
-    for col, ddl in (("port", "TEXT"), ("profile", "TEXT")):
+    for col, ddl in (("port", "TEXT"), ("profile", "TEXT"), ("member_id", "TEXT")):
         if col not in cols:
             c.execute("ALTER TABLE conn ADD COLUMN %s %s" % (col, ddl))
     return c
 
 def list_all(mask=True):
     c = _conn()
-    rows = c.execute("SELECT id,type,name,url,port,dbname,username,note,active,created,profile FROM conn ORDER BY id").fetchall()
+    rows = c.execute("SELECT id,type,name,url,port,dbname,username,note,active,created,profile,member_id FROM conn ORDER BY id").fetchall()
     c.close()
     return [{"id": r[0], "type": r[1], "name": r[2], "url": r[3], "port": r[4], "dbname": r[5],
-             "username": r[6], "note": r[7], "active": bool(r[8]), "created": r[9], "profile": r[10]} for r in rows]
+             "username": r[6], "note": r[7], "active": bool(r[8]), "created": r[9], "profile": r[10],
+             "member_id": r[11] if len(r) > 11 else ""} for r in rows]
 
 def get_secret(cid):
     c = _conn()
@@ -114,15 +115,24 @@ def activate(cid):
     c.commit()
     c.close()
 
+def set_member_id(cid, mid):
+    """采集回填：把 memberId 记到连接上（账户 ↔ 连接 绑定）"""
+    c = _conn()
+    c.execute("UPDATE conn SET member_id=? WHERE id=?", (str(mid or ""), cid))
+    c.commit()
+    c.close()
+
+
 def active_of(ctype):
     """某类型的当前激活连接（含明文密码——仅供脚本调用）"""
     c = _conn()
-    r = c.execute("SELECT id,type,name,url,port,dbname,username,secret,note,profile FROM conn WHERE active=1 AND type=?", (ctype,)).fetchone()
+    r = c.execute("SELECT id,type,name,url,port,dbname,username,secret,note,profile,member_id FROM conn WHERE active=1 AND type=?", (ctype,)).fetchone()
     c.close()
     if not r:
         return None
     return {"id": r[0], "type": r[1], "name": r[2], "url": r[3], "port": r[4], "dbname": r[5],
-            "username": r[6], "secret": dpapi_decrypt(r[7]), "note": r[8], "profile": r[9]}
+            "username": r[6], "secret": dpapi_decrypt(r[7]), "note": r[8], "profile": r[9],
+            "member_id": r[10] if len(r) > 10 else ""}
 
 if __name__ == "__main__":
     import sys

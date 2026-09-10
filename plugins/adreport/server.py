@@ -60,6 +60,32 @@ def _insight(days, total, scenes, charge):
     return lines
 
 
+def _resolve_account(raw):
+    """本次采集对应的账号（memberId）——两级回退，与采集侧 _report_fetch.py 一致；取不到返回空串"""
+    tr = ((raw.get("trend") or {}).get("data") or {}).get("list") or []
+    if tr:
+        a = str(tr[0].get("memberId") or "")
+        if a:
+            return a
+    al = ((raw.get("account") or {}).get("data") or {}).get("list") or []
+    if al:
+        return str(al[0].get("memberId") or "")
+    return ""
+
+
+def _active_conn():
+    """当前激活的店铺连接 → {"name","member_id"}；取不到返回 {}（动态，切号即变）"""
+    try:
+        import sys as _s, os as _o
+        WB = _o.path.dirname(_o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+        if WB not in _s.path:
+            _s.path.insert(0, WB)
+        import conn_store
+        return conn_store.active_of("taobao") or {}
+    except Exception:
+        return {}
+
+
 def report():
     d = _load()
     if not d:
@@ -68,6 +94,8 @@ def report():
     trend_rows = ((raw.get("trend") or {}).get("data") or {}).get("list") or []
     acct_l = ((raw.get("account") or {}).get("data") or {}).get("list") or [{}]
     acct = acct_l[0] if acct_l else {}
+    _mid = _resolve_account(raw)   # 本次数据所属账号（memberId）
+    _act = _active_conn()          # 当前激活连接（名称 + 绑定的 memberId）
     scene = ((raw.get("scene") or {}).get("data") or {})
     charge = (raw.get("chargeSum") or {}).get("data") or {}
 
@@ -78,11 +106,9 @@ def report():
         if TG not in _sys.path:
             _sys.path.insert(0, TG)
         import report_db as _rdb
-        _acct = ""
-        _tr = ((raw.get("trend") or {}).get("data") or {}).get("list") or []
-        if _tr:
-            _acct = str(_tr[0].get("memberId") or "")
-        for _r in _rdb.get_daily(account=_acct or None):
+        # 取不到账号 → 不查库（绝不放开全库，防跨账号串台）；空则回退下方 JSON
+        _rows = _rdb.get_daily(account=_mid) if _mid else []
+        for _r in _rows:
             days.append({
                 "date": _r.get("date") or "",
                 "charge": _f(_r.get("charge")), "adPv": _i(_r.get("adPv")), "click": _i(_r.get("click")),
@@ -192,6 +218,9 @@ def report():
             refreshing = True
 
     return {"ok": True, "fetchedAt": d.get("fetchedAt"), "range": d.get("range"),
+            "accountName": _act.get("name") or "", "memberId": _mid,
+            "activeMember": _act.get("member_id") or "",
+            "accountMatch": (str(_act.get("member_id")) == str(_mid)) if (_act.get("member_id") and _mid) else None,
             "days": days, "total": total, "scenes": scenes, "scenesByRange": scenes_by_range,
             "plansByRange": plans_by_range, "today": today_total, "plansToday": plans_today,
             "scenesToday": scenes_today, "refreshing": refreshing,
