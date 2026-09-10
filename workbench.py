@@ -13,6 +13,10 @@ import re
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 PLUGINS_DIR = os.path.join(BASE, "plugins")
+try:
+    import conn_store  # 连接导航（SQLite+DPAPI）
+except Exception:
+    conn_store = None
 MAT_ROOT = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\产品素材"
 DATA_DIR = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\数据"
 PORT = 8900
@@ -168,6 +172,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         f.write(zf.read(n))
                 return self._json({"ok": True, "id": pid, "name": m.get("name", pid),
                                    "desc": m.get("desc", ""), "readme": os.path.isfile(os.path.join(base, "README.md"))})
+            if p == "/api/conn/save":
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                    d = json.loads(self.rfile.read(length).decode("utf-8", "replace") or "{}")
+                    cid = conn_store.save(d)
+                    return self._json({"ok": True, "id": cid})
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)[:100]})
             if p == "/api/logkeep":
                 # 写日志保留天数
                 try:
@@ -239,6 +251,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     if _serve_file(self, fp, ct):
                         return
                 return self._json({"error": "资源不存在"}, 404)
+            if p.startswith("/api/conn/"):
+                import urllib.parse as _up
+                q = _up.parse_qs(p.split("?", 1)[1]) if "?" in p else {}
+                act = p[len("/api/conn/"):].split("?")[0]
+                try:
+                    if act == "list":
+                        return self._json({"ok": True, "items": conn_store.list_all()})
+                    if act == "save":
+                        return self._json({"ok": False, "error": "save 用 POST"})
+                    if act == "del":
+                        conn_store.delete(int(q.get("id", ["0"])[0]))
+                        return self._json({"ok": True})
+                    if act == "activate":
+                        conn_store.activate(int(q.get("id", ["0"])[0]))
+                        return self._json({"ok": True})
+                    if act == "reveal":
+                        return self._json({"ok": True, "secret": conn_store.get_secret(int(q.get("id", ["0"])[0]))})
+                    if act == "test":
+                        cid = int(q.get("id", ["0"])[0])
+                        row = [x for x in conn_store.list_all() if x["id"] == cid]
+                        if not row:
+                            return self._json({"ok": False, "error": "连接不存在"})
+                        r = row[0]
+                        if r["type"] == "odoo":
+                            import xmlrpc.client
+                            pw = conn_store.get_secret(cid)
+                            common = xmlrpc.client.ServerProxy("%s/xmlrpc/2/common" % r["url"].rstrip("/"))
+                            uid = common.authenticate(r["dbname"], r["username"], pw, {})
+                            if uid:
+                                return self._json({"ok": True, "msg": "Odoo 登录成功 uid=%s" % uid})
+                            return self._json({"ok": False, "error": "Odoo 认证失败（账号/密码/库名）"})
+                        return self._json({"ok": True, "msg": "已保存（%s 类型测试后续接入）" % r["type"]})
+                    return self._json({"ok": False, "error": "未知 conn action"}, 404)
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)[:120]})
             if p == "/api/plugins":
                 return self._json({"plugins": scan_plugins()})
             if p == "/api/logkeep":

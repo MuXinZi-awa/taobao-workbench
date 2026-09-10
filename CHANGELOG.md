@@ -4,6 +4,17 @@
 
 ---
 
+## v0.6.0 · 2026-09-10（连接导航 · 凭据管理）
+
+### 新增
+- **连接导航**（设置 → 连接）：多连接管理（淘宝店铺 / Odoo ERP），可新增/编辑/激活/测试/删除
+- **凭据加密**：密码走 **Windows DPAPI**（ctypes CryptProtectData——可逆、绑当前用户、零依赖）——**绝不明文/不用 MD5**（MD5 不可逆，登录需明文，不可用于此）
+- **存储**：`data/conn.db`（sqlite3 标准库，零下载）
+- **Odoo ERP 测试连通**：`xmlrpc.client` 标准库直连 `/xmlrpc/2/common` 认证——为接入公司 ERP 产品数据铺路（替代爬取）
+- 内核 API：`/api/conn/list|save|del|activate|reveal|test`
+
+---
+
 ## v0.5.0 · 2026-09-09~10（送修/换源闭环 + 图库接入）
 
 ### 新增

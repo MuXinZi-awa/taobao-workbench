@@ -233,6 +233,7 @@ body[data-theme="dsh"] .about-row { border-color:rgba(90,80,60,.10); }body[data-
       <div class="item active" data-page="plugins" onclick="openSetPage('plugins')"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>插件</div>
       <div class="item" data-page="interface" onclick="openSetPage('interface')"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="12" height="12" rx="1"/><circle cx="5" cy="5" r="1.4"/><path d="M4 13l4.5-5 2.5 2.5 2-2"/></svg>界面</div>
       <div class="item" data-page="browser" onclick="openSetPage('browser')"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2.5 2.3 2.5 9.7 0 12M8 2C5.5 4.3 5.5 11.7 8 14"/></svg>浏览器</div>
+      <div class="item" data-page="conn" onclick="openSetPage('conn')"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M6.5 9.5a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-1 1"/><path d="M9.5 6.5a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l1-1"/></svg>连接</div>
       <div class="item" data-page="general" onclick="openSetPage('general')"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M12.4 3.6l-1.3 1.3M4.9 11.1l-1.3 1.3"/></svg>通用</div>
       <div class="item" data-page="about" onclick="openSetPage('about')"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 4.5v.5"/></svg>关于</div>
     </div>
@@ -387,8 +388,72 @@ function openSetPage(page){ document.querySelectorAll('.set-nav .item').forEach(
  if(page==='plugins')renderPlugins(document.getElementById('setContent'));
  else if(page==='browser')renderBrowser(document.getElementById('setContent'));
  else if(page==='interface')renderInterface(document.getElementById('setContent'));
+ else if(page==='conn')renderConn(document.getElementById('setContent'));
  else if(page==='general')renderGeneral(document.getElementById('setContent'));
  else renderAbout(document.getElementById('setContent')); }
+async function renderConn(c){
+ c.innerHTML='<h3>连接导航</h3><div class="desc">店铺 / ERP 凭据（密码 Windows DPAPI 加密存储，绝不落明文）· 可保存多个、切换当前</div>'
+  +'<div id="connList"></div><div id="connForm" style="margin-top:14px"></div>';
+ renderConnList();
+}
+async function renderConnList(){
+ const list=document.getElementById('connList'); if(!list)return;
+ const d=await api('/api/conn/list'); const items=d.items||[];
+ if(!items.length){ list.innerHTML='<div style="font-size:12px;color:var(--text-m);padding:8px 0">暂无连接——下方新增</div>'; }
+ else{
+  list.innerHTML=items.map(x=>{
+   const t=x.type==='odoo'?'ERP':(x.type==='taobao'?'店铺':'其他');
+   return '<div class="plug-item" style="margin-bottom:6px">'
+    +'<div style="flex:1;min-width:0"><div class="pn">'+esc(x.name||'(未命名)')+' <span class="pv">'+t+(x.active?' · 已激活':'')+'</span></div>'
+    +'<div class="pd">'+esc(x.username||'')+(x.url?' · '+esc(x.url):'')+(x.dbname?' · '+esc(x.dbname):'')+'</div></div>'
+    +'<span style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px" onclick="connAct('+x.id+')">激活</span>'
+    +'<span style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px" onclick="connTest('+x.id+')">测试</span>'
+    +'<span style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px" onclick="connEdit('+x.id+')">编辑</span>'
+    +'<span style="cursor:pointer;font-size:11px;color:#b04a3a;margin-left:6px" onclick="connDel('+x.id+')">删</span>'
+    +'</div>';
+  }).join('');
+ }
+ renderConnForm();
+}
+let CONN_EDIT=null;
+function renderConnForm(){
+ const f=document.getElementById('connForm'); if(!f)return;
+ if(CONN_EDIT) f.innerHTML=connFormHtml(CONN_EDIT);
+ else f.innerHTML='<div style="text-align:left"><button class="ghost" onclick="CONN_EDIT={};renderConnForm()">+ 新增连接</button></div>';
+}
+function connFormHtml(d){
+ const ty=d.type||'taobao';
+ return '<div style="border:.5px solid var(--line,#ddd);border-radius:8px;padding:12px">'
+ +'<div class="row"><span class="k">类型</span><select id="cfType" onchange="renderConnForm()">'
+ +'<option value="taobao"'+(ty==='taobao'?' selected':'')+'>淘宝店铺</option>'
+ +'<option value="odoo"'+(ty==='odoo'?' selected':'')+'>Odoo ERP</option>'
+ +'<option value="custom"'+(ty==='custom'?' selected':'')+'>其他</option></select></div>'
+ +'<div class="row"><span class="k">名称</span><input id="cfName" value="'+esc(d.name||'')+'" placeholder="如 连接器专业 / 公司ERP"></div>'
+ +(ty==='odoo'?'<div class="row"><span class="k">地址</span><input id="cfUrl" value="'+esc(d.url||'')+'" placeholder="http://erp.xxx.com"></div>'
+  +'<div class="row"><span class="k">库名</span><input id="cfDb" value="'+esc(d.dbname||'')+'" placeholder="odoo 数据库名"></div>':'')
+ +'<div class="row"><span class="k">账号</span><input id="cfUser" value="'+esc(d.username||'')+'"></div>'
+ +'<div class="row"><span class="k">密码</span><input id="cfPass" type="password" placeholder="'+(d.id?'留空=不修改':'输入密码')+'"></div>'
+ +'<div class="row"><span class="k">备注</span><input id="cfNote" value="'+esc(d.note||'')+'"></div>'
+ +'<div style="margin-top:8px"><button onclick="connSave('+(d.id||0)+')">保存</button> '
+ +'<button class="ghost" onclick="CONN_EDIT=null;renderConnForm()">取消</button>'
+ +(d.id?' <button class="ghost" onclick="connReveal('+d.id+')">显示密码</button>':'')+'</div>'
+ +'<div id="cfMsg" style="font-size:12px;color:var(--text-m);margin-top:6px"></div></div>';
+}
+async function connSave(id){
+ const g=x=>{const e=document.getElementById(x);return e?e.value:'';};
+ const body={id:id||0,type:g('cfType'),name:g('cfName'),url:g('cfUrl'),dbname:g('cfDb'),username:g('cfUser'),secret:g('cfPass'),note:g('cfNote')};
+ const r=await fetch(API+'/api/conn/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+ const m=document.getElementById('cfMsg'); if(m)m.textContent=r.ok?'✓ 已保存':('✗ '+(r.error||'失败'));
+ if(r.ok){ CONN_EDIT=null; renderConnList(); }
+}
+async function connAct(id){ await api('/api/conn/activate?id='+id); renderConnList(); }
+async function connDel(id){ if(!confirm('删除该连接？'))return; await api('/api/conn/del?id='+id); CONN_EDIT=null; renderConnList(); }
+async function connTest(id){ const d=await api('/api/conn/test?id='+id); alert(d.ok?('✓ '+(d.msg||'成功')):('✗ '+(d.error||'失败'))); }
+async function connReveal(id){ const d=await api('/api/conn/reveal?id='+id); if(d.ok){ const e=document.getElementById('cfPass'); if(e)e.value=d.secret; } }
+async function connEdit(id){
+ const d=await api('/api/conn/list'); const x=(d.items||[]).find(v=>v.id===id);
+ if(x){ CONN_EDIT=x; renderConnForm(); }
+}
 async function renderPlugins(c){ c.innerHTML='<h3>插件</h3><div class="desc">拖入 .zip 安装（含 manifest.json + README.md）· 点击查看详情</div><div class="dropzone" id="dz">拖入插件 zip 到此处安装</div><div id="plugList"></div>';
  const dz=document.getElementById('dz');
  dz.ondragover=e=>{ e.preventDefault(); dz.style.borderColor='var(--accent)'; };
@@ -544,7 +609,7 @@ function renderGeneral(c){
 async function setAutoStart(){ const d=await api('/api/autostart'); alert(d.msg||d.error||'完成'); }
 uiApply();
 function renderAbout(c){ c.innerHTML='<h3>关于</h3><div class="desc">优化管理工作台</div>'
- +'<div class="about-row"><span class="k">版本</span><span>v0.5.0</span></div>'
+ +'<div class="about-row"><span class="k">版本</span><span>v0.6.0</span></div>'
  +'<div class="about-row"><span class="k">内核</span><span>workbench.py · 8900</span></div>'
  +'<div class="about-row"><span class="k">设计</span><span>简单内核 + 插件丰富</span></div>'
  +'<div class="about-row"><span class="k">书桌联动</span><span>当前品素材</span></div>'
