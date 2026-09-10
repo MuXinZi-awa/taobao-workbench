@@ -7,6 +7,7 @@
 ## v0.6.0 · 2026-09-10（连接导航 · 凭据管理）
 
 ### 新增
+- **新插件 `odoo-erp`（ERP 数据）**：Odoo **只读**查询——料号 → 售价/成本/库存/品牌/描述/分类（仅 authenticate/search_read/search_count，绝不写生产库）
 - **连接导航**（设置 → 连接）：多连接管理（淘宝店铺 / Odoo ERP），可新增/编辑/激活/测试/删除
 - **凭据加密**：密码走 **Windows DPAPI**（ctypes CryptProtectData——可逆、绑当前用户、零依赖）——**绝不明文/不用 MD5**（MD5 不可逆，登录需明文，不可用于此）
 - **存储**：`data/conn.db`（sqlite3 标准库，零下载）
