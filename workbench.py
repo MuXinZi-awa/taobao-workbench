@@ -306,6 +306,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                     continue
                                 seen.append(cand)
                                 ep = cand.rstrip("/") + "/xmlrpc/2/common"
+                                # 跟随 301/302 重定向（xmlrpc 默认不跟随——先解析最终地址）
+                                try:
+                                    import urllib.request as _ur, urllib.error as _ue
+                                    _req = _ur.Request(ep, headers={"User-Agent": "Mozilla/5.0"})
+                                    try:
+                                        _r = _ur.urlopen(_req, timeout=15)
+                                        _fin = _r.geturl()
+                                    except _ue.HTTPError as _he:
+                                        _fin = getattr(_he, "url", ep) or ep
+                                    if _fin and _fin != ep:
+                                        ep = _fin
+                                except Exception:
+                                    pass
                                 try:
                                     common = xmlrpc.client.ServerProxy(ep)
                                     uid = common.authenticate(r["dbname"], r["username"], pw, {})
