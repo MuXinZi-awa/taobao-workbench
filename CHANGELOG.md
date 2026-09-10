@@ -33,6 +33,10 @@
 - **classify 缺 audit**：分流结果带出 audit/ref/orig——送修/换源按钮正确联动
 - **lcsc.py 域名拼错**：`item.slcsc.com` → `item.szlcsc.com`（立创通道长期失效真凶）
 
+### 修复
+- **tg-monitor 登录态持久化**：内核 call_plugin 每次请求重载 server.py → 模块级缓存丢失（点了检测仍显示"未检测"）→ 登录态落文件 `login_state.json`
+- **odoo-erp 精确匹配开关常驻**：原来随结果数消失（结果变 1 条就回不去）→ 钉在查询栏
+
 ### 优化
 - 素材列显示：只缺图且有库源 → 标 `缺:主图[库N→可补]`（不算硬缺）
 - **架构：脚本入插件**（`plugins/pipeline/scripts/`）——repair/switch/lib_images/renhotec/ai_schedule/lcsc/_grab_te_img/_mtop_api 自包含（TG 硬编码清除）；工作台不再依赖外部仓
