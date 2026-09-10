@@ -108,6 +108,21 @@ body { font-family:var(--font-ui); background:var(--bg); margin:0; color:var(--t
 .plug-detail .k { color:var(--text-m); flex-shrink:0; }
 .about-row { display:flex; justify-content:space-between; padding:4px 0; border-bottom:.5px solid rgba(0,0,0,.05); font-size:12px; }
 .about-row .k { color:var(--text-m); }
+
+/* 连接表单——对齐布局 */
+.conn-form{padding:14px 4px}
+.conn-form .crow{display:flex;align-items:center;gap:12px;margin-bottom:11px}
+.conn-form .ck{flex:0 0 92px;text-align:right;font-size:12px;color:var(--text-m);line-height:1.4}
+.conn-form .crow input,.conn-form .crow select{flex:1 1 auto;min-width:0;width:100%;box-sizing:border-box;
+ padding:8px 12px;border:.5px solid var(--line,#ddd);border-radius:9px;background:var(--card,#fff);
+ color:var(--text,#222);font-size:12.5px;font-family:inherit;outline:none;height:34px}
+.conn-form .crow input:focus,.conn-form .crow select:focus{border-color:var(--accent)}
+.conn-form .crow select{appearance:none;-webkit-appearance:none;padding-right:28px;
+ background-image:linear-gradient(45deg,transparent 50%,var(--text-m,#888) 50%),linear-gradient(135deg,var(--text-m,#888) 50%,transparent 50%);
+ background-position:calc(100% - 16px) 14px,calc(100% - 11px) 14px;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.conn-form .cbtns{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.conn-form .cbtns button{padding:7px 18px;border-radius:9px;font-size:12.5px;cursor:pointer}
+.conn-form .cbtns .ghost{background:transparent;border:.5px solid var(--line,#ddd);color:var(--text-m,#888)}
 </style>
 <style id="themeCss">
 body[data-theme="fresh"] { --bg:#EEF2F7; --card:#FAFCFE; --side:#E2E9F0; --text:#1B2A3A; --text-l:#33475C; --text-m:#5A6E82; --border:#C9D6E2; }
@@ -423,29 +438,29 @@ function renderConnForm(){
 }
 function connFormHtml(d){
  const ty=d.type||'taobao';
- const row=(k,id,val,ph,pw)=>'<div class="row"><span class="k">'+k+'</span><input id="'+id+'" '+(pw?'type="password" ':'')+'value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'"></div>';
- let body='<div class="row"><span class="k">类型</span><select id="cfType" onchange="CONN_EDIT=Object.assign({},CONN_EDIT||{},{type:this.value});renderConnForm()">'
+ const row=(k,id,val,ph,pw)=>'<div class="crow"><span class="ck">'+k+'</span><input id="'+id+'" '+(pw?'type="password" ':'')+'value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'"></div>';
+ let body='<div class="crow"><span class="ck">类型</span><select id="cfType" onchange="CONN_EDIT=Object.assign({},CONN_EDIT||{},{type:this.value});renderConnForm()">'
   +'<option value="taobao"'+(ty==='taobao'?' selected':'')+'>淘宝店铺</option>'
   +'<option value="odoo"'+(ty==='odoo'?' selected':'')+'>Odoo ERP</option>'
   +'<option value="custom"'+(ty==='custom'?' selected':'')+'>其他</option></select></div>'
-  +row('名称','cfName',d.name,'如 连接器专业 / 公司ERP');
+  +row('名称','cfName',d.name,'连接器专业 / 公司ERP');
  if(ty==='odoo'){
   body+=row('URL','cfUrl',d.url,'http://erp.xxx.com')
-   +row('端口','cfPort',d.port,'8069（留空=默认）')
+   +row('端口','cfPort',d.port,'8069')
    +row('数据库','cfDb',d.dbname,'odoo 库名')
-   +row('账号','cfUser',d.username,'登录邮箱/账号')
+   +row('账号','cfUser',d.username,'登录账号')
    +row('密码','cfPass',d.id?'':d.secret||'',d.id?'留空=不修改':'ERP 密码',true);
  }else{
-  body+=row('账号','cfUser',d.username,'如 duopeier:运营（含子账号冒号）')
+  body+=row('账号','cfUser',d.username,'duopeier:运营')
    +row('密码','cfPass',d.id?'':d.secret||'',d.id?'留空=不修改':'淘宝密码',true)
-   +row('浏览器 Profile','cfProfile',d.profile,'留空=默认 profile（多账号可各配一个目录）')
+   +row('Profile','cfProfile',d.profile,'留空=默认；多账号各配一个')
    +row('备注','cfNote',d.note,'');
  }
- body+='<div style="margin-top:8px"><button onclick="connSave('+(d.id||0)+')">保存</button> '
-  +'<button class="ghost" onclick="CONN_EDIT=null;renderConnForm()">取消</button>'
-  +(d.id?' <button class="ghost" onclick="connReveal('+d.id+')">显示密码</button>':'')+'</div>'
-  +'<div id="cfMsg" style="font-size:12px;color:var(--text-m);margin-top:6px"></div>';
- return '<div style="border:.5px solid var(--line,#ddd);border-radius:8px;padding:12px">'+body+'</div>';
+ body+='<div class="cbtns"><button class="ghost" onclick="CONN_EDIT=null;renderConnForm()">取消</button>'
+  +(d.id?'<button class="ghost" onclick="connReveal('+d.id+')">显示密码</button>':'')
+  +'<button onclick="connSave('+(d.id||0)+')">保存</button></div>'
+  +'<div id="cfMsg" style="font-size:12px;color:var(--text-m);margin-top:8px;text-align:right"></div>';
+ return '<div class="conn-form">'+body+'</div>';
 }
 async function connSave(id){
  const g=x=>{const e=document.getElementById(x);return e?e.value:'';};
@@ -484,7 +499,7 @@ async function togglePlug(id,el){ const on=el.textContent==='已禁用';
  const d=await api('/api/plugin-toggle?id='+encodeURIComponent(id)+'&on='+(on?'1':'0'));
  if(d.ok){ el.textContent=on?'已启用':'已禁用'; el.style.background=on?'var(--accent-l)':'#E8E6DC'; loadPlugins(); } else alert(d.error||'切换失败'); }
 function showPlugDetail(c,p){ c.innerHTML='<h3>'+p.name+'</h3><div class="plug-detail">'
- +'<div class="row"><span class="k">版本</span><span>v0.1.0</span></div>'
+ +'<div class="row"><span class="k">版本</span><span>v'+(p.version||'0.0.0')+'</span></div>'
  +'<div class="row"><span class="k">ID</span><span>'+p.id+'</span></div>'
  +'<div class="row"><span class="k">状态</span><span>已启用 · 热插拔</span></div>'
  +'<div class="row"><span class="k">介绍</span><span>'+((p.desc||'(无)').slice(0,80))+'</span></div>'
