@@ -5,3 +5,7 @@ demo_批量测试.csv
 *.zip
 __pycache__/
 plugins/*/state.json
+
+data/*.db
+data/*.sqlite
+
