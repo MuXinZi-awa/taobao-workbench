@@ -1,0 +1,11 @@
+{
+  "id": "odoo-erp",
+  "name": "ERP 数据",
+  "version": "0.1.0",
+  "desc": "Odoo ERP 只读查询：料号 → 售价/库存/成本/品牌/描述/分类（用内核「连接导航」里的激活 Odoo 连接）",
+  "panel": "panel.html",
+  "entry": "panel.html",
+  "has_server": true,
+  "icon": "🏢",
+  "log": "odoo_erp.log"
+}

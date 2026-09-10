@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>ERP 数据</title>
+<style>
+:root{--card:#FBFAF7;--text:#2A2A28;--text-m:#8A8880;--line:#E4E1D8;--accent:#7C6A9E}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;font:13px/1.5 -apple-system,"Microsoft YaHei",sans-serif;color:var(--text);background:transparent}
+.bar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.bar input{flex:1;min-width:0;padding:8px 12px;border:.5px solid var(--line);border-radius:9px;background:var(--card);color:var(--text);font-size:13px;outline:none;height:34px}
+.bar input:focus{border-color:var(--accent)}
+button{padding:8px 16px;border:.5px solid var(--line);border-radius:9px;background:var(--card);color:var(--text);cursor:pointer;font-size:12.5px;height:34px}
+button:hover{border-color:var(--accent)}
+button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+#cur{font-size:12px;color:var(--text-m);margin-bottom:8px;min-height:16px}
+#conn{font-size:11.5px;color:var(--text-m);margin-bottom:6px}
+.card{border:.5px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px;background:var(--card)}
+.card h4{margin:0 0 8px;font-size:14px}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:5px 10px;font-size:12.5px}
+.kv .k{color:var(--text-m);text-align:right}
+.kv .v{word-break:break-all}
+.tag{display:inline-block;padding:1px 7px;border-radius:6px;background:rgba(124,106,158,.12);color:var(--accent);font-size:11px;margin-left:6px}
+.desc{margin-top:8px;padding-top:8px;border-top:.5px dashed var(--line);font-size:12px;color:var(--text);max-height:150px;overflow:auto}
+.desc img{max-width:100%}
+.hl{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<div id="conn">连接：加载中…</div>
+<div class="bar">
+  <input id="kw" placeholder="输入料号（如 33012-2002 / 1-480275-0）回车查询" onkeydown="if(event.key==='Enter')q()">
+  <button class="pri" onclick="q()">查询</button>
+</div>
+<div id="cur"></div>
+<div id="list"></div>
+<script>
+const P='../..';
+const API=location.origin+'/api/plg/odoo-erp/';
+async function api(a){ const r=await fetch(API+a); return r.json(); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+let EXACT=false;
+async function loadConn(){
+ const d=await api('conn');
+ const el=document.getElementById('conn');
+ el.innerHTML=d.ok?('连接：<b>'+esc(d.name)+'</b> · '+esc(d.db)+' @ '+esc(d.url)+' · '+esc(d.user)):('⚠ '+esc(d.error));
+}
+async function q(){
+ const kw=document.getElementById('kw').value.trim(); if(!kw)return;
+ document.getElementById('cur').textContent='查询 '+kw+' …';
+ const d=await api('query?kw='+encodeURIComponent(kw)+(EXACT?'&exact=1':''));
+ const cur=document.getElementById('cur'), list=document.getElementById('list');
+ if(!d.ok){ cur.textContent='✗ '+esc(d.error); list.innerHTML=''; return; }
+ cur.innerHTML='「'+esc(d.kw)+'」→ '+d.items.length+' 条（'+d.ms+'ms）'+(d.items.length>1?'　<label style="font-size:11px"><input type="checkbox" '+(EXACT?'checked':'')+' onchange="EXACT=this.checked;q()"> 精确匹配</label>':'');
+ if(!d.items.length){ list.innerHTML='<div style="color:var(--text-m);font-size:12.5px">ERP 里没找到该料号</div>'; return; }
+ list.innerHTML=d.items.map(it=>{
+  const price=it.list_price?('<span class="hl">'+it.list_price+'</span>'):'—';
+  const qty=it.qty_available||0;
+  const cost=it.standard_price?it.standard_price:'—';
+  let h='<div class="card"><h4>'+esc(it.name)+(it.product_information_brand?'<span class="tag">'+esc(it.product_information_brand)+'</span>':'')+'</h4>'
+   +'<div class="kv">'
+   +'<span class="k">售价</span><span class="v">'+price+'</span>'
+   +'<span class="k">成本</span><span class="v">'+cost+'</span>'
+   +'<span class="k">库存</span><span class="v">'+qty+(qty>0?'':'（无货）')+'</span>'
+   +'<span class="k">分类</span><span class="v">'+esc(it.categ_id||'—')+'</span>'
+   +'<span class="k">单位</span><span class="v">'+esc(it.uom_id||'—')+'</span>'
+   +'<span class="k">上架</span><span class="v">'+(it.sale_ok?'可销售':'否')+(it.active===false?' · 已归档':'')+'</span>'
+   +'<span class="k">ERP ID</span><span class="v">'+it.id+'</span>'
+   +'</div>';
+  const de=it.description_ecommerce||it.product_information_description||'';
+  if(de) h+='<div class="desc">'+de+'</div>';
+  h+='</div>';
+  return h;
+ }).join('');
+}
+loadConn();
+</script>
+</body>
+</html>
