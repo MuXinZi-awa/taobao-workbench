@@ -78,13 +78,17 @@ def report():
         if TG not in _sys.path:
             _sys.path.insert(0, TG)
         import report_db as _rdb
-        for d in _rdb.get_daily():
+        _acct = ""
+        _tr = ((raw.get("trend") or {}).get("data") or {}).get("list") or []
+        if _tr:
+            _acct = str(_tr[0].get("memberId") or "")
+        for _r in _rdb.get_daily(account=_acct or None):
             days.append({
-                "date": d.get("date") or "",
-                "charge": _f(d.get("charge")), "adPv": _i(d.get("adPv")), "click": _i(d.get("click")),
-                "ctr": _f(d.get("ctr"), 4), "amt": _f(d.get("amt")),
-                "num": _i(d.get("num")), "cart": _i(d.get("cart")),
-                "ecpc": _f(d.get("ecpc"), 3), "cvr": _f(d.get("cvr"), 4),
+                "date": _r.get("date") or "",
+                "charge": _f(_r.get("charge")), "adPv": _i(_r.get("adPv")), "click": _i(_r.get("click")),
+                "ctr": _f(_r.get("ctr"), 4), "amt": _f(_r.get("amt")),
+                "num": _i(_r.get("num")), "cart": _i(_r.get("cart")),
+                "ecpc": _f(_r.get("ecpc"), 3), "cvr": _f(_r.get("cvr"), 4),
             })
     except Exception:
         days = []
@@ -180,7 +184,10 @@ def report():
     st = _status()
     refreshing = bool(st.get("started")) and (not os.path.isfile(DATA)
                                              or os.path.getmtime(DATA) < st.get("started", 0))
-    if not refreshing and _should_auto():
+    if not refreshing and _today_stale():
+        if refresh_today(headless=True).get("ok"):
+            refreshing = True
+    elif not refreshing and _should_auto():
         if refresh(headless=True).get("ok"):
             refreshing = True
 
@@ -218,6 +225,37 @@ def _should_auto():
     return False
 
 
+def _today_stale():
+    """今日数据是否过期（JSON 的 todayDate != 今天）"""
+    import datetime as _dt
+    d = {}
+    try:
+        with io.open(DATA, encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        pass
+    return (d.get("todayDate") or "") != _dt.date.today().isoformat()
+
+
+def refresh_today(headless=True):
+    """轻量采集：只采今日（~15s）"""
+    import subprocess
+    tf = os.path.join(TG, "_report_today.py")
+    if not os.path.isfile(tf):
+        return {"ok": False, "error": "缺少 _report_today.py"}
+    started = time.time()
+    try:
+        with io.open(os.path.join(TG, "runtime", "wb_fetch_status.json"), "w", encoding="utf-8") as f:
+            json.dump({"started": started, "headless": bool(headless), "kind": "today"}, f)
+        args = [r"F:\Python314\python.exe", tf]
+        if headless:
+            args.append("--headless")
+        subprocess.Popen(args, cwd=TG, creationflags=0x08000000)
+        return {"ok": True, "started": started}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120]}
+
+
 def refresh(headless=False):
     import subprocess
     started = time.time()
@@ -240,5 +278,7 @@ def handle(action, qs):
     if action == "report":
         return report()
     if action == "refresh":
-        return refresh(headless=True)
+        return refresh_today(headless=True)      # 刷新 = 读库 + 只补今日（~15s）
+    if action == "refresh-all":
+        return refresh(headless=True)            # 全量（历史入库存档）
     return {"ok": False, "error": "unknown action: " + str(action)}
