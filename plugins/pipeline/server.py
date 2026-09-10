@@ -94,6 +94,7 @@ def scan_batch(lhs):
             "type": rec.get("type", ""),
             "id": rec.get("id", ""),
             "title": rec.get("title", ""),
+            "audit": rec.get("audit", ""),
             "ref": _ref_for(lh, rec.get("audit", "")),
             "orig": _ref_for(lh, ""),
             "审核": rec.get("audit", ""),
@@ -242,7 +243,12 @@ def classify_batch(lhs):
                 item["素材"] = "缺:" + ",".join(m["缺失"]) if m["缺失"] else "齐"
                 item["缺列表"] = m["缺失"]
                 item["orig"] = _ref_for(lh, "")
-                item["ref"] = _ref_for(lh, item.get("type", ""))
+                try:
+                    _st0 = load_state()
+                except Exception:
+                    _st0 = {}
+                item["audit"] = (_st0.get("items", {}).get(lh, {}) or {}).get("audit", "")
+                item["ref"] = _ref_for(lh, item.get("audit", ""))
             except Exception:
                 pass
             try:
@@ -299,8 +305,24 @@ def handle(action, qs):
         if err:
             return {"ok": False, "error": err}
         return {"ok": True, "items": items}
+    def _batch_busy():
+        """repair_state.json 有在跑批（total>done+fail）→ True"""
+        import json as _j
+        try:
+            fp = os.path.join(TG, "runtime", "repair_state.json")
+            if os.path.isfile(fp):
+                st = _j.load(io.open(fp, encoding="utf-8"))
+                if st.get("total", 0) > 0 and st.get("done", 0) + st.get("fail", 0) < st.get("total", 0):
+                    return st.get("mode", "送修")
+        except Exception:
+            pass
+        return None
+
     if action == "repair":
         """送修批：读 state 标'送修'的品 → AI 修图（repair_batch.py detach 后台跑——产物白底待复检落素材）"""
+        _bs = _batch_busy()
+        if _bs:
+            return {"ok": False, "error": "已有批在跑（%s）——先等完成或停掉" % _bs}
         rt = os.path.join(TG, "runtime", "python.exe")
         rb = os.path.join(TG, "runtime", "repair_batch.py")
         logf = os.path.join(TG, "runtime", "repair.log")
@@ -316,6 +338,37 @@ def handle(action, qs):
             subprocess.Popen([rt, "-X", "utf8", "-u", rb], cwd=TG,
                              stdout=open(logf, "a", encoding="utf-8"), stderr=open(errf, "a", encoding="utf-8"))
             return {"ok": True, "msg": "送修批已启动（%d 品标送修）——AI 修图约 2-3 分/品，完成自动落素材并标待复检（日志 runtime/repair.log）" % n}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:80]}
+    if action == "src-src":
+        """换源批：标'换源'品 → TE/立创找干净源 → 白底待复检落素材（switch_src.py detach）"""
+        _bs = _batch_busy()
+        if _bs:
+            return {"ok": False, "error": "已有批在跑（%s）——先等完成或停掉" % _bs}
+        rt = os.path.join(TG, "runtime", "python.exe")
+        sb = os.path.join(TG, "runtime", "switch_src.py")
+        logf = os.path.join(TG, "runtime", "repair.log")
+        try:
+            n = 0
+            try:
+                st = load_state()
+                n = len([lh for lh, v in st.get("items", {}).items() if v.get("audit") == "换源"])
+            except Exception:
+                pass
+            errf = logf.replace(".log", "_err.log")
+            subprocess.Popen([rt, "-X", "utf8", "-u", sb], cwd=TG,
+                             stdout=open(logf, "a", encoding="utf-8"), stderr=open(errf, "a", encoding="utf-8"))
+            return {"ok": True, "msg": "换源批已启动（%d 品标换源）——TE官网/立创找干净源，完成标待复检（日志 repair.log）" % n}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:80]}
+    if action == "audit-ref":
+        """审核参考现场重查：lh → {ref, orig}（audit 在途品取白底待复检/换源图）"""
+        try:
+            lh = q.get("lh", "").strip()
+            st = load_state()
+            audit = (st.get("items", {}).get(lh, {}) or {}).get("audit", "")
+            return {"ok": True, "lh": lh, "audit": audit,
+                    "ref": _ref_for(lh, audit), "orig": _ref_for(lh, "")}
         except Exception as e:
             return {"ok": False, "error": str(e)[:80]}
     if action == "repair-status":
