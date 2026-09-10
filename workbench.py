@@ -29,7 +29,7 @@ def scan_plugins():
         try:
             m = json.load(open(mf, encoding="utf-8"))
             if m.get("id"):
-                out.append({"id": m["id"], "name": m.get("name", m["id"]),
+                out.append({"id": m["id"], "name": m.get("name", m["id"]), "version": m.get("version", "0.0.0"),
                             "icon": m.get("icon", ""), "panel": m.get("panel", ""),
                     "log": m.get("log", ""),
                             "desc": m.get("desc", ""),
@@ -277,11 +277,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         if r["type"] == "odoo":
                             import xmlrpc.client
                             pw = conn_store.get_secret(cid)
-                            common = xmlrpc.client.ServerProxy("%s/xmlrpc/2/common" % r["url"].rstrip("/"))
-                            uid = common.authenticate(r["dbname"], r["username"], pw, {})
-                            if uid:
-                                return self._json({"ok": True, "msg": "Odoo 登录成功 uid=%s" % uid})
-                            return self._json({"ok": False, "error": "Odoo 认证失败（账号/密码/库名）"})
+                            base = (r.get("url") or "").strip().rstrip("/")
+                            if not base.startswith(("http://", "https://")):
+                                base = "http://" + base
+                            port = (r.get("port") or "").strip()
+                            if port and (":" not in base.split("//", 1)[-1]):
+                                base = "%s:%s" % (base, port)
+                            last_err = ""
+                            for cand in [base] + (["https://" + base.split("//", 1)[-1]] if base.startswith("http://") else []):
+                                try:
+                                    common = xmlrpc.client.ServerProxy("%s/xmlrpc/2/common" % cand)
+                                    uid = common.authenticate(r["dbname"], r["username"], pw, {})
+                                    if uid:
+                                        return self._json({"ok": True, "msg": "Odoo 登录成功：%s uid=%s" % (cand, uid)})
+                                    last_err = "认证失败（账号/密码/库名？）"
+                                except Exception as ee:
+                                    last_err = str(ee)[:100]
+                            return self._json({"ok": False, "error": "Odoo 测试失败：" + last_err})
                         return self._json({"ok": True, "msg": "已保存（%s 类型测试后续接入）" % r["type"]})
                     return self._json({"ok": False, "error": "未知 conn action"}, 404)
                 except Exception as e:
