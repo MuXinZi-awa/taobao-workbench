@@ -30,6 +30,9 @@ button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
 <div id="conn">连接：加载中…</div>
 <div class="bar">
   <input id="kw" placeholder="输入料号（如 33012-2002 / 1-480275-0）回车查询" onkeydown="if(event.key==='Enter')q()">
+  <label id="exactLbl" style="display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap;cursor:pointer;user-select:none" title="勾选=只精确匹配料号">
+    <input type="checkbox" id="exactChk" onchange="EXACT=this.checked;q()">精确
+  </label>
   <button class="pri" onclick="q()">查询</button>
 </div>
 <div id="cur"></div>
@@ -51,7 +54,7 @@ async function q(){
  const d=await api('query?kw='+encodeURIComponent(kw)+(EXACT?'&exact=1':''));
  const cur=document.getElementById('cur'), list=document.getElementById('list');
  if(!d.ok){ cur.textContent='✗ '+esc(d.error); list.innerHTML=''; return; }
- cur.innerHTML='「'+esc(d.kw)+'」→ '+d.items.length+' 条（'+d.ms+'ms）'+(d.items.length>1?'　<label style="font-size:11px"><input type="checkbox" '+(EXACT?'checked':'')+' onchange="EXACT=this.checked;q()"> 精确匹配</label>':'');
+ cur.innerHTML='「'+esc(d.kw)+'」→ '+d.items.length+' 条（'+d.ms+'ms）';
  if(!d.items.length){ list.innerHTML='<div style="color:var(--text-m);font-size:12.5px">ERP 里没找到该料号</div>'; return; }
  list.innerHTML=d.items.map(it=>{
   const price=it.list_price?('<span class="hl">'+it.list_price+'</span>'):'—';
