@@ -423,25 +423,33 @@ function renderConnForm(){
 }
 function connFormHtml(d){
  const ty=d.type||'taobao';
- return '<div style="border:.5px solid var(--line,#ddd);border-radius:8px;padding:12px">'
- +'<div class="row"><span class="k">类型</span><select id="cfType" onchange="renderConnForm()">'
- +'<option value="taobao"'+(ty==='taobao'?' selected':'')+'>淘宝店铺</option>'
- +'<option value="odoo"'+(ty==='odoo'?' selected':'')+'>Odoo ERP</option>'
- +'<option value="custom"'+(ty==='custom'?' selected':'')+'>其他</option></select></div>'
- +'<div class="row"><span class="k">名称</span><input id="cfName" value="'+esc(d.name||'')+'" placeholder="如 连接器专业 / 公司ERP"></div>'
- +(ty==='odoo'?'<div class="row"><span class="k">地址</span><input id="cfUrl" value="'+esc(d.url||'')+'" placeholder="http://erp.xxx.com"></div>'
-  +'<div class="row"><span class="k">库名</span><input id="cfDb" value="'+esc(d.dbname||'')+'" placeholder="odoo 数据库名"></div>':'')
- +'<div class="row"><span class="k">账号</span><input id="cfUser" value="'+esc(d.username||'')+'"></div>'
- +'<div class="row"><span class="k">密码</span><input id="cfPass" type="password" placeholder="'+(d.id?'留空=不修改':'输入密码')+'"></div>'
- +'<div class="row"><span class="k">备注</span><input id="cfNote" value="'+esc(d.note||'')+'"></div>'
- +'<div style="margin-top:8px"><button onclick="connSave('+(d.id||0)+')">保存</button> '
- +'<button class="ghost" onclick="CONN_EDIT=null;renderConnForm()">取消</button>'
- +(d.id?' <button class="ghost" onclick="connReveal('+d.id+')">显示密码</button>':'')+'</div>'
- +'<div id="cfMsg" style="font-size:12px;color:var(--text-m);margin-top:6px"></div></div>';
+ const row=(k,id,val,ph,pw)=>'<div class="row"><span class="k">'+k+'</span><input id="'+id+'" '+(pw?'type="password" ':'')+'value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'"></div>';
+ let body='<div class="row"><span class="k">类型</span><select id="cfType" onchange="CONN_EDIT=Object.assign({},CONN_EDIT||{},{type:this.value});renderConnForm()">'
+  +'<option value="taobao"'+(ty==='taobao'?' selected':'')+'>淘宝店铺</option>'
+  +'<option value="odoo"'+(ty==='odoo'?' selected':'')+'>Odoo ERP</option>'
+  +'<option value="custom"'+(ty==='custom'?' selected':'')+'>其他</option></select></div>'
+  +row('名称','cfName',d.name,'如 连接器专业 / 公司ERP');
+ if(ty==='odoo'){
+  body+=row('URL','cfUrl',d.url,'http://erp.xxx.com')
+   +row('端口','cfPort',d.port,'8069（留空=默认）')
+   +row('数据库','cfDb',d.dbname,'odoo 库名')
+   +row('账号','cfUser',d.username,'登录邮箱/账号')
+   +row('密码','cfPass',d.id?'':d.secret||'',d.id?'留空=不修改':'ERP 密码',true);
+ }else{
+  body+=row('账号','cfUser',d.username,'如 duopeier:运营（含子账号冒号）')
+   +row('密码','cfPass',d.id?'':d.secret||'',d.id?'留空=不修改':'淘宝密码',true)
+   +row('浏览器 Profile','cfProfile',d.profile,'留空=默认 profile（多账号可各配一个目录）')
+   +row('备注','cfNote',d.note,'');
+ }
+ body+='<div style="margin-top:8px"><button onclick="connSave('+(d.id||0)+')">保存</button> '
+  +'<button class="ghost" onclick="CONN_EDIT=null;renderConnForm()">取消</button>'
+  +(d.id?' <button class="ghost" onclick="connReveal('+d.id+')">显示密码</button>':'')+'</div>'
+  +'<div id="cfMsg" style="font-size:12px;color:var(--text-m);margin-top:6px"></div>';
+ return '<div style="border:.5px solid var(--line,#ddd);border-radius:8px;padding:12px">'+body+'</div>';
 }
 async function connSave(id){
  const g=x=>{const e=document.getElementById(x);return e?e.value:'';};
- const body={id:id||0,type:g('cfType'),name:g('cfName'),url:g('cfUrl'),dbname:g('cfDb'),username:g('cfUser'),secret:g('cfPass'),note:g('cfNote')};
+ const body={id:id||0,type:g('cfType'),name:g('cfName'),url:g('cfUrl'),port:g('cfPort'),dbname:g('cfDb'),username:g('cfUser'),secret:g('cfPass'),note:g('cfNote'),profile:g('cfProfile')};
  const r=await fetch(API+'/api/conn/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
  const m=document.getElementById('cfMsg'); if(m)m.textContent=r.ok?'✓ 已保存':('✗ '+(r.error||'失败'));
  if(r.ok){ CONN_EDIT=null; renderConnList(); }
