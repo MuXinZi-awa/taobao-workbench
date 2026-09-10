@@ -83,12 +83,30 @@ def _cleanup_probe():
 _LG = {"v": None, "t": 0.0}
 
 
-def _login():
+LG_FP = os.path.join(BASE, "login_state.json")   # 登录态持久化（模块每次请求重载——缓存必须落文件）
+
+
+def _lg_read():
+    try:
+        return json.load(io.open(LG_FP, encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _lg_write(v):
+    try:
+        io.open(LG_FP, "w", encoding="utf-8").write(json.dumps({"v": v, "t": __import__("time").time()}))
+    except Exception:
+        pass
+
+
+def _login(force=False):
     """登录态探测：probe_status.py 一次 headless 启动——登录判定（万相台域）+ 顺手拉 11 计划容量
     （梓帆 0908：拉登录态时连带容量一起拉——一次浏览器启动干两件事）+ 90s 缓存"""
     import time as _t
-    if _LG["v"] is not None and _t.time() - _LG["t"] < 90:
-        return _LG["v"]
+    _d = _lg_read()
+    if not force and _d.get("v") is not None and _t.time() - _d.get("t", 0) < 90:
+        return _d.get("v")
     try:
         # 0908：万相台 headless probe 拿不到 csrf（新 profile 无头不授）——改 _dual_one（淘宝 mtop API headless 可用）
         r = subprocess.run([os.path.join(TG, "runtime", "python.exe"), "-X", "utf8", "-u",
@@ -96,8 +114,7 @@ def _login():
                            capture_output=True, timeout=90)
         out = (r.stdout or b"").decode("utf-8", "replace")
         ok = any(k in out for k in ("已双百", "未双百", "流量加速中", "未搜到"))
-        _LG["v"] = ok
-        _LG["t"] = _t.time()
+        _lg_write(ok)
         return ok
     except Exception:
         return False
@@ -132,7 +149,7 @@ def status():
     running = _running()
     # 0908：login 只读缓存——自动探测已禁（probe headless 抢 chrome_profile → 批/手动 launch 全被顶掉）
     # 登录态用手动「检测」按钮；批跑时状态看 running；容量批自更新+手动刷新
-    login = _LG["v"]
+    login = _lg_read().get("v")
     return {
         "ok": True,
         "login": login,
@@ -151,8 +168,8 @@ def handle(action, qs):
         import time as _t
         if _running():
             return {"ok": True, "login": None, "msg": "批运行中——跳过探测"}
-        _LG["v"] = _login()
-        return {"ok": True, "login": _LG["v"]}
+        _login(force=True)
+        return {"ok": True, "login": _lg_read().get("v")}
     if action == "refresh-caps":
         # 刷新容量：subprocess detach 跑 refresh_caps.py（headless 静默——约 25-30s）
         import subprocess as _sp
