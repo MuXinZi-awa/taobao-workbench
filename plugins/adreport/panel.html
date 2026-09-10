@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<style>
+:root{ --bg:#F5EFE4; --card:#FBF7EE; --text:#2A2622; --text-l:#4A433C; --text-m:#6B6158;
+  --border:#D8CFBE; --accent:#537D96; --accent-h:#3F6179; --accent-l:rgba(83,125,150,.08); --r:6px; }
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-ui,system-ui,"Microsoft YaHei");background:var(--bg,#F5EFE4);
+  color:var(--text,#2A2622);font-size:13px;padding:12px}
+.head{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.head .t{font-size:15px;font-weight:600}
+.head .sub{font-size:11px;color:var(--text-m,#888)}
+.head .sp{margin-left:auto}
+button{border:.5px solid var(--border,#ddd);background:transparent;color:var(--text-l,#555);
+  border-radius:var(--r,6px);padding:4px 10px;cursor:pointer;font-size:12px;font-family:inherit}
+button:hover{background:var(--accent-l,rgba(83,125,150,.08))}
+button.on{background:var(--accent,#537D96);color:#fff;border-color:var(--accent,#537D96)}
+input[type=date]{border:.5px solid var(--border,#ddd);background:transparent;color:var(--text,#333);
+  border-radius:var(--r,6px);padding:3px 6px;font-size:12px;font-family:inherit}
+.bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;
+  padding:6px 10px;background:var(--card,#FBF7EE);border:.5px solid var(--border,#ddd);border-radius:var(--r,6px)}
+.bar .lb{font-size:11px;color:var(--text-m,#999)}
+.bar .sep{width:1px;height:16px;background:var(--border,#ddd);margin:0 4px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px;margin-bottom:10px}
+.card{background:var(--card,#FBF7EE);border:.5px solid var(--border,#ddd);border-radius:var(--r,6px);
+  padding:8px 10px;cursor:pointer;transition:border-color .15s,background .15s}
+.card:hover{border-color:var(--accent,#537D96)}
+.card.on{border-color:var(--accent,#537D96);background:var(--accent-l,rgba(83,125,150,.08))}
+.card .k{font-size:11px;color:var(--text-m,#888)}
+.card .v{font-size:18px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
+.card .d{font-size:10px;color:var(--text-m,#999);margin-top:1px}
+.card .d .up{color:#c0392b}.card .d .dn{color:#2a7a3a}
+.sec{background:var(--card,#FBF7EE);border:.5px solid var(--border,#ddd);border-radius:var(--r,6px);
+  padding:10px 12px;margin-bottom:12px}
+.sec h3{font-size:13px;margin:0 0 8px;font-weight:600;display:flex;align-items:center;gap:8px}
+.sec h3 .u{font-size:11px;font-weight:400;color:var(--text-m,#999)}
+table{border-collapse:collapse;font-size:12.5px;width:100%;table-layout:fixed}
+th{text-align:right;font-weight:500;color:var(--text-m,#888);padding:6px 12px;border-bottom:1px solid var(--border,#ddd);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+th:first-child,td:first-child{text-align:left}
+td{padding:6px 12px;border-bottom:.5px solid var(--border,#eee);font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.insight ul{margin:0;padding-left:16px}
+.insight li{font-size:12.5px;line-height:1.75;color:var(--text-l,#444)}
+.hint{font-size:11px;color:var(--text-m,#999);margin-top:6px}
+.legend{font-size:11px;color:var(--text-m,#888);display:flex;gap:14px;margin-top:6px}
+.legend i{display:inline-block;width:12px;height:0;border-top-width:2px;border-top-style:solid;vertical-align:middle;margin-right:4px}
+.empty{color:var(--text-m,#888);text-align:center;padding:30px 0;font-size:13px;line-height:1.9}
+#tip{position:fixed;display:none;background:#2A2622;color:#fff;font-size:11.5px;padding:5px 9px;border-radius:6px;
+  pointer-events:none;z-index:99;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+</style></head>
+<body>
+<div class="head">
+  <span class="t">📊 万相台报表</span>
+  <span class="sub" id="meta">加载中…</span>
+  <span class="sp"></span>
+  <button id="rfbtn" onclick="refreshNow()">刷新</button>
+</div>
+<div class="bar" id="rangebar"></div>
+<div id="root"><div class="empty">读取中…</div></div>
+<div id="tip"></div>
+<script>
+const P = "/api/plg/adreport/";
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const fmt = (n,d) => { n = Number(n)||0; return d===0 ? String(Math.round(n)) : (Math.round(n*Math.pow(10,d))/Math.pow(10,d)).toFixed(d); };
+
+const METRICS = [
+  {key:'charge', name:'花费',     unit:'元', agg:'sum',  dec:2},
+  {key:'amt',    name:'成交额',   unit:'元', agg:'sum',  dec:2},
+  {key:'roi',    name:'投产比',   unit:'',  agg:'calc', dec:2, f:t=>t.charge? t.amt/t.charge : 0},
+  {key:'adPv',   name:'展现量',   unit:'',  agg:'sum',  dec:0},
+  {key:'click',  name:'点击量',   unit:'',  agg:'sum',  dec:0},
+  {key:'ctr',    name:'点击率',   unit:'%', agg:'calc', dec:2, f:t=>t.adPv? t.click/t.adPv*100 : 0},
+  {key:'ecpc',   name:'平均点击花费', unit:'元', agg:'calc', dec:2, f:t=>t.click? t.charge/t.click : 0},
+  {key:'cvr',    name:'转化率',   unit:'%', agg:'calc', dec:2, f:t=>t.click? t.num/t.click*100 : 0},
+  {key:'num',    name:'成交笔数', unit:'',  agg:'sum',  dec:0},
+  {key:'cart',   name:'加购数',   unit:'',  agg:'sum',  dec:0},
+];
+
+let DATA=null, METRIC='charge', MODE='7', CS='', CE='', PTS=[];
+
+function allDays(){ return (DATA && DATA.days) || []; }
+function curDays(){
+  const days=allDays();
+  if(MODE==='1') return [];
+  if(MODE==='7') return days.slice(-7);
+  if(MODE==='30') return days.slice(-30);
+  if(MODE==='custom' && CS && CE) return days.filter(d=>d.date>=CS && d.date<=CE);
+  return days;
+}
+function prevDays(cur){
+  const days=allDays();
+  if(!cur.length) return [];
+  const idx=days.findIndex(d=>d.date===cur[0].date);
+  if(idx<0) return [];
+  return days.slice(Math.max(0, idx-cur.length), idx);
+}
+function agg(days){
+  return {
+    charge: days.reduce((a,d)=>a+d.charge,0),
+    adPv:   days.reduce((a,d)=>a+d.adPv,0),
+    click:  days.reduce((a,d)=>a+d.click,0),
+    amt:    days.reduce((a,d)=>a+d.amt,0),
+    num:    days.reduce((a,d)=>a+d.num,0),
+    cart:   days.reduce((a,d)=>a+d.cart,0),
+  };
+}
+function tval(t,m){ return m.agg==='sum' ? t[m.key]||0 : m.f(t); }
+function dval(d,m){ return m.agg==='sum' ? d[m.key]||0 : m.f(d); }
+
+function lineChart(cur, prev, m){
+  if(!cur.length) return '<div class="hint">该范围内没有数据</div>';
+  const W=800,H=210,pl=54,pr=16,pt=16,pb=30;
+  const iw=W-pl-pr, ih=H-pt-pb;
+  const cv=cur.map(d=>dval(d,m)), pv=prev.map(d=>dval(d,m));
+  const all=cv.concat(pv);
+  let maxV=Math.max(...all,0.0001), minV=Math.min(...all,0);
+  const span=(maxV-minV)||1;
+  const n=cur.length;
+  const x=i=>pl+(n<2?iw/2:i*iw/(n-1));
+  const y=v=>pt+ih-((v-minV)/span)*ih;
+  PTS=cur.map((d,i)=>({x:x(i), y:y(cv[i]), date:d.date, v:cv[i]}));
+  const poly=arr=>arr.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ');
+  let grid='';
+  for(let g=0; g<=4; g++){ const yy=pt+ih-g*ih/4, vv=minV+span*g/4;
+    grid+='<line x1="'+pl+'" y1="'+yy+'" x2="'+(W-pr)+'" y2="'+yy+'" style="stroke:var(--border,#e6e6e6);stroke-width:.5"/>';
+    grid+='<text x="'+(pl-6)+'" y="'+(yy+3)+'" text-anchor="end" font-size="9" style="fill:var(--text-m,#999)">'+fmt(vv, m.dec>=2?1:0)+'</text>';
+  }
+  const step=Math.max(1, Math.ceil(n/8));
+  let dots='', labels='';
+  cur.forEach((d,i)=>{
+    if(i%step===0)
+      labels+='<text x="'+x(i)+'" y="'+(H-10)+'" text-anchor="middle" font-size="9.5" style="fill:var(--text-m,#999)">'+esc(d.date.slice(5))+'</text>';
+    dots+='<circle cx="'+x(i)+'" cy="'+y(cv[i])+'" r="2.8" style="fill:var(--accent,#537D96)"/>';
+    dots+='<circle cx="'+x(i)+'" cy="'+y(cv[i])+'" r="10" style="fill:transparent;cursor:crosshair" onmouseenter="showTip(event,'+i+')" onmousemove="moveTip(event)" onmouseleave="hideTip()"/>';
+  });
+  const prevLine = pv.length ? '<polyline points="'+poly(pv)+'" style="fill:none;stroke:#b9b2a6;stroke-width:1.5;stroke-dasharray:5 4"/>' : '';
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+grid
+    + prevLine
+    +'<polyline points="'+poly(cv)+'" style="fill:none;stroke:var(--accent,#537D96);stroke-width:1.9"/>'
+    +dots+labels+'</svg>';
+}
+function showTip(ev,i){
+  const t=document.getElementById('tip'); if(!PTS[i]) return;
+  const m=METRICS.find(x=>x.key===METRIC)||METRICS[0];
+  t.textContent = PTS[i].date.slice(5) + '　' + m.name + ' ' + fmt(PTS[i].v, m.dec) + (m.unit?' '+m.unit:'');
+  t.style.display='block'; moveTip(ev);
+}
+function moveTip(ev){
+  const t=document.getElementById('tip');
+  t.style.display='block';
+  const w=t.offsetWidth||140;
+  let x=ev.clientX+14; if(x+w>window.innerWidth-8) x=ev.clientX-w-14;
+  if(x<4) x=4;
+  let y=ev.clientY-34; if(y<4) y=ev.clientY+18;
+  t.style.left=x+'px'; t.style.top=y+'px';
+}
+function hideTip(){ document.getElementById('tip').style.display='none'; }
+
+function delta(curT, prevT, m){
+  const a=tval(curT,m), b=tval(prevT,m);
+  if(!prevT || !b) return '';
+  const pct=(a-b)/Math.abs(b)*100;
+  if(!isFinite(pct)) return '';
+  const up=pct>=0;
+  return '<span class="'+(up?'up':'dn')+'">'+(up?'▲':'▼')+Math.abs(pct).toFixed(1)+'%</span> 环比';
+}
+
+function render(){
+  const root=document.getElementById('root');
+  const isToday = MODE==='1';
+  const cur=isToday?[]:curDays(), prev=isToday?[]:prevDays(cur);
+  const ct=isToday?(DATA.today||{}):agg(cur), pt=isToday?{}:agg(prev);
+  const m=METRICS.find(x=>x.key===METRIC)||METRICS[0];
+  let html='<div class="cards">';
+  METRICS.forEach(mm=>{
+    html+='<div class="card'+(mm.key===METRIC?' on':'')+'" onclick="pick(\''+mm.key+'\')">'
+      +'<div class="k">'+mm.name+(mm.unit?'('+mm.unit+')':'')+'</div>'
+      +'<div class="v">'+fmt(tval(ct,mm),mm.dec)+'</div>'
+      +'<div class="d">'+delta(ct,pt,mm)+'</div></div>';
+  });
+  html+='</div>';
+  html+='<div class="sec"><h3>'+m.name+' 走势'+(m.unit?'<span class="u">单位：'+m.unit+'</span>':'')
+    +'<span class="u">'+(isToday?'今日实时':(cur.length?'本期 '+cur[0].date.slice(5)+' ~ '+cur[cur.length-1].date.slice(5):''))+'</span></h3>'
+    +(isToday?'<div class="hint">今日为实时汇总，暂无按日走势；切到「近7天」等范围看趋势。</div>':lineChart(cur,prev,m))
+    +(isToday?'':'<div class="legend"><span><i style="border-color:var(--accent,#537D96)"></i>本期</span>'
+    +(prev.length?'<span><i style="border-color:#b9b2a6"></i>上期（'+prev[0].date.slice(5)+' ~ '+prev[prev.length-1].date.slice(5)+'）</span>':'')
+    +'</div>')+'<div class="hint">悬浮到折点上可看准确数值 ｜ 点上方指标卡切换走势主角</div></div>';
+  // 计划表（真·计划维度 · 跟随范围）
+  const plans = isToday ? (DATA.plansToday||[]) : ((DATA.plansByRange || {})[MODE==='30'?'30':(MODE==='7'?'7':'all')] || []);
+  if(plans.length){
+    const rl = isToday?'今日实时':(MODE==='7'?'近7天':(MODE==='30'?'近30天':'全区间'));
+    html+='<div class="sec"><h3>推广计划<span class="u">'+rl+' 合计 · '+plans.length+' 个计划</span></h3>'
+      +'<table><colgroup><col style="width:40%"><col style="width:12%"><col style="width:12%"><col style="width:12%"><col style="width:12%"><col style="width:12%"></colgroup>'
+      +'<tr><th>计划</th><th>花费</th><th>展现</th><th>点击</th><th>CTR</th><th>成交额</th></tr>';
+    plans.forEach(p=>{
+      html+='<tr><td title="'+esc(p.name)+'">'+esc(p.name)+'</td><td>'+fmt(p.charge,2)+'</td><td>'+fmt(p.adPv,0)
+        +'</td><td>'+fmt(p.click,0)+'</td><td>'+(p.ctr*100).toFixed(2)+'%</td><td>'+fmt(p.amt,2)+'</td></tr>';
+    });
+    html+='</table></div>';
+  }
+  // 场景表
+  const scen = isToday ? (DATA.scenesToday||[]) : ((DATA.scenesByRange||{})[MODE==='30'?'30':(MODE==='7'?'7':'all')] || DATA.scenes || []);
+  const sl = isToday?'今日实时':(MODE==='7'?'近7天':(MODE==='30'?'近30天':'全区间'));
+  html+='<div class="sec"><h3>营销场景<span class="u">'+sl+' 合计</span></h3>'
+    +'<table><colgroup><col style="width:34%"><col style="width:13.2%"><col style="width:13.2%"><col style="width:13.2%"><col style="width:13.2%"><col style="width:13.2%"></colgroup>'
+    +'<tr><th>场景</th><th>花费</th><th>展现</th><th>点击</th><th>CTR</th><th>成交额</th></tr>';
+  scen.forEach(s=>{
+    html+='<tr><td title="'+esc(s.name)+'">'+esc(s.name)+'</td><td>'+fmt(s.charge,2)+'</td><td>'+fmt(s.adPv,0)
+      +'</td><td>'+fmt(s.click,0)+'</td><td>'+(s.ctr*100).toFixed(2)+'%</td><td>'+fmt(s.amt,2)+'</td></tr>';
+  });
+  if(!scen.length) html+='<tr><td colspan="6" style="color:var(--text-m)">无场景数据</td></tr>';
+  html+='</table></div>';
+  if((DATA.insight||[]).length){
+    html+='<div class="sec insight"><h3>趋势解读</h3><ul>';
+    DATA.insight.forEach(x=>{ html+='<li>'+esc(x)+'</li>'; });
+    html+='</ul></div>';
+  }
+  root.innerHTML=html;
+  renderBar();
+}
+function pick(k){ METRIC=k; render(); }
+function setMode(m){ MODE=m; render(); }
+function applyCustom(){
+  const s=document.getElementById('cs').value, e=document.getElementById('ce').value;
+  if(!s||!e){ alert('请选择起止日期'); return; }
+  if(s>e){ alert('起始日期不能晚于结束'); return; }
+  const span=Math.round((new Date(e)-new Date(s))/86400000)+1;
+  if(span>30){ alert('为避免数据溢出，自定义范围最多 30 天（当前 '+span+' 天）'); return; }
+  CS=s; CE=e; MODE='custom'; render();
+}
+function renderBar(){
+  const el=document.getElementById('rangebar');
+  const cur=curDays();
+  el.innerHTML='<span class="lb">对比范围</span>'
+    +'<button class="'+(MODE==='1'?'on':'')+'" onclick="setMode(\'1\')">今日</button>'
+    +'<button class="'+(MODE==='7'?'on':'')+'" onclick="setMode(\'7\')">近7天</button>'
+    +'<button class="'+(MODE==='30'?'on':'')+'" onclick="setMode(\'30\')">近30天</button>'
+    +'<span class="sep"></span>'
+    +'<span class="lb">自定义</span>'
+    +'<input type="date" id="cs" value="'+(CS||'')+'"> <span class="lb">至</span> <input type="date" id="ce" value="'+(CE||'')+'">'
+    +'<button onclick="applyCustom()">应用</button>'
+    +'<span class="sep"></span>'
+    +'<span class="lb">'+(MODE==='1'?'今日实时数据':('本期 '+cur.length+' 天 · 与前一 '+cur.length+' 天对比'))+'</span>';
+}
+async function load(){
+  const btn=document.getElementById('rfbtn'); if(btn){ btn.textContent='刷新中…'; btn.disabled=true; }
+  const root=document.getElementById('root');
+  let d;
+  try{ d = await fetch(P+'report').then(r=>r.json()); }
+  catch(e){
+    root.innerHTML='<div class="empty">服务未响应（工作台内核没起？）</div>';
+    if(btn){ btn.textContent='刷新'; btn.disabled=false; } return;
+  }
+  if(btn){ btn.textContent='刷新'; btn.disabled=false; }
+  if(!d.ok){
+    document.getElementById('meta').textContent='';
+    document.getElementById('rangebar').innerHTML='';
+    root.innerHTML='<div class="empty">'+esc(d.error||'无数据')
+      +'<br><span style="font-size:11px">第一次用：点右上角「刷新」采一次</span></div>';
+    return;
+  }
+  DATA=d; updateMeta(d); render();
+}
+function updateMeta(d){
+  document.getElementById('meta').textContent =
+    '共 '+ (d.days||[]).length +' 天有数据' + (d.range? '（报表查询 '+d.range.start.slice(5)+' ~ '+d.range.end.slice(5)+'）':'')
+    + '　采集于 ' + esc((d.fetchedAt||'').replace('T',' '));
+}
+async function refreshNow(){
+  const btn=document.getElementById('rfbtn');
+  if(btn){ btn.textContent='采集中…'; btn.disabled=true; }
+  let r;
+  try{ r = await fetch(P+'refresh').then(x=>x.json()); }catch(e){ r={ok:false}; }
+  if(!r.ok){ alert('启动采集失败：'+(r.error||'')); if(btn){btn.textContent='刷新';btn.disabled=false;} return; }
+  let n=0;
+  const t=setInterval(async()=>{
+    n++;
+    let d;
+    try{ d=await fetch(P+'report').then(x=>x.json()); }catch(e){}
+    if(d && d.ok && !d.refreshing){
+      clearInterval(t); DATA=d; updateMeta(d); render();
+      if(btn){ btn.textContent='刷新'; btn.disabled=false; }
+    } else if(n>=48){
+      clearInterval(t); if(btn){ btn.textContent='刷新'; btn.disabled=false; } load();
+    } else if(btn){ btn.textContent='采集中…('+(n*5)+'s)'; }
+  }, 5000);
+}
+window.addEventListener('message', function(e){ var d=e.data; if(!d||d.type!=='wb-theme'||!d.vars) return;
+  var st=document.documentElement.style; for(var k in d.vars){ if(d.vars[k]) st.setProperty(k, d.vars[k]); } });
+load();
+</script>
+</body></html>

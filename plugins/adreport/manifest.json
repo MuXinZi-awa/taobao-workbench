@@ -1,0 +1,10 @@
+{
+  "id": "adreport",
+  "name": "报表",
+  "version": "0.2.0",
+  "desc": "万相台报表台：账户概览 / 推广计划(11) / 营销场景 / 日走势，指标可点切走势、本期比上期、随范围联动；刷新即后台静默采集",
+  "panel": "panel.html",
+  "has_server": true,
+  "icon": "📊",
+  "log": "adreport.log"
+}
