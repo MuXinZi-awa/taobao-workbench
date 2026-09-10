@@ -22,6 +22,20 @@
 - 采集脚本：`推广一键跑/_report_fetch.py`（`--headless` 可选）；输出 `runtime\report_data.json`
 - 单次约 **60s**（1 账户走势 + 11 计划 × 3 范围 + 今日账户/计划/场景 + 场景 × 3）；实时数据有时点误差约 1min
 
+## 本地库（sqlite3 · 累积存档）
+
+`推广一键跑\runtime\report.db`——把采集数据**按日累积**（防店铺数据过期/被删）：
+
+| 表 | 内容 |
+|---|---|
+| `daily` | 账户按日（date 主键 upsert，历史越攒越长）|
+| `plan_snap` | 每次采集的计划区间快照（带时间/范围）|
+| `scene_snap` | 场景区间快照 |
+
+- 读取**优先走库**（`days` 从 `daily` 读，全历史、秒回）；库空才回退 JSON
+- 采集脚本每次跑完自动入库（账户按日 upsert）
+- 库文件在 `runtime/`（已被 .gitignore 保护，业务数据不入仓）
+
 ## server action
 
 - `report` → `days / total / scenes / scenesByRange / plansByRange / today / plansToday / scenesToday / insight / refreshing`

@@ -71,15 +71,32 @@ def report():
     scene = ((raw.get("scene") or {}).get("data") or {})
     charge = (raw.get("chargeSum") or {}).get("data") or {}
 
+    # 账户按日：优先读本地库（历史累积、防删），库空则回退 JSON
     days = []
-    for r in trend_rows:
-        days.append({
-            "date": r.get("thedate") or "",
-            "charge": _f(r.get("charge")), "adPv": _i(r.get("adPv")), "click": _i(r.get("click")),
-            "ctr": _f(r.get("ctr"), 4), "amt": _f(r.get("alipayInshopAmt")),
-            "num": _i(r.get("alipayInshopNum")), "cart": _i(r.get("cartInshopNum")),
-            "ecpc": _f(r.get("ecpc"), 3), "cvr": _f(r.get("cvr"), 4),
-        })
+    try:
+        import sys as _sys
+        if TG not in _sys.path:
+            _sys.path.insert(0, TG)
+        import report_db as _rdb
+        for d in _rdb.get_daily():
+            days.append({
+                "date": d.get("date") or "",
+                "charge": _f(d.get("charge")), "adPv": _i(d.get("adPv")), "click": _i(d.get("click")),
+                "ctr": _f(d.get("ctr"), 4), "amt": _f(d.get("amt")),
+                "num": _i(d.get("num")), "cart": _i(d.get("cart")),
+                "ecpc": _f(d.get("ecpc"), 3), "cvr": _f(d.get("cvr"), 4),
+            })
+    except Exception:
+        days = []
+    if not days:
+        for r in trend_rows:
+            days.append({
+                "date": r.get("thedate") or "",
+                "charge": _f(r.get("charge")), "adPv": _i(r.get("adPv")), "click": _i(r.get("click")),
+                "ctr": _f(r.get("ctr"), 4), "amt": _f(r.get("alipayInshopAmt")),
+                "num": _i(r.get("alipayInshopNum")), "cart": _i(r.get("cartInshopNum")),
+                "ecpc": _f(r.get("ecpc"), 3), "cvr": _f(r.get("cvr"), 4),
+            })
 
     tot_charge = _f(acct.get("charge"))
     tot_amt = _f(acct.get("alipayInshopAmt"))
