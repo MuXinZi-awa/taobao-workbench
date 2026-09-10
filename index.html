@@ -173,6 +173,63 @@ body[data-theme="dsh"] .prevbody pre { border-radius:8px; }
 body[data-theme="dsh"] .viewtab .vt.active { background:var(--card); }
 body[data-theme="dsh"] .set-block,
 body[data-theme="dsh"] .about-row { border-color:rgba(90,80,60,.10); }body[data-theme="warm"] { --bg:#FBF3E4; --card:#FFF9EC; --side:#F3E7CF; --text:#3A2E1E; --text-l:#5A4A32; --text-m:#7A6A52; --border:#E2D2B4; }
+
+/* ===== 苍银（夜蓝 × 金印）— 深色主题 ===== */
+body[data-theme="saber"] { --bg:#0F1420; --card:#161D2C; --side:#0B101A; --text:#EAE8E0; --text-l:#B9BDC7; --text-m:#7B8296; --border:rgba(201,169,97,.16); --accent:#C9A227; --accent-h:#E3BC47; --accent-l:rgba(201,169,97,.12); --green:#6E9E7A; --r:4px; }
+body[data-theme="saber"] .topbar,
+body[data-theme="saber"] .col-side,
+body[data-theme="saber"] .col-desk { border-color:rgba(201,169,97,.14); }
+body[data-theme="saber"] .col-side { background:var(--side); }
+body[data-theme="saber"] .col-desk { background:var(--card); }
+body[data-theme="saber"] .prevbody,
+body[data-theme="saber"] .logbox,
+body[data-theme="saber"] .modal,
+body[data-theme="saber"] .dropdown,
+body[data-theme="saber"] .suggest { background:var(--card); border-color:rgba(201,169,97,.20); }
+body[data-theme="saber"] .plugin,
+body[data-theme="saber"] .iconbtn,
+body[data-theme="saber"] .vt,
+body[data-theme="saber"] .item,
+body[data-theme="saber"] .set-nav .item { border-radius:4px; transition:background .15s,color .15s; }
+body[data-theme="saber"] .plugin.active,
+body[data-theme="saber"] .plugin:hover,
+body[data-theme="saber"] .iconbtn:hover,
+body[data-theme="saber"] .set-nav .item.active { background:#C9A227; color:#12172A; box-shadow:none; }
+body[data-theme="saber"] input,
+body[data-theme="saber"] textarea,
+body[data-theme="saber"] select,
+body[data-theme="saber"] .desk-search input { background:#1C2436 !important; color:var(--text); border-color:rgba(201,169,97,.20); }
+body[data-theme="saber"] input::placeholder { color:var(--text-m); }
+body[data-theme="saber"] .viewtab .vt.active { background:var(--card); color:var(--accent-h); }
+body[data-theme="saber"] .modal-mask { background:rgba(4,7,12,.62); }
+body[data-theme="saber"] .set-block,
+body[data-theme="saber"] .about-row { border-color:rgba(201,169,97,.12); }
+body[data-theme="saber"] .dropzone { border-color:rgba(201,169,97,.28); }
+
+/* ===== 晓蓝（素雅浅蓝 · 清晨磨砂玻璃） ===== */
+body[data-theme="dawn"] { --bg:#EDF3FB; --card:#FBFDFF; --side:#E9F0FA; --text:#1F2C38; --text-l:#48607A; --text-m:#7A8CA0; --border:rgba(94,138,180,.16); --accent:#5E8AB4; --accent-h:#456E96; --accent-l:rgba(94,138,180,.12); --green:#567F5F; --r:10px; }
+body[data-theme="dawn"] { background:radial-gradient(620px 420px at 12% 6%,rgba(122,172,222,.42),transparent 70%),radial-gradient(780px 540px at 90% 16%,rgba(150,192,238,.34),transparent 72%),radial-gradient(660px 540px at 70% 98%,rgba(132,182,226,.30),transparent 72%),linear-gradient(155deg,#E2EDFA 0%,#F4FAFF 40%,#E8F1FB 70%,#E5EEFA 100%); background-attachment:fixed; }
+body[data-theme="dawn"] .topbar,
+body[data-theme="dawn"] .col-side,
+body[data-theme="dawn"] .col-desk { background:rgba(246,251,255,.55); backdrop-filter:blur(14px) saturate(1.4); -webkit-backdrop-filter:blur(14px) saturate(1.4); border-color:rgba(255,255,255,.7); }
+body[data-theme="dawn"] .col-desk { background:rgba(253,254,255,.6); }
+body[data-theme="dawn"] .prevbody,
+body[data-theme="dawn"] .logbox,
+body[data-theme="dawn"] .modal,
+body[data-theme="dawn"] .dropdown,
+body[data-theme="dawn"] .suggest { background:rgba(255,255,255,.66); backdrop-filter:blur(16px) saturate(1.4); -webkit-backdrop-filter:blur(16px) saturate(1.4); border-color:rgba(255,255,255,.75); box-shadow:0 8px 28px rgba(94,138,180,.10); }
+body[data-theme="dawn"] .plugin,
+body[data-theme="dawn"] .iconbtn,
+body[data-theme="dawn"] .vt,
+body[data-theme="dawn"] .item,
+body[data-theme="dawn"] .set-nav .item { border-radius:10px; transition:background .15s,color .15s; }
+body[data-theme="dawn"] .desk-search input,
+body[data-theme="dawn"] input,
+body[data-theme="dawn"] textarea,
+body[data-theme="dawn"] select { background:rgba(255,255,255,.72) !important; border-color:rgba(94,138,180,.20); }
+body[data-theme="dawn"] .viewtab .vt.active { background:rgba(255,255,255,.66); color:var(--accent-h); }
+body[data-theme="dawn"] .set-nav { background:transparent; }
+body[data-theme="dawn"] .modal-mask { background:rgba(70,110,150,.22); backdrop-filter:blur(2px); }
 </style></head>
 <body>
 <div class="topbar"><span class="t">优化管理工作台</span>
@@ -583,11 +640,11 @@ function broadcastTheme(){
 function uiSet(k,v){ let s={}; try{ s=JSON.parse(localStorage.getItem(UIKEY)||'{}'); }catch(e){} s[k]=v; localStorage.setItem(UIKEY,JSON.stringify(s)); uiApply(); renderInterface(document.getElementById('setContent')); }
 function renderInterface(c){ _ri(c); edUI(c); }
 function _ri(c){ let s={theme:'paper',serif:false,fs:0}; try{ s=Object.assign(s,JSON.parse(localStorage.getItem(UIKEY)||'{}')); }catch(e){}
- const cols={paper:'#F5EFE4',fresh:'#EEF2F7',warm:'#FBF3E4',deepseek:'#1A1A1A',dsh:'#5E7C9E'};
- const th=(id,n)=>'<div onclick="uiSet(\'theme\',\''+id+'\')" style="flex:1;min-width:100px;border:.5px solid '+(s.theme===id?'var(--accent)':'var(--border)')+';border-radius:var(--r);padding:10px 12px;cursor:pointer;background:'+(s.theme===id?'var(--accent-l)':'var(--bg-card)')+'"><span style="display:inline-block;width:16px;height:16px;border-radius:4px;background:'+(cols[id]||'#eee')+';border:.5px solid var(--border);margin-right:7px;vertical-align:-3px"></span>'+n+'</div>';
+ const cols={paper:'#F5EFE4',fresh:'#EEF2F7',warm:'#FBF3E4',deepseek:'#1A1A1A',dsh:'#5E7C9E',dawn:'#5E8AB4',saber:'#0F1420'};
+ const th=(id,n,ds)=>'<div onclick="uiSet(\'theme\',\''+id+'\')" style="border:.5px solid '+(s.theme===id?'var(--accent)':'var(--border)')+';border-radius:8px;padding:10px 12px;cursor:pointer;background:'+(s.theme===id?'var(--accent-l)':'var(--bg-card)')+'"><div style="display:flex;align-items:center;gap:7px"><span style="display:inline-block;width:15px;height:15px;border-radius:4px;background:'+(cols[id]||'#eee')+';border:.5px solid var(--border);flex-shrink:0"></span><span style="font-size:13px;font-weight:500;color:var(--text)">'+n+'</span></div><div style="font-size:11px;color:var(--text-m);margin-top:5px;line-height:1.5">'+ds+'</div></div>';
  c.innerHTML='<h3>界面</h3><div class="desc">工作台外观（本地保存，刷新即用）</div>'
  +'<div style="font-size:12px;font-weight:500;color:var(--text-l);margin-bottom:8px">主题</div>'
- +'<div style="display:flex;gap:6px;margin-bottom:10px">'+th('paper','纸色')+th('fresh','清新')+th('warm','暖阳')+th('deepseek','深邃蓝')+th('dsh','莫兰迪')+'</div>'
+ +'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px">'+th('paper','纸色','老搭档，看惯了')+th('fresh','清新','像刚擦过的窗')+th('warm','暖阳','下午三点的光')+th('deepseek','深邃蓝','只有黑白，别的多余')+th('dsh','莫兰迪','雾蓝灰，安静好看')+th('dawn','晓蓝','清晨的磨砂玻璃')+th('saber','夜阑','夜深了才开，白天别用')+'</div>'
  +'<div style="font-size:12px;font-weight:500;color:var(--text-l);margin:16px 0 8px">界面字体</div>'
  +'<div style="display:flex;gap:6px;margin-bottom:10px">'
  +'<div onclick="uiSet(\'serif\',false)" style="flex:1;border:.5px solid '+(!s.serif?'var(--accent)':'var(--border)')+';border-radius:var(--r);padding:6px 10px;cursor:pointer;background:'+(!s.serif?'var(--accent-l)':'var(--bg-card)')+'">非衬线 <span style="font-size:10px;color:var(--text-m)">系统</span></div>'
@@ -632,7 +689,7 @@ function renderGeneral(c){
 async function setAutoStart(){ const d=await api('/api/autostart'); alert(d.msg||d.error||'完成'); }
 uiApply();
 function renderAbout(c){ c.innerHTML='<h3>关于</h3><div class="desc">优化管理工作台</div>'
- +'<div class="about-row"><span class="k">版本</span><span>v0.6.0</span></div>'
+ +'<div class="about-row"><span class="k">版本</span><span>v0.7.0</span></div>'
  +'<div class="about-row"><span class="k">内核</span><span>workbench.py · 8900</span></div>'
  +'<div class="about-row"><span class="k">设计</span><span>简单内核 + 插件丰富</span></div>'
  +'<div class="about-row"><span class="k">书桌联动</span><span>当前品素材</span></div>'
