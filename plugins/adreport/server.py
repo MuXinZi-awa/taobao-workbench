@@ -94,8 +94,13 @@ def report():
     trend_rows = ((raw.get("trend") or {}).get("data") or {}).get("list") or []
     acct_l = ((raw.get("account") or {}).get("data") or {}).get("list") or [{}]
     acct = acct_l[0] if acct_l else {}
-    _mid = _resolve_account(raw)   # 本次数据所属账号（memberId）
+    _mid = _resolve_account(raw)   # JSON（上次采集）的账号
     _act = _active_conn()          # 当前激活连接（名称 + 绑定的 memberId）
+    # 该显示谁的数：激活连接的绑定优先；未绑定（新号未采集）→ 空 → 面板清空
+    _target = str(_act.get("member_id") or "").strip()
+    if not _target and not _act.get("name"):
+        _target = _mid                      # 根本没有激活连接 → 按 JSON 兼容
+    stale = (str(_target) != str(_mid))     # 目标 ≠ 当次采集 → 显示库存档/空（不显示别人数据）
     scene = ((raw.get("scene") or {}).get("data") or {})
     charge = (raw.get("chargeSum") or {}).get("data") or {}
 
@@ -106,8 +111,8 @@ def report():
         if TG not in _sys.path:
             _sys.path.insert(0, TG)
         import report_db as _rdb
-        # 取不到账号 → 不查库（绝不放开全库，防跨账号串台）；空则回退下方 JSON
-        _rows = _rdb.get_daily(account=_mid) if _mid else []
+        # 取不到账号 → 不查库（绝不放开全库，防跨账号串台）
+        _rows = _rdb.get_daily(account=_target) if _target else []
         for _r in _rows:
             days.append({
                 "date": _r.get("date") or "",
@@ -118,7 +123,7 @@ def report():
             })
     except Exception:
         days = []
-    if not days:
+    if not days and not stale:
         for r in trend_rows:
             days.append({
                 "date": r.get("thedate") or "",
@@ -178,6 +183,40 @@ def report():
 
     plans_by_range = {"7": _plans("7"), "30": _plans("30"), "all": _plans("all")}
 
+    # ── 账号已切换：改显**激活连接账户的本地库存档**（秒刷新；没存档就是一空）──
+    if stale:
+        try:
+            import sys as _s2
+            if TG not in _s2.path:
+                _s2.path.insert(0, TG)
+            import report_db as _rdb2
+            for _tag in ("7", "30", "all"):
+                _pr, _ = _rdb2.get_plans(account=_target, tag=_tag) if _target else ([], None)
+                plans_by_range[_tag] = [{"name": p.get("name") or "?", "campaignId": p.get("campaignId"),
+                    "charge": _f(p.get("charge")), "adPv": _i(p.get("adPv")), "click": _i(p.get("click")),
+                    "ctr": _f(p.get("ctr"), 4), "amt": _f(p.get("amt")), "num": _i(p.get("num")),
+                    "ecpc": _f((p.get("charge") or 0) / p.get("click"), 3) if p.get("click") else 0} for p in _pr]
+                _sr, _ = _rdb2.get_scenes(account=_target, tag=_tag) if _target else ([], None)
+                scenes_by_range[_tag] = [{"name": s.get("name") or "?", "charge": _f(s.get("charge")),
+                    "adPv": _i(s.get("adPv")), "click": _i(s.get("click")), "ctr": _f(s.get("ctr"), 4),
+                    "amt": _f(s.get("amt")), "num": _i(s.get("num"))} for s in _sr]
+        except Exception:
+            pass
+        scenes = scenes_by_range.get("all") or []
+        _sc = sum(x["charge"] for x in days); _sa = sum(x["amt"] for x in days)
+        _spv = sum(x["adPv"] for x in days); _sk = sum(x["click"] for x in days)
+        _sn = sum(x["num"] for x in days)
+        total = {"charge": round(_sc, 2), "adPv": _spv, "click": _sk,
+                 "ctr": round(_sk / _spv, 4) if _spv else 0, "amt": round(_sa, 2), "num": _sn,
+                 "cart": sum(x["cart"] for x in days),
+                 "ecpc": round(_sc / _sk, 3) if _sk else 0,
+                 "cvr": round(_sn / _sk, 4) if _sk else 0,
+                 "roi": round(_sa / _sc, 2) if _sc else 0}
+        today_total = {"charge": 0, "adPv": 0, "click": 0, "ctr": 0, "amt": 0, "num": 0,
+                       "cart": 0, "ecpc": 0, "cvr": 0, "roi": 0}
+        plans_today = []
+        scenes_today = []
+
     # 今日实时
     ta = ((raw.get("todayAccount") or {}).get("data") or {}).get("list") or []
     ta = ta[0] if ta else {}
@@ -218,6 +257,7 @@ def report():
             refreshing = True
 
     return {"ok": True, "fetchedAt": d.get("fetchedAt"), "range": d.get("range"),
+            "stale": stale,
             "accountName": _act.get("name") or "", "memberId": _mid,
             "activeMember": _act.get("member_id") or "",
             "accountMatch": ((str(_act.get("member_id")) == str(_mid)) if _act.get("member_id")
