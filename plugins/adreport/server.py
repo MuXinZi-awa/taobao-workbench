@@ -220,7 +220,8 @@ def report():
     return {"ok": True, "fetchedAt": d.get("fetchedAt"), "range": d.get("range"),
             "accountName": _act.get("name") or "", "memberId": _mid,
             "activeMember": _act.get("member_id") or "",
-            "accountMatch": (str(_act.get("member_id")) == str(_mid)) if (_act.get("member_id") and _mid) else None,
+            "accountMatch": ((str(_act.get("member_id")) == str(_mid)) if _act.get("member_id")
+                             else (False if _mid else None)),
             "days": days, "total": total, "scenes": scenes, "scenesByRange": scenes_by_range,
             "plansByRange": plans_by_range, "today": today_total, "plansToday": plans_today,
             "scenesToday": scenes_today, "refreshing": refreshing,
