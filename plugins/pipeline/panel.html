@@ -50,7 +50,7 @@ input::placeholder { color:var(--text-m,#999); }
 
 <div class="bar">
   <input id="lh" type="text" placeholder="料号 或 淘宝 ID（单量回车）">
-  <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button onclick="adStartFrom(0)">📋 开始审核</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button>
+  <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button onclick="adStartFrom(0)">📋 开始审核</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button><button id="ssBtn" onclick="srcRun()" style="display:none">🔁 换源处理</button>
   <button class="ghost" onclick="demo()">试填</button>
 </div>
 <div class="drop" id="drop"><div>📥 拖入 csv / xlsx（批量）</div><div style="font-size:11px;color:var(--text-l,#999);font-weight:400">自动识别料号列，逐行扫描——点击或拖拽</div></div>
@@ -70,7 +70,15 @@ const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
 const cell=(v,cls='')=>'<td class="'+cls+'">'+esc(v)+'</td>';
 
 var curItems=[];
-function render(items){
+function curHasAudit(items){
+ try{
+  var f=0,h=0; items.forEach(function(x){ var a=(x.audit||''); if(a.match(/送修/))f++; if(a.match(/换源/))h++; });
+  var rb=document.getElementById('rpBtn'), sb=document.getElementById('ssBtn');
+  if(rb) rb.style.display=f?'':'none';
+  if(sb) sb.style.display=h?'':'none';
+ }catch(e){}
+}
+function render(items){ curHasAudit(items);
  curItems=items; const tb=$('#tb tbody');
  tb.innerHTML=items.map((it,i)=>
   '<tr id="r'+i+'" style="cursor:pointer" onclick="adStartFrom('+i+')">'+cell(it.lh)+typeCell(it.type)+cell(it.id||'—')
@@ -122,11 +130,15 @@ async function adStartFrom(i){
  var items=[];
  for(var k=0;k<list.length;k++){
   var it=list[k];
-  var skip = (it.type||'').indexOf('双百跳过')>=0;
-  var img='';
-  try{ var d=await fetch(P+'material?lh='+encodeURIComponent(it.lh)).then(r=>r.json());
-   img=(d.material&&d.material['参考图'])||''; }catch(e){}
-  items.push({lh:it.lh,type:it.type||'',ref:img,skip:!!skip});
+  var skip = (it.type||'').indexOf('双百跳过')>=0 && !(it.audit||'').match(/送修|待复检|换源/);
+   var rf=it.ref||'', og=it.orig||'';
+   try{ // 在途品（待复检/换源/送修）现场重查 ref——避免送修完成后旧快照显示老图
+    var dr=await fetch(P+'audit-ref?lh='+encodeURIComponent(it.lh)).then(r=>r.json());
+    if(dr.ok&&dr.audit){ rf=dr.ref||rf; og=dr.orig||og; }
+   }catch(e){}
+   if(!rf){ try{ var d=await fetch(P+'material?lh='+encodeURIComponent(it.lh)).then(r=>r.json());
+    rf=(d.material&&d.material['参考图'])||''; }catch(e){} }
+   items.push({lh:it.lh,type:it.type||'',ref:rf,orig:og,skip:!!skip,audit:it.audit||''});
  }
  parent.postMessage({type:'wb-audit-start',items:items},'*');
  setStage(2,'on','人工审核中');
@@ -151,6 +163,14 @@ async function repairRun(){
  var d=await fetch(P+'repair').then(function(r){return r.json();});
  $('#cur').textContent=d.msg||('✗ '+(d.error||''));
 }
+
+async function srcRun(){
+ var v=(curLhs&&curLhs.length)?curLhs.join(','):$('#lh').value.trim();
+ if(!v){ alert('先查询要换源的品'); return; }
+ var d=await fetch(P+'src-src').then(function(r){return r.json();});
+ $('#cur').textContent=d.ok?d.msg:('✗ '+(d.error||'启动失败'));
+}
+
 function repairPoll(){
  fetch(P+'repair-status').then(function(r){return r.json();}).then(function(d){
   var bar=document.getElementById('repairBar'); if(!bar) return;
@@ -167,9 +187,9 @@ function repairPoll(){
 setInterval(repairPoll,5000);
 async function go(){
  const v=$('#lh').value.trim(); if(!v)return;
- $('#cur').textContent='查询 '+v+' …';
- const d=await fetch(P+'scan?lhs='+encodeURIComponent(v)).then(r=>r.json());
- render(d.ok?d.items:[]); $('#cur').textContent=d.ok?'素材扫描完成':'错误: '+d.error;
+ // 单品也走分流：搜商品→查双百→type/素材（不再是纯本地查询）
+ curLhs=v.split(/[,\s，]+/).filter(Boolean);
+ await classify();
 }
 function demo(){ $('#lh').value='DTM06-12SA'; go(); }
 
