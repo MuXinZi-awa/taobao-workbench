@@ -105,9 +105,12 @@ def delete(cid):
     c.close()
 
 def activate(cid):
+    """按类型各自激活（淘宝与 ERP 互不影响——不同类各有一个当前）"""
     c = _conn()
-    c.execute("UPDATE conn SET active=0")
-    c.execute("UPDATE conn SET active=1 WHERE id=?", (cid,))
+    row = c.execute("SELECT type FROM conn WHERE id=?", (cid,)).fetchone()
+    if row:
+        c.execute("UPDATE conn SET active=0 WHERE type=?", (row[0],))
+        c.execute("UPDATE conn SET active=1 WHERE id=?", (cid,))
     c.commit()
     c.close()
 
