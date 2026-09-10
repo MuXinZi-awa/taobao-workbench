@@ -277,22 +277,43 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         if r["type"] == "odoo":
                             import xmlrpc.client
                             pw = conn_store.get_secret(cid)
-                            base = (r.get("url") or "").strip().rstrip("/")
-                            if not base.startswith(("http://", "https://")):
-                                base = "http://" + base
-                            port = (r.get("port") or "").strip()
-                            if port and (":" not in base.split("//", 1)[-1]):
-                                base = "%s:%s" % (base, port)
-                            last_err = ""
-                            for cand in [base] + (["https://" + base.split("//", 1)[-1]] if base.startswith("http://") else []):
+
+                            def _mk(u0, port0, scheme_force=None):
+                                u = (u0 or "").strip()
+                                if not u:
+                                    return ""
+                                if not u.lower().startswith(("http://", "https://")):
+                                    u = (scheme_force or "https://") + u
+                                scheme, rest = u.split("://", 1)
+                                if scheme_force:
+                                    scheme = scheme_force.rstrip(":/")
+                                host, _, path = rest.partition("/")
+                                p = (port0 or "").strip()
+                                # 默认端口不显式拼（http:80 / https:443）
+                                if p and ":" not in host and not (scheme == "https" and p == "443") and not (scheme == "http" and p == "80"):
+                                    host = host + ":" + p
+                                return "%s://%s%s" % (scheme, host, ("/" + path) if path else "")
+
+                            base = _mk(r.get("url"), r.get("port"))
+                            if not base:
+                                return self._json({"ok": False, "error": "缺 URL"})
+                            # 候选：原样 → 换 https:// → 换 http://（子路径 /odoo 等保留）
+                            host_path = base.split("://", 1)[1]
+                            cands = [base, "https://" + host_path, "http://" + host_path]
+                            seen, last_err = [], ""
+                            for cand in cands:
+                                if cand in seen:
+                                    continue
+                                seen.append(cand)
+                                ep = cand.rstrip("/") + "/xmlrpc/2/common"
                                 try:
-                                    common = xmlrpc.client.ServerProxy("%s/xmlrpc/2/common" % cand)
+                                    common = xmlrpc.client.ServerProxy(ep)
                                     uid = common.authenticate(r["dbname"], r["username"], pw, {})
                                     if uid:
-                                        return self._json({"ok": True, "msg": "Odoo 登录成功：%s uid=%s" % (cand, uid)})
-                                    last_err = "认证失败（账号/密码/库名？）"
+                                        return self._json({"ok": True, "msg": "Odoo 登录成功：%s（uid=%s）" % (ep, uid)})
+                                    last_err = "认证失败（账号/密码/库名 任一不符）——端点可达：%s" % ep
                                 except Exception as ee:
-                                    last_err = str(ee)[:100]
+                                    last_err = str(ee)[:110]
                             return self._json({"ok": False, "error": "Odoo 测试失败：" + last_err})
                         return self._json({"ok": True, "msg": "已保存（%s 类型测试后续接入）" % r["type"]})
                     return self._json({"ok": False, "error": "未知 conn action"}, 404)
