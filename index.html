@@ -713,6 +713,34 @@ function bindUI(){ const inp=document.getElementById('searchInput'), sg=document
  document.addEventListener('click',()=>document.querySelectorAll('.dropdown.open').forEach(x=>x.classList.remove('open'))); }
 bindUI(); loadPlugins(); loadDesk();
 
+/* ===== 账号切换自动跟随（内核指纹轮询；变了 → 重载插件 iframe + 提示）===== */
+var _acctTok = null;
+function acctFlash(name){
+  var el = document.getElementById('acctFlag');
+  if(!el){ el = document.createElement('div'); el.id = 'acctFlag';
+    el.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:999;background:var(--accent,#537D96);'
+      + 'color:#fff;padding:7px 13px;border-radius:6px;font-size:12.5px;box-shadow:0 2px 12px rgba(0,0,0,.25);transition:opacity .3s';
+    document.body.appendChild(el); }
+  el.textContent = '已切到「' + (name || '?') + '」· 面板已自动刷新';
+  el.style.opacity = '1';
+  clearTimeout(el._t); el._t = setTimeout(function(){ el.style.opacity = '0'; }, 4000);
+}
+async function watchAccount(){
+  try{
+    var d = await api('/api/account-token');
+    var t = (d && d.token) || '';
+    if(_acctTok === null){ _acctTok = t; return; }   // 首次只记基线
+    if(t !== _acctTok){
+      _acctTok = t;
+      Array.prototype.forEach.call(document.querySelectorAll('[id^="plg-"] iframe'), function(f){
+        try{ f.src = f.src.split('?')[0] + '?t=' + Date.now(); }catch(e){}
+      });
+      acctFlash((d && d.name) || '');
+    }
+  }catch(e){}
+}
+setInterval(watchAccount, 2000);
+
 /* ===== 素材审核模式（预览 Tab）——流水线 postMessage 驱动 ===== */
 var AD={items:[],idx:0,marks:{},force:false};
 window.addEventListener('message', function(e){ var d=e.data;
