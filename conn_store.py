@@ -123,6 +123,14 @@ def set_member_id(cid, mid):
     c.close()
 
 
+def set_profile(cid, p):
+    """回填：把该连接用的浏览器 profile 目录名记上"""
+    c = _conn()
+    c.execute("UPDATE conn SET profile=? WHERE id=?", (str(p or ""), cid))
+    c.commit()
+    c.close()
+
+
 def active_of(ctype):
     """某类型的当前激活连接（含明文密码——仅供脚本调用）"""
     c = _conn()
