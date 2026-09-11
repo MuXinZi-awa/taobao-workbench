@@ -344,11 +344,41 @@ def refresh(headless=False):
         return {"ok": False, "error": str(e)[:120]}
 
 
+def smart_refresh(headless=True):
+    """智能刷新：库里缺该账户历史 → 全量采集；只缺今日 → 只补今日（省时间）"""
+    import datetime as _dt
+    a = _active_conn()
+    tgt = str(a.get("member_id") or "").strip()
+    last = ""
+    if tgt:
+        try:
+            import sys as _s3
+            if TG not in _s3.path:
+                _s3.path.insert(0, TG)
+            import report_db as _rdb3
+            rows = _rdb3.get_daily(account=tgt)
+            if rows:
+                last = rows[-1]["date"] or ""
+        except Exception:
+            pass
+    yest = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
+    need_full = (not last) or (last < yest)
+    if need_full:
+        r = refresh(headless=headless)
+        r["mode"] = "full"
+        r["reason"] = ("该账户暂无历史存档" if not last else "存档止于 %s，需补全" % last)
+        return r
+    r = refresh_today(headless=headless)
+    r["mode"] = "today"
+    r["reason"] = "历史已齐（至 %s），只补今日" % last
+    return r
+
+
 def handle(action, qs):
     if action == "report":
         return report()
     if action == "refresh":
-        return refresh_today(headless=True)      # 刷新 = 读库 + 只补今日（~15s）
+        return smart_refresh(headless=True)      # 智能分流：缺历史走全量，否则只补今日
     if action == "refresh-all":
-        return refresh(headless=True)            # 全量（历史入库存档）
+        return refresh(headless=True)            # 强制全量
     return {"ok": False, "error": "unknown action: " + str(action)}
