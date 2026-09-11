@@ -35,6 +35,19 @@ def core_version():
     return "0.0.0"
 
 
+def active_token():
+    """当前激活店铺连接的指纹（插件前端轮询用）——变了 = 切号了，各面板自行重载"""
+    try:
+        import conn_store
+        a = conn_store.active_of("taobao")
+        if not a:
+            return {"token": "", "name": ""}
+        return {"token": "%s:%s" % (a.get("id"), a.get("member_id") or ""),
+                "name": a.get("name") or ""}
+    except Exception as e:
+        return {"token": "", "name": "", "error": str(e)[:60]}
+
+
 def scan_plugins():
     """扫 plugins/*/manifest.json → [{id, name, icon, panel, desc}]"""
     out = []
@@ -345,6 +358,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return self._json({"ok": False, "error": "未知 conn action"}, 404)
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:120]})
+            if p == "/api/account-token":
+                return self._json(active_token())
+
             if p == "/api/plugins":
                 return self._json({"plugins": scan_plugins(), "core": core_version()})
             if p == "/api/logkeep":
