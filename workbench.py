@@ -35,6 +35,17 @@ def core_version():
     return "0.0.0"
 
 
+def _acct_profile(tg):
+    """激活连接对应的浏览器 profile（复用 acct_profile.resolve）；取不到回退默认"""
+    try:
+        if tg not in sys.path:
+            sys.path.insert(0, tg)
+        import acct_profile
+        return acct_profile.resolve()
+    except Exception:
+        return os.path.join(tg, "chrome_profile"), None
+
+
 def active_token():
     """当前激活店铺连接的指纹（插件前端轮询用）——变了 = 切号了，各面板自行重载"""
     try:
@@ -457,20 +468,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:80]})
             if p == "/api/browser-login":
-                # 引导登录：打开 chrome_profile 淘宝登录页（人登录一次——cookie 存 profile）
+                # 引导登录：打开【当前激活连接】对应 profile 的淘宝登录页（cookie 存该 profile）
                 import subprocess
                 try:
                     chrome = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-                    prof = os.path.join(r"C:\Users\jdt-pty\Desktop\推广一键跑", "chrome_profile")
+                    TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+                    prof, conn = _acct_profile(TG)
+                    os.makedirs(prof, exist_ok=True)
                     subprocess.Popen([chrome, "--user-data-dir=" + prof,
                                       "https://login.taobao.com/member/login.jhtml"])
-                    return self._json({"ok": True, "msg": "已打开登录页——登录完成后点「检测」"})
+                    nm = (conn or {}).get("name") or "默认"
+                    return self._json({"ok": True, "profile": os.path.basename(prof), "account": nm,
+                                       "msg": "已打开【%s】的登录页（profile: %s）——登录完成后点「检测」" % (nm, os.path.basename(prof))})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:80]})
             if p == "/api/browser-clear":
                 # 清除 Cookie：删 chrome_profile cookie 文件（登出）——重登需引导登录
                 try:
-                    prof = os.path.join(r"C:\Users\jdt-pty\Desktop\推广一键跑", "chrome_profile")
+                    _tg = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+                    prof = _acct_profile(_tg)[0]      # 只清当前激活连接的 profile
                     removed = []
                     for cand in [os.path.join(prof, "Default", "Cookies"),
                                  os.path.join(prof, "Default", "Network", "Cookies")]:
