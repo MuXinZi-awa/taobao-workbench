@@ -53,7 +53,7 @@ td{padding:5px 8px;border-bottom:.5px solid var(--border);overflow:hidden;text-o
     <div class="sub">定时驱动工作台功能 · 到点自动执行，不经过助手</div>
   </div>
   <span class="sp"></span>
-  <button id="newbtn" class="primary" onclick="editTask(null)">+ 新建任务</button>
+  <button id="newbtn" class="primary" onclick="newTask()">+ 新建任务</button>
 </div>
 
 <div class="bar">
@@ -94,7 +94,7 @@ td{padding:5px 8px;border-bottom:.5px solid var(--border);overflow:hidden;text-o
   <div class="grid" id="paramBox" style="margin-top:9px"></div>
   <div style="display:flex;gap:8px;margin-top:11px">
     <button class="primary" onclick="saveTask()">保存</button>
-    <button onclick="editTask(null)">取消</button>
+    <button onclick="closeEditor()">取消</button>
     <span id="edmsg" style="font-size:11px;color:var(--danger);align-self:center"></span>
   </div>
 </div>
@@ -224,13 +224,28 @@ function onActionChange(){
 }
 function setParam(el){ PARAMS[el.dataset.pk] = el.value; }
 
+function newTask(){
+  EDIT = null;
+  document.getElementById('edtitle').textContent = '新建任务';
+  document.getElementById('f_name').value = '';
+  document.getElementById('f_times').value = '';
+  document.getElementById('f_minutes').value = '30';
+  document.getElementById('f_at').value = '';
+  document.getElementById('f_dom').value = '';
+  document.getElementById('f_cron').value = '';
+  SEL_DOW = [];
+  dowHtml();
+  onActionChange();
+  onTypeChange();
+  document.getElementById('editor').classList.remove('hide');
+  document.getElementById('f_name').focus();
+}
+function closeEditor(){ EDIT = null; document.getElementById('editor').classList.add('hide'); }
+
 function editTask(id){
   const ed = document.getElementById('editor');
   if(id === null || id === undefined){
-    EDIT = null; ed.classList.add('hide');
-    document.getElementById('f_name').value = '';
-    SEL_DOW = []; dowHtml();
-    onTypeChange();
+    closeEditor();
     return;
   }
   const t = DATA.tasks.find(x=>x.id===id);
