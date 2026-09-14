@@ -1,0 +1,10 @@
+{
+  "id": "scheduler",
+  "name": "任务计划",
+  "version": "0.1.0",
+  "desc": "定时驱动工作台功能：到点自动采集/推广/上品，不经过助手。支持 间隔/一次性/每天/每周/每月/Cron；批处理可传参（数据文件、批次、账号）并断点续跑。",
+  "panel": "panel.html",
+  "has_server": true,
+  "icon": "🕒",
+  "log": "scheduler.log"
+}
