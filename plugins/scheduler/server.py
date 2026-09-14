@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """任务计划（scheduler）· server
 - 任务 CRUD（SQLite 落盘：内核热插拔，模块状态不保留 → 一切都写库/文件）
 - 调度由独立守护 daemon.py 执行（不依赖工作台常驻）
@@ -57,6 +57,41 @@ ACTIONS = {
 }
 
 
+
+def norm_hm(s):
+    """时间/列表输入标准化：全角→半角、去空格；支持 '9:00，21:00' 这类中文标点"""
+    s = str(s or "")
+    for a, b in (("：", ":"), ("，", ","), ("　", " "), ("、", ","), ("；", ";")):
+        s = s.replace(a, b)
+    return s.strip()
+
+
+def norm_times(x):
+    """把 times 规整成 ['HH:MM', ...]（容忍 '9:00' / '09:00' / 中文标点混入）"""
+    if isinstance(x, str):
+        parts = norm_hm(x).split(",")
+    elif isinstance(x, (list, tuple)):
+        parts = []
+        for it in x:
+            parts += norm_hm(it).split(",")
+    else:
+        parts = []
+    out = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if ":" in p:
+            h, _, m = p.partition(":")
+            try:
+                out.append("%02d:%02d" % (int(h.strip()), int(m.strip()[:2] or 0)))
+                continue
+            except Exception:
+                pass
+        out.append(p)          # 解析不了就原样保留（便于排查）
+    return out
+
+
 def _conn():
     os.makedirs(DATA, exist_ok=True)
     c = sqlite3.connect(DB, timeout=20)
@@ -90,8 +125,13 @@ def list_tasks():
 def save_task(d):
     c = _conn()
     tid = d.get("id")
+    _trig = dict(d.get("trigger") or {})
+    if _trig.get("times") is not None:
+        _trig["times"] = norm_times(_trig["times"])          # 存前规整（全角冒号/逗号/空格）
+    if _trig.get("days") is not None:
+        _trig["days"] = [int(str(x).strip()) for x in str(_trig["days"]).replace("，", ",").split(",") if str(x).strip().isdigit()]
     args = (d.get("name") or "未命名", 1 if d.get("enabled", True) else 0,
-            json.dumps(d.get("trigger") or {}, ensure_ascii=False),
+            json.dumps(_trig, ensure_ascii=False),
             d.get("action") or "", json.dumps(d.get("params") or {}, ensure_ascii=False))
     if tid:
         c.execute("UPDATE task SET name=?,enabled=?,trig=?,act=?,params=? WHERE id=?", args + (tid,))
