@@ -21,3 +21,8 @@ plugins/adreport/预览-*.png
 *.profile
 **/Crashpad/
 **/Code Cache/
+data/uploads/
+plugins/*/scripts/.profile/
+*.pma
+*.baf
+*.baj
