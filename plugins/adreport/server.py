@@ -91,9 +91,8 @@ def report():
     if not d:
         return {"ok": False, "error": "暂无数据——先双击「推广一键跑\\采集报表数据.bat」采一次"}
     raw = d.get("raw") or {}
-    trend_rows = ((raw.get("trend") or {}).get("data") or {}).get("list") or []
-    acct_l = ((raw.get("account") or {}).get("data") or {}).get("list") or [{}]
-    acct = acct_l[0] if acct_l else {}
+    trend_rows = []          # 已弃用：历史一律走库（原为 JSON 回退，会跨账号串台）
+    acct = {}                # 已弃用：总计改为从 days(库) 汇总
     _mid = _resolve_account(raw)   # JSON（上次采集）的账号
     _act = _active_conn()          # 当前激活连接（名称 + 绑定的 memberId）
     # 该显示谁的数：激活连接的绑定优先；未绑定（新号未采集）→ 空 → 面板清空
@@ -101,8 +100,8 @@ def report():
     if not _target and not _act.get("name"):
         _target = _mid                      # 根本没有激活连接 → 按 JSON 兼容
     stale = (str(_target) != str(_mid))     # 目标 ≠ 当次采集 → 显示库存档/空（不显示别人数据）
-    scene = ((raw.get("scene") or {}).get("data") or {})
-    charge = (raw.get("chargeSum") or {}).get("data") or {}
+    scene = {"list": []}     # 已弃用：场景走库
+    charge = {}              # 已弃用：仅保留返回字段占位
 
     # 账户按日：优先读本地库（历史累积、防删），库空则回退 JSON
     days = []
@@ -123,24 +122,21 @@ def report():
             })
     except Exception:
         days = []
-    if not days and not stale:
-        for r in trend_rows:
-            days.append({
-                "date": r.get("thedate") or "",
-                "charge": _f(r.get("charge")), "adPv": _i(r.get("adPv")), "click": _i(r.get("click")),
-                "ctr": _f(r.get("ctr"), 4), "amt": _f(r.get("alipayInshopAmt")),
-                "num": _i(r.get("alipayInshopNum")), "cart": _i(r.get("cartInshopNum")),
-                "ecpc": _f(r.get("ecpc"), 3), "cvr": _f(r.get("cvr"), 4),
-            })
+    # 库空就是空——不从 JSON 回退（JSON 是单份，跨账号会串台）
 
-    tot_charge = _f(acct.get("charge"))
-    tot_amt = _f(acct.get("alipayInshopAmt"))
+    # 总计：从 days（库）汇总——与图表/场景同源，不再取 JSON 的账户汇总
+    _tc = sum(x["charge"] for x in days)
+    _ta = sum(x["amt"] for x in days)
+    _tpv = sum(x["adPv"] for x in days)
+    _tk = sum(x["click"] for x in days)
+    _tn = sum(x["num"] for x in days)
     total = {
-        "charge": tot_charge, "adPv": _i(acct.get("adPv")), "click": _i(acct.get("click")),
-        "ctr": _f(acct.get("ctr"), 4), "amt": tot_amt, "num": _i(acct.get("alipayInshopNum")),
-        "cart": _i(acct.get("cartInshopNum")), "ecpc": _f(acct.get("ecpc"), 3),
-        "cvr": _f(acct.get("cvr"), 4),
-        "roi": _f(tot_amt / tot_charge, 2) if tot_charge else 0,
+        "charge": round(_tc, 2), "adPv": _tpv, "click": _tk,
+        "ctr": round(_tk / _tpv, 4) if _tpv else 0, "amt": round(_ta, 2),
+        "num": _tn, "cart": sum(x["cart"] for x in days),
+        "ecpc": round(_tc / _tk, 3) if _tk else 0,
+        "cvr": round(_tn / _tk, 4) if _tk else 0,
+        "roi": round(_ta / _tc, 2) if _tc else 0,
     }
 
     # ── 场景/计划：一律从**库**读（按激活账户）——JSON 是单份文件，跨账号必串台 ──
@@ -248,15 +244,13 @@ def report():
         _t3 = _rdb3.get_daily(account=_target, start=_td3, end=_td3) if _target else []
     except Exception:
         _t3 = []
-    ta = ((raw.get("todayAccount") or {}).get("data") or {}).get("list") or []
-    ta = ta[0] if ta else {}
+    ta = {}
     if _t3:
         _t = _t3[0]
         ta = {"charge": _t.get("charge"), "adPv": _t.get("adPv"), "click": _t.get("click"),
               "ctr": _t.get("ctr"), "amt": _t.get("amt"), "num": _t.get("num"),
               "cart": _t.get("cart"), "ecpc": _t.get("ecpc"), "cvr": _t.get("cvr")}
-    else:
-        ta = {}          # 库里没今日 → 全 0（绝不回退 JSON，防串台）
+    # 库里没今日 → 全 0（绝不回退 JSON）
     today_total = {
         "charge": _f(ta.get("charge")), "adPv": _i(ta.get("adPv")), "click": _i(ta.get("click")),
         "ctr": _f(ta.get("ctr"), 4), "amt": _f(ta.get("alipayInshopAmt")),
@@ -264,30 +258,11 @@ def report():
         "ecpc": _f(ta.get("ecpc"), 3), "cvr": _f(ta.get("cvr"), 4),
     }
     today_total["roi"] = _f(today_total["amt"] / today_total["charge"], 2) if today_total["charge"] else 0
-    plans_today = []
-    # 今日字段(planToday/sceneToday)是「今日采集」写的，属主 = todayAccount.memberId
-    # （不是 trend 的 memberId —— JSON 里这两块可能是不同账号的）
-    _tacct = ""
-    _ta0 = ((raw.get("todayAccount") or {}).get("data") or {}).get("list") or []
-    if _ta0:
-        _tacct = str(_ta0[0].get("memberId") or "")
-    _same_acct = bool(_tacct) and (_tacct == str(_target))
-    for p in ((raw.get("planToday") or []) if _same_acct else []):
-        plans_today.append({
-            "name": p.get("name") or "?", "campaignId": p.get("campaignId"),
-            "charge": _f(p.get("charge")), "adPv": _i(p.get("adPv")), "click": _i(p.get("click")),
-            "ctr": _f(p.get("ctr"), 4), "amt": _f(p.get("alipayInshopAmt")), "num": _i(p.get("alipayInshopNum")),
-        })
-    plans_today.sort(key=lambda x: -x["charge"])
+    # 今日计划：从库读（tag='today'，已按 account 隔离）——不再碰 JSON
+    plans_today = _pl_out(_pl_db.get("today") or [])
 
-    scenes_today = []
-    for s in ((raw.get("sceneToday") or {}).get("data") or {}).get("list") or []:
-        scenes_today.append({
-            "name": s.get("scene1Name") or s.get("bizCode") or "?",
-            "charge": _f(s.get("charge")), "adPv": _i(s.get("adPv")),
-            "click": _i(s.get("click")), "amt": _f(s.get("alipayInshopAmt")),
-            "ctr": _f(s.get("ctr"), 4), "num": _i(s.get("alipayInshopNum")),
-        })
+    # 今日场景：从库读（tag='today'）——不再碰 JSON
+    scenes_today = _sc_out(_sc_db.get("today") or [])
 
     # 是否正在采集
     st = _status()
