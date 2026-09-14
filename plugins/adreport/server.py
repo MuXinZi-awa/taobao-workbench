@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """报表 server：读 推广一键跑/runtime/report_data.json，输出结构化数据 + 趋势解读。
 只读本地 JSON，不碰浏览器（采集由 采集报表数据.bat 单独跑）。
 """
@@ -143,47 +143,66 @@ def report():
         "roi": _f(tot_amt / tot_charge, 2) if tot_charge else 0,
     }
 
-    scenes = []
-    for s in (scene.get("list") or []):
-        scenes.append({
-            "name": s.get("scene1Name") or s.get("bizCode") or "?",
-            "charge": _f(s.get("charge")), "adPv": _i(s.get("adPv")),
-            "click": _i(s.get("click")), "amt": _f(s.get("alipayInshopAmt")),
-            "ctr": _f(s.get("ctr"), 4), "num": _i(s.get("alipayInshopNum")),
-        })
+    # ── 场景/计划：一律从**库**读（按激活账户）——JSON 是单份文件，跨账号必串台 ──
+    #    区间口径：库快照(7/30/all) + 今日(tag='today') 合并 —— 与「总计含今日」对齐
+    _rng = ("7", "30", "all")
+    _sc_db, _pl_db = {}, {}
+    try:
+        import sys as _s0
+        if TG not in _s0.path:
+            _s0.path.insert(0, TG)
+        import report_db as _rdb0
+        if _target:
+            for _t in _rng + ("today",):
+                _sc_db[_t], _ = _rdb0.get_scenes(account=_target, tag=_t)
+                _pl_db[_t], _ = _rdb0.get_plans(account=_target, tag=_t)
+    except Exception:
+        pass
 
-    def _scenes(tag):
-        node = (raw.get("sceneMatrix") or {}).get(tag) or {}
-        lst = (node.get("data") or {}).get("list") or []
-        out = []
-        for s in lst:
-            out.append({
-                "name": s.get("scene1Name") or s.get("bizCode") or "?",
-                "charge": _f(s.get("charge")), "adPv": _i(s.get("adPv")),
-                "click": _i(s.get("click")), "amt": _f(s.get("alipayInshopAmt")),
-                "ctr": _f(s.get("ctr"), 4), "num": _i(s.get("alipayInshopNum")),
-            })
-        return out
+    def _merge_metric(a, b):
+        """今日 b 并进 a：数值相加，比率重算"""
+        c = dict(a)
+        for _f2 in ("charge", "adPv", "click", "amt", "num"):
+            c[_f2] = (c.get(_f2) or 0) + (b.get(_f2) or 0)
+        _pv = c.get("adPv") or 0
+        _ck = c.get("click") or 0
+        _ch = c.get("charge") or 0
+        c["ctr"] = round(_ck / _pv, 4) if _pv else 0
+        c["ecpc"] = round(_ch / _ck, 3) if _ck else 0
+        return c
 
-    scenes_by_range = {"7": _scenes("7"), "30": _scenes("30"), "all": _scenes("all")}
+    def _merge_by(cur, today, keyf):
+        m = {}
+        for r in cur:
+            m[keyf(r)] = dict(r)
+        for r in today:
+            k = keyf(r)
+            m[k] = _merge_metric(m[k], r) if k in m else dict(r)
+        return list(m.values())
 
-    def _plans(tag):
-        rows = (raw.get("planMatrix") or {}).get(tag) or []
-        out = []
-        for p in rows:
-            out.append({
-                "name": p.get("name") or "?",
-                "campaignId": p.get("campaignId"),
-                "charge": _f(p.get("charge")), "adPv": _i(p.get("adPv")), "click": _i(p.get("click")),
-                "ctr": _f(p.get("ctr"), 4), "amt": _f(p.get("alipayInshopAmt")),
-                "num": _i(p.get("alipayInshopNum")), "ecpc": _f(p.get("ecpc"), 3),
-            })
-        out.sort(key=lambda x: -x["charge"])
-        return out
+    def _sc_out(rows):
+        return [{"name": r.get("name") or "?", "charge": _f(r.get("charge")), "adPv": _i(r.get("adPv")),
+                 "click": _i(r.get("click")), "ctr": _f(r.get("ctr"), 4), "amt": _f(r.get("amt")),
+                 "num": _i(r.get("num"))} for r in rows]
 
-    plans_by_range = {"7": _plans("7"), "30": _plans("30"), "all": _plans("all")}
+    def _pl_out(rows):
+        o = [{"name": r.get("name") or "?", "campaignId": r.get("campaignId"),
+              "charge": _f(r.get("charge")), "adPv": _i(r.get("adPv")), "click": _i(r.get("click")),
+              "ctr": _f(r.get("ctr"), 4), "amt": _f(r.get("amt")), "num": _i(r.get("num")),
+              "ecpc": _f((r.get("charge") or 0) / r.get("click"), 3) if r.get("click") else 0}
+             for r in rows]
+        o.sort(key=lambda x: -x["charge"])
+        return o
 
-    # ── 账号已切换：改显**激活连接账户的本地库存档**（秒刷新；没存档就是一空）──
+    _today_sc = _sc_db.get("today") or []
+    _today_pl = _pl_db.get("today") or []
+    scenes_by_range = {t: _sc_out(_merge_by(_sc_db.get(t) or [], _today_sc, lambda r: r.get("name") or "?"))
+                       for t in _rng}
+    plans_by_range = {t: _pl_out(_merge_by(_pl_db.get(t) or [], _today_pl,
+                                           lambda r: str(r.get("campaignId") or r.get("name") or "?")))
+                      for t in _rng}
+    scenes = scenes_by_range.get("all") or []
+
     if stale:
         try:
             import sys as _s2
@@ -217,9 +236,27 @@ def report():
         plans_today = []
         scenes_today = []
 
-    # 今日实时
+    # 今日：从**库**读（按账户）——JSON 是单份文件，跨账号必串台
+    import datetime as _dt3
+    _td3 = _dt3.date.today().isoformat()
+    _t3 = []
+    try:
+        import sys as _s3
+        if TG not in _s3.path:
+            _s3.path.insert(0, TG)
+        import report_db as _rdb3
+        _t3 = _rdb3.get_daily(account=_target, start=_td3, end=_td3) if _target else []
+    except Exception:
+        _t3 = []
     ta = ((raw.get("todayAccount") or {}).get("data") or {}).get("list") or []
     ta = ta[0] if ta else {}
+    if _t3:
+        _t = _t3[0]
+        ta = {"charge": _t.get("charge"), "adPv": _t.get("adPv"), "click": _t.get("click"),
+              "ctr": _t.get("ctr"), "amt": _t.get("amt"), "num": _t.get("num"),
+              "cart": _t.get("cart"), "ecpc": _t.get("ecpc"), "cvr": _t.get("cvr")}
+    else:
+        ta = {}          # 库里没今日 → 全 0（绝不回退 JSON，防串台）
     today_total = {
         "charge": _f(ta.get("charge")), "adPv": _i(ta.get("adPv")), "click": _i(ta.get("click")),
         "ctr": _f(ta.get("ctr"), 4), "amt": _f(ta.get("alipayInshopAmt")),
@@ -228,7 +265,14 @@ def report():
     }
     today_total["roi"] = _f(today_total["amt"] / today_total["charge"], 2) if today_total["charge"] else 0
     plans_today = []
-    for p in (raw.get("planToday") or []):
+    # 今日字段(planToday/sceneToday)是「今日采集」写的，属主 = todayAccount.memberId
+    # （不是 trend 的 memberId —— JSON 里这两块可能是不同账号的）
+    _tacct = ""
+    _ta0 = ((raw.get("todayAccount") or {}).get("data") or {}).get("list") or []
+    if _ta0:
+        _tacct = str(_ta0[0].get("memberId") or "")
+    _same_acct = bool(_tacct) and (_tacct == str(_target))
+    for p in ((raw.get("planToday") or []) if _same_acct else []):
         plans_today.append({
             "name": p.get("name") or "?", "campaignId": p.get("campaignId"),
             "charge": _f(p.get("charge")), "adPv": _i(p.get("adPv")), "click": _i(p.get("click")),
