@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<style>
+:root{ --bg:#F5EFE4; --card:#FBF7EE; --text:#2A2622; --text-l:#4A433C; --text-m:#6B6158;
+  --border:#D8CFBE; --accent:#537D96; --accent-h:#3F6179; --accent-l:rgba(83,125,150,.08);
+  --green:#4A6B4A; --danger:#8B2C1F; --r:6px; }
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-ui,system-ui,"Microsoft YaHei");background:var(--bg,#F5EFE4);
+  color:var(--text,#2A2622);font-size:13px;padding:12px}
+.head{display:flex;align-items:flex-end;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.head .t{font-size:15px;font-weight:600}
+.head .sub{font-size:11px;color:var(--text-m,#888)}
+.head .sp{margin-left:auto}
+button{border:.5px solid var(--border,#ddd);background:transparent;color:var(--text-l,#555);
+  border-radius:var(--r,6px);padding:4px 10px;cursor:pointer;font-size:12px;font-family:inherit}
+button:hover{background:var(--accent-l,rgba(83,125,150,.08))}
+button.primary{border-color:var(--accent,#537D96);background:var(--accent-l);color:var(--accent-h,#3F6179);font-weight:600}
+button.danger{border-color:var(--danger);color:var(--danger)}
+.card{background:var(--card,#FBF7EE);border:.5px solid var(--border,#ddd);border-radius:var(--r,6px);
+  padding:9px 12px;margin-bottom:8px;cursor:pointer}
+.card:hover{border-color:var(--accent,#537D96)}
+.card .row1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dot{width:6px;height:6px;border-radius:50%;flex:none}
+.tag{display:inline-flex;padding:1px 7px;font-size:11px;border-radius:var(--r,6px);
+  background:var(--accent-l);color:var(--accent-h,#3F6179)}
+.tag.off{background:var(--bg);color:var(--text-m)}
+.card .sub{font-size:11px;color:var(--text-m,#888);margin:5px 0 0 14px;line-height:1.6}
+.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;padding:7px 10px;
+  background:var(--card);border:.5px solid var(--border);border-radius:var(--r,6px)}
+.bar .st{display:flex;align-items:center;gap:5px;font-size:11.5px}
+.sec{background:var(--card);border:.5px solid var(--border);border-radius:var(--r,6px);padding:11px 13px;margin-bottom:10px}
+.sec h3{font-size:13px;margin:0 0 9px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px 12px}
+label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--text-m,#888)}
+input,select{border:.5px solid var(--border,#ddd);background:var(--bg);color:var(--text);
+  border-radius:var(--r,6px);padding:4px 7px;font-size:12px;font-family:inherit}
+input:focus,select:focus{outline:none;border-color:var(--accent,#537D96)}
+.wk{display:flex;gap:4px}
+.wk span{padding:2px 8px;font-size:11.5px;border:.5px solid var(--border);border-radius:var(--r,6px);
+  color:var(--text-l);cursor:pointer;user-select:none}
+.wk span.on{border-color:var(--accent);background:var(--accent-l);color:var(--accent-h);font-weight:600}
+table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
+th{text-align:left;font-weight:500;color:var(--text-m);padding:5px 8px;border-bottom:1px solid var(--border)}
+td{padding:5px 8px;border-bottom:.5px solid var(--border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{color:var(--text-m);text-align:center;padding:22px 0;font-size:12.5px}
+.hide{display:none}
+.pill{display:inline-flex;padding:2px 8px;font-size:11px;border-radius:var(--r,6px);background:rgba(74,107,74,.1);color:var(--green)}
+</style></head>
+<body>
+<div class="head">
+  <div>
+    <div class="t">🕒 任务计划</div>
+    <div class="sub">定时驱动工作台功能 · 到点自动执行，不经过助手</div>
+  </div>
+  <span class="sp"></span>
+  <button id="newbtn" class="primary" onclick="editTask(null)">+ 新建任务</button>
+</div>
+
+<div class="bar">
+  <div class="st" id="dmstate">守护：—</div>
+  <button onclick="daemonOp('start')">启动守护</button>
+  <button onclick="daemonOp('stop')">停止</button>
+  <span style="font-size:11px;color:var(--text-m);margin-left:auto" id="dmnote"></span>
+</div>
+
+<div id="list"><div class="empty">读取中…</div></div>
+
+<div class="sec hide" id="editor">
+  <h3 id="edtitle">新建任务</h3>
+  <div class="grid">
+    <label>名称<input id="f_name" placeholder="如：报表全量采集"></label>
+    <label>触发方式
+      <select id="f_type" onchange="onTypeChange()">
+        <option value="daily">每天</option>
+        <option value="interval">间隔</option>
+        <option value="once">一次性</option>
+        <option value="weekly">每周</option>
+        <option value="monthly">每月</option>
+        <option value="cron">Cron 表达式</option>
+      </select>
+    </label>
+    <label id="lb_time">时间（多个用逗号）<input id="f_times" placeholder="09:00, 21:00"></label>
+    <label id="lb_interval" class="hide">每 N 分钟<input id="f_minutes" placeholder="30"></label>
+    <label id="lb_once" class="hide">日期时间<input id="f_at" placeholder="2026-09-15 10:30"></label>
+    <label id="lb_dow" class="hide">星期
+      <span class="wk" id="f_dow"></span>
+    </label>
+    <label id="lb_dom" class="hide">每月几号<input id="f_dom" placeholder="1"></label>
+    <label id="lb_cron" class="hide">Cron（分 时 日 月 周）<input id="f_cron" placeholder="0 19-23 * * 1-6"></label>
+    <label>调用功能
+      <select id="f_action" onchange="onActionChange()"></select>
+    </label>
+  </div>
+  <div class="grid" id="paramBox" style="margin-top:9px"></div>
+  <div style="display:flex;gap:8px;margin-top:11px">
+    <button class="primary" onclick="saveTask()">保存</button>
+    <button onclick="editTask(null)">取消</button>
+    <span id="edmsg" style="font-size:11px;color:var(--danger);align-self:center"></span>
+  </div>
+</div>
+
+<div class="sec">
+  <h3>执行记录 <span style="font-size:11px;font-weight:400;color:var(--text-m)" id="logpath"></span></h3>
+  <div id="logs"><div class="empty">暂无</div></div>
+</div>
+
+<script>
+const P = "/api/plg/scheduler/";
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const api = (u) => fetch(u).then(r=>r.json());
+let DATA = {tasks:[], actions:[], daemon:{}, logs:[]};
+let EDIT = null;          // 正在编辑的任务 id
+let SEL_DOW = [];         // 选中的星期
+let PARAMS = {};          // 当前动作的参数值
+
+const WK = ['一','二','三','四','五','六','日'];
+const TYPE_LABEL = {interval:'间隔', once:'一次性', daily:'每天', weekly:'每周', monthly:'每月', cron:'Cron'};
+
+function trigText(t){
+  t = t || {};
+  switch(t.type){
+    case 'interval': return '每 ' + (t.minutes||30) + ' 分钟';
+    case 'once': return '一次性 ' + (t.at||'');
+    case 'daily': return '每天 ' + (t.times||[]).join(' / ');
+    case 'weekly': return '每周' + (t.days||[]).map(d=>WK[d-1]).join('') + ' ' + (t.times||[]).join(' / ');
+    case 'monthly': return t.last_day ? ('每月最后一天 ' + (t.times||[]).join(' / '))
+                                      : ('每月 ' + (t.days||[]).join('/') + ' 号 ' + (t.times||[]).join(' / '));
+    case 'cron': return 'Cron ' + (t.expr||'');
+    default: return '—';
+  }
+}
+
+function render(){
+  const box = document.getElementById('list');
+  const ts = DATA.tasks || [];
+  const dm = DATA.daemon || {};
+  document.getElementById('dmstate').innerHTML = dm.alive
+    ? '<span class="dot" style="background:var(--green)"></span> 守护运行中 (pid ' + esc(dm.pid||'?') + ')'
+    : '<span class="dot" style="background:var(--text-m)"></span> 守护未运行';
+  document.getElementById('dmnote').textContent = dm.last_tick ? ('上次 tick ' + dm.last_tick) : '';
+
+  if(!ts.length){ box.innerHTML = '<div class="empty">还没有任务 —— 点右上「新建任务」</div>'; }
+  else {
+    box.innerHTML = ts.map(t=>{
+      const on = t.enabled;
+      const col = on ? 'var(--green)' : 'var(--text-m)';
+      const actLab = (DATA.actions.find(a=>a.key===t.action)||{}).label || t.action;
+      const pr = t.progress || {};
+      const prText = (pr.total ? ('进度 ' + (pr.done||0) + ' / ' + pr.total + '　') : '');
+      return '<div class="card">'
+        + '<div class="row1">'
+        +   '<span class="dot" style="background:' + col + '"></span>'
+        +   '<span style="font-weight:600;font-size:13px' + (on?'':';opacity:.6') + '">' + esc(t.name) + '</span>'
+        +   '<span class="tag' + (on?'':' off') + '">' + esc(trigText(t.trigger)) + '</span>'
+        +   '<span style="margin-left:auto;font-size:11px;color:' + col + '">' + (on?'已启用':'已停用') + '</span>'
+        + '</div>'
+        + '<div class="sub">动作　' + esc(actLab)
+        +   (prText ? ('　|　' + prText) : '')
+        +   (t.last_run ? ('　|　上次 ' + esc(t.last_run) + ' ' + esc(t.last_result||'')) : '')
+        + '</div>'
+        + '<div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">'
+        +   '<button onclick="event.stopPropagation();editTask(' + t.id + ')">编辑</button>'
+        +   '<button onclick="event.stopPropagation();toggleTask(' + t.id + ',' + (on?0:1) + ')">' + (on?'停用':'启用') + '</button>'
+        +   '<button onclick="event.stopPropagation();runNow(' + t.id + ')">立即执行</button>'
+        +   '<button class="danger" onclick="event.stopPropagation();delTask(' + t.id + ')">删除</button>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  const lg = document.getElementById('logs');
+  const ls = DATA.logs || [];
+  lg.innerHTML = ls.length
+    ? ('<table><colgroup><col style="width:16%"><col style="width:84%"></colgroup>'
+       + ls.slice(0,12).map(x=>{
+           const i = x.indexOf('  ', 20);
+           return '<tr><td style="color:var(--text-m)">' + esc(x.slice(0,19)) + '</td><td title="' + esc(x) + '">' + esc(x.slice(20)) + '</td></tr>';
+         }).join('') + '</table>')
+    : '<div class="empty">暂无</div>';
+}
+
+async function load(){
+  try{ DATA = await api(P + 'list'); }catch(e){ DATA = {tasks:[],actions:[],daemon:{},logs:[]}; }
+  render();
+  if(!document.getElementById('f_action').options.length){
+    document.getElementById('f_action').innerHTML = (DATA.actions||[])
+      .map(a=>'<option value="'+a.key+'">'+esc(a.label)+'</option>').join('');
+    onActionChange();
+  }
+}
+
+function onTypeChange(){
+  const t = document.getElementById('f_type').value;
+  const show = (id, yes) => document.getElementById(id).classList.toggle('hide', !yes);
+  show('lb_time', t==='daily'||t==='weekly'||t==='monthly');
+  show('lb_interval', t==='interval');
+  show('lb_once', t==='once');
+  show('lb_dow', t==='weekly');
+  show('lb_dom', t==='monthly');
+  show('lb_cron', t==='cron');
+}
+
+function dowHtml(){
+  document.getElementById('f_dow').innerHTML = WK.map((w,i)=>
+    '<span class="'+(SEL_DOW.includes(i+1)?'on':'')+'" onclick="toggleDow('+(i+1)+')">'+w+'</span>').join('');
+}
+function toggleDow(d){
+  SEL_DOW = SEL_DOW.includes(d) ? SEL_DOW.filter(x=>x!==d) : SEL_DOW.concat([d]);
+  dowHtml();
+}
+
+function onActionChange(){
+  const key = document.getElementById('f_action').value;
+  const a = (DATA.actions||[]).find(x=>x.key===key) || {params:[]};
+  PARAMS = {};
+  (a.params||[]).forEach(p=>{ PARAMS[p.key] = p.default || ''; });
+  document.getElementById('paramBox').innerHTML = (a.params||[]).map(p=>{
+    const v = esc(PARAMS[p.key]);
+    if(p.type === 'account'){
+      return '<label>' + esc(p.label) + '<input data-pk="' + p.key + '" placeholder="留空 = 用当前激活连接" oninput="setParam(this)"></label>';
+    }
+    return '<label>' + esc(p.label) + '<input data-pk="' + p.key + '" value="' + v + '" oninput="setParam(this)"></label>';
+  }).join('');
+}
+function setParam(el){ PARAMS[el.dataset.pk] = el.value; }
+
+function editTask(id){
+  const ed = document.getElementById('editor');
+  if(id === null || id === undefined){
+    EDIT = null; ed.classList.add('hide');
+    document.getElementById('f_name').value = '';
+    SEL_DOW = []; dowHtml();
+    onTypeChange();
+    return;
+  }
+  const t = DATA.tasks.find(x=>x.id===id);
+  if(!t) return;
+  EDIT = id;
+  document.getElementById('edtitle').textContent = '编辑任务 · ' + t.name;
+  document.getElementById('f_name').value = t.name || '';
+  const tr = t.trigger || {};
+  document.getElementById('f_type').value = tr.type || 'daily';
+  document.getElementById('f_times').value = (tr.times||[]).join(', ');
+  document.getElementById('f_minutes').value = tr.minutes || '';
+  document.getElementById('f_at').value = tr.at || '';
+  document.getElementById('f_dom').value = (tr.days||[]).join(',');
+  document.getElementById('f_cron').value = tr.expr || '';
+  SEL_DOW = (tr.days||[]).slice(); dowHtml();
+  document.getElementById('f_action').value = t.action || '';
+  onActionChange();
+  Object.keys(t.params||{}).forEach(k=>{
+    PARAMS[k] = t.params[k];
+    const el = document.querySelector('[data-pk="'+k+'"]');
+    if(el) el.value = t.params[k];
+  });
+  onTypeChange();
+  ed.classList.remove('hide');
+  ed.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function buildTrigger(){
+  const t = document.getElementById('f_type').value;
+  const times = document.getElementById('f_times').value.split(',').map(s=>s.trim()).filter(Boolean);
+  if(t==='interval') return {type:'interval', minutes: document.getElementById('f_minutes').value || '30'};
+  if(t==='once')     return {type:'once', at: document.getElementById('f_at').value.trim()};
+  if(t==='daily')    return {type:'daily', times};
+  if(t==='weekly')   return {type:'weekly', days:SEL_DOW, times};
+  if(t==='monthly')  return {type:'monthly', days: document.getElementById('f_dom').value.split(',').map(s=>s.trim()).filter(Boolean), times};
+  if(t==='cron')     return {type:'cron', expr: document.getElementById('f_cron').value.trim()};
+  return {type:'daily', times};
+}
+
+async function saveTask(){
+  const name = document.getElementById('f_name').value.trim();
+  if(!name){ msg('请填名称'); return; }
+  const trig = buildTrigger();
+  if((trig.type!=='interval' && trig.type!=='cron' && trig.type!=='once') && !(trig.times||[]).length){ msg('请填时间'); return; }
+  if(trig.type==='weekly' && !(trig.days||[]).length){ msg('请选星期'); return; }
+  if(trig.type==='cron' && !trig.expr){ msg('请填 Cron'); return; }
+  const body = {id: EDIT, name, enabled: true, trigger: trig,
+                action: document.getElementById('f_action').value, params: PARAMS};
+  const r = await api(P + 'save?data=' + encodeURIComponent(JSON.stringify(body)));
+  if(r && r.ok){ editTask(null); load(); } else { msg((r&&r.error) || '保存失败'); }
+}
+function msg(s){ document.getElementById('edmsg').textContent = s; setTimeout(()=>{document.getElementById('edmsg').textContent='';}, 3000); }
+
+async function delTask(id){ if(!confirm('删除该任务？')) return;
+  await api(P + 'delete?id=' + id); load(); }
+async function toggleTask(id, on){ await api(P + 'toggle?id=' + id + '&on=' + on); load(); }
+async function runNow(id){ const r = await api(P + 'run_now?id=' + id);
+  alert(r && r.ok ? ('已启动' + (r.pid?(' pid=' + r.pid):'')) : ('失败：' + ((r&&r.error)||''))); load(); }
+async function daemonOp(op){ const r = await api(P + 'daemon?op=' + op); load();
+  if(r && r.msg) console.log(r.msg); }
+
+load();
+setInterval(load, 10000);
+window.addEventListener('message', function(e){ var d=e.data; if(!d||d.type!=='wb-theme'||!d.vars) return;
+  var st=document.documentElement.style; for(var k in d.vars){ if(d.vars[k]) st.setProperty(k, d.vars[k]); } });
+</script>
+</body></html>
