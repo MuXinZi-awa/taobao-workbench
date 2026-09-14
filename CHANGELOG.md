@@ -4,6 +4,20 @@
 
 ---
 
+## v0.8.2 · 2026-09-14（推广数据全按账号）
+
+### 优化
+- **刷新容量重写**（`refresh_caps.py`）：先拉**计划列表**（`campaign/findList.json`）→ 再逐个查单元数；profile 跟激活连接；写 `plan_state_<member>.json` / `plan_names_<member>.json`
+  - 原版写死 3 处（默认 profile / 全局文件名 / **店铺1 的 11 个计划 ID**）——“有推广但不是我们推的”账号拉不到
+  - csrf 抓法**照抄** `_report_fetch.py`（先过卖家中心 + `login_qianniu`）+ 补 `bizCode=onebpSearch`
+- **推广记录加 account 列**（`料号,状态,时间,账号`）：`tuiguang_auto` 写入带账号，去重按 (料号,账号)；存量 2589 行已补列
+- `tg-monitor`：**已推记录 / 今日 +N / 计划列表 / 容量** 均按当前账号；面板顶部显示账号
+
+### 插件
+- `tg-monitor` 0.2.0 → 0.2.1
+
+---
+
 ## v0.8.1 · 2026-09-14（任务计划打磨 · 文件拖拽上传）
 
 ### 新增
