@@ -37,10 +37,11 @@ ACTIONS = {
         "label": "流水线 · 推广一批",
         "kind": "script",
         "script": os.path.join(TG, "tuiguang_auto.py"),
-        "args": ["--excel", "{file}", "--limit", "{limit}", "--no-pop"],
+        "args": ["--excel", "{file}", "--limit", "{limit}", "--campaigns", "{campaigns}", "--no-pop"],
         "params": [
             {"key": "file", "label": "数据文件", "type": "file", "default": "runtime\\推广池_0905.csv"},
             {"key": "limit", "label": "每批数量", "type": "number", "default": "50"},
+            {"key": "campaigns", "label": "计划组（留空 = 自动取未满的）", "type": "campaigns", "default": ""},
             {"key": "account", "label": "关联账号", "type": "account", "default": ""},
         ],
     },
@@ -227,6 +228,20 @@ def upload(params):
         return {"ok": True, "path": fp, "name": os.path.basename(fp), "size": len(raw)}
     except Exception as e:
         return {"ok": False, "error": str(e)[:140]}
+
+
+def auto_campaigns(account_mid=""):
+    """自动取该账号「未满( count<500 )」的计划 ID —— 供 promo_batch 留空时用"""
+    fp = os.path.join(TG, "runtime", ("plan_state_%s.json" % account_mid) if account_mid else "plan_state.json")
+    if not os.path.isfile(fp):
+        fp = os.path.join(TG, "runtime", "plan_state.json")
+    try:
+        d = json.load(io.open(fp, encoding="utf-8"))
+        ids = [k for k, v in d.items()
+               if (v.get("count") is not None and int(v.get("count") or 0) < 500)]
+        return ",".join(ids)
+    except Exception:
+        return ""
 
 
 def list_files():

@@ -170,6 +170,13 @@ def _build_cmd(act_key, params):
     a = S.ACTIONS.get(act_key)
     if not a:
         return None, "未知动作: %s" % act_key
+    params = dict(params or {})
+    # 推广批：计划组留空 → 自动取该账号「未满」的计划
+    if act_key == "promo_batch" and not str(params.get("campaigns") or "").strip():
+        _mid = str(params.get("account") or "").strip()
+        params["campaigns"] = S.auto_campaigns(_mid)
+        if not params["campaigns"]:
+            return None, "未能取到可推计划——请先点「刷新容量」（或手填计划组）"
     cmd = [PY, "-X", "utf8", "-u", a["script"]]
     for x in a.get("args", []):
         v = x
