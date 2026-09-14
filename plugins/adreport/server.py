@@ -302,6 +302,7 @@ def report():
 
     return {"ok": True, "fetchedAt": d.get("fetchedAt"), "range": d.get("range"),
             "stale": stale,
+            "todayDate": _td3,
             "accountName": _act.get("name") or "", "memberId": _mid,
             "activeMember": _act.get("member_id") or "",
             "accountMatch": ((str(_act.get("member_id")) == str(_mid)) if _act.get("member_id")

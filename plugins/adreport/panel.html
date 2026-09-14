@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
 <style>
 :root{ --bg:#F5EFE4; --card:#FBF7EE; --text:#2A2622; --text-l:#4A433C; --text-m:#6B6158;
@@ -81,20 +81,40 @@ const METRICS = [
 let DATA=null, METRIC='charge', MODE='7', CS='', CE='', PTS=[];
 
 function allDays(){ return (DATA && DATA.days) || []; }
+function _zeroDay(ds){
+  return {date:ds, charge:0, adPv:0, click:0, ctr:0, ecpc:0, amt:0, num:0, cvr:0, cart:0};
+}
+function _todayStr(){
+  if(DATA && DATA.todayDate) return DATA.todayDate;
+  const t=new Date(); return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+}
+function _shift(ds,n){   // 日期加减天（本地）
+  const d=new Date(ds+'T00:00:00'); d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function _rangeDays(s,e){
+  // 严格按日期窗口取数；缺失的日期补 0（保证折线连续、天数准确）
+  const days=allDays(), m={};
+  days.forEach(d=>{ if(d.date>=s && d.date<=e) m[d.date]=d; });
+  const out=[];
+  for(let cur=s; cur<=e; cur=_shift(cur,1)) out.push(m[cur]||_zeroDay(cur));
+  return out;
+}
 function curDays(){
-  const days=allDays();
   if(MODE==='1') return [];
-  if(MODE==='7') return days.slice(-7);
-  if(MODE==='30') return days.slice(-30);
-  if(MODE==='custom' && CS && CE) return days.filter(d=>d.date>=CS && d.date<=CE);
-  return days;
+  if(MODE==='7' || MODE==='30'){
+    const n = (MODE==='7') ? 7 : 30;
+    const e = _todayStr();
+    return _rangeDays(_shift(e, -(n-1)), e);
+  }
+  if(MODE==='custom' && CS && CE) return _rangeDays(CS, CE);
+  return allDays();
 }
 function prevDays(cur){
-  const days=allDays();
-  if(!cur.length) return [];
-  const idx=days.findIndex(d=>d.date===cur[0].date);
-  if(idx<0) return [];
-  return days.slice(Math.max(0, idx-cur.length), idx);
+  // 上一期 = 当前窗口再往前推同样的天数（同样补齐缺口）
+  if(!cur || !cur.length) return [];
+  const s=cur[0].date, e=cur[cur.length-1].date, n=cur.length;
+  return _rangeDays(_shift(s, -n), _shift(s, -1));
 }
 function agg(days){
   return {
