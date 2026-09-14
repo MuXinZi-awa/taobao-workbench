@@ -104,7 +104,7 @@ function curDays(){
   if(MODE==='1') return [];
   if(MODE==='7' || MODE==='30'){
     const n = (MODE==='7') ? 7 : 30;
-    const e = _todayStr();
+    const e = _shift(_todayStr(), -1);   // T+1：历史窗口截至【昨天】（今天的数据未定稿，不进走势）
     return _rangeDays(_shift(e, -(n-1)), e);
   }
   if(MODE==='custom' && CS && CE) return _rangeDays(CS, CE);
