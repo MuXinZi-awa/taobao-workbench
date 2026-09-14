@@ -205,6 +205,30 @@ def daemon_stop():
     return {"ok": True, "msg": "守护未在运行"}
 
 
+UPLOAD_DIR = os.path.join(DATA, "uploads")
+
+
+def upload(params):
+    """接收拖入的文件（POST 原文）→ 存到 data/uploads/ → 返回完整路径"""
+    name = os.path.basename(str(params.get("name") or "").strip()) or "upload.csv"
+    raw = params.get("_raw")
+    if not raw:
+        return {"ok": False, "error": "没收到文件内容"}
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        fp = os.path.join(UPLOAD_DIR, name)
+        base, ext = os.path.splitext(name)
+        i = 1
+        while os.path.isfile(fp):
+            fp = os.path.join(UPLOAD_DIR, "%s_%d%s" % (base, i, ext))
+            i += 1
+        with io.open(fp, "wb") as f:
+            f.write(raw)
+        return {"ok": True, "path": fp, "name": os.path.basename(fp), "size": len(raw)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:140]}
+
+
 def list_files():
     """可选的批处理数据文件（推广一键跑 下常见位置）——给前端下拉/拖拽用"""
     out = []
@@ -260,6 +284,8 @@ def logs(limit=40):
 
 def handle(action, qs):
     a = (action or "").strip()
+    if a == "upload":
+        return upload(qs)
     if a == "files":
         return {"ok": True, "files": list_files()}
     if a == "resolve":

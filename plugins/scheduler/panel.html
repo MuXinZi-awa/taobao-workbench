@@ -222,7 +222,7 @@ function onActionChange(){
     if(p.type === 'file'){
       const opts = (DATA.files||[]).slice(0,40).map(f=>
         '<option value="' + esc(f.path) + '">' + esc(f.name) + '</option>').join('');
-      return '<label>' + esc(p.label) + '（拖文件进来，或点下方选）'
+      return '<label>' + esc(p.label) + '（拖文件进来 · 任意位置都行）'
         + '<div class="drop" ondragover="dropOver(event)" ondragleave="dropLeave(event)" ondrop="dropFile(event,\'' + p.key + '\')">'
         +   '<input data-pk="' + p.key + '" value="' + v + '" placeholder="拖动 csv/xlsx 到这里" oninput="setParam(this)">'
         + '</div>'
@@ -241,10 +241,23 @@ async function dropFile(e, key){
   e.preventDefault(); e.currentTarget.classList.remove('over');
   const f = (e.dataTransfer.files||[])[0];
   if(!f) return;
-  const r = await api(P + 'resolve?name=' + encodeURIComponent(f.name));
   const el = document.querySelector('[data-pk="'+key+'"]');
-  if(r && r.ok){ PARAMS[key] = r.path; if(el) el.value = r.path; }
-  else alert('没找到「' + f.name + '」\n它需要在 推广一键跑 目录或其 runtime / 数据 下');
+  if(el){ el.placeholder = '上传中…'; }
+  try{
+    const r = await fetch(P + 'upload?name=' + encodeURIComponent(f.name),
+                           { method:'POST', body: f }).then(x=>x.json());
+    if(r && r.ok){
+      PARAMS[key] = r.path;
+      if(el){ el.value = r.path; el.placeholder = '拖动 csv/xlsx 到这里'; }
+      DATA.files = [{name:r.name, path:r.path, size:r.size, mtime:Date.now()/1000}].concat(DATA.files||[]);
+    } else {
+      if(el){ el.placeholder = '拖动 csv/xlsx 到这里'; }
+      alert('上传失败：' + ((r&&r.error)||'未知'));
+    }
+  }catch(err){
+    if(el){ el.placeholder = '拖动 csv/xlsx 到这里'; }
+    alert('上传失败：' + err);
+  }
 }
 function pickFile(sel, key){
   if(!sel.value) return;
