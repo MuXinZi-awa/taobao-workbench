@@ -5,5 +5,5 @@
   "panel": "panel.html",
   "desc": "查商品双百：单查（填料号即可）+ 批量（拖 csv/xlsx/xls 表格——自动识别料号列逐行查，带进度和总结）",
   "log": "dual_check.log",
-  "version": "0.2.0"
+  "version": "0.2.1"
 }

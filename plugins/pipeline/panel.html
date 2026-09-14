@@ -48,6 +48,15 @@ input::placeholder { color:var(--text-m,#999); }
  .audit .st{font-size:12px;margin-left:auto;color:var(--text-l,#888)}
 </style>
 
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span id="acctbar" style="font-size:11.5px;color:var(--text-m,#888)">账号 —</span></div><script>
+(async function(){
+  try{
+    var r = await fetch('/api/plg/pipeline/acct').then(function(x){return x.json();});
+    var el = document.getElementById('acctbar');
+    if(el && r && r.account) el.textContent = '账号 ' + (r.account.name || '未命名') + (r.account.member_id ? (' \u00b7 ' + r.account.member_id) : '');
+  }catch(e){}
+})();
+</script>
 <div class="bar">
   <input id="lh" type="text" placeholder="料号 或 淘宝 ID（单量回车）">
   <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button onclick="adStartFrom(0)">📋 开始审核</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button><button id="ssBtn" onclick="srcRun()" style="display:none">🔁 换源处理</button>

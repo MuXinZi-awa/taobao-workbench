@@ -61,7 +61,23 @@ def _wlog(msg):
         pass
 
 
+def _acct():
+    """当前激活店铺连接（多账号：面板显示 + 数据过滤）"""
+    try:
+        import sys as _s
+        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        if _wb not in _s.path:
+            _s.path.insert(0, _wb)
+        import conn_store
+        return conn_store.active_of("taobao") or {}
+    except Exception:
+        return {}
+
+
 def handle(action, params):
+    if action == "acct":
+        _a = _acct()
+        return {"ok": True, "account": {"name": _a.get("name") or "", "member_id": _a.get("member_id") or ""}}
     if action == "check":
         lh = (params.get("lh") or "").strip()
         tid = (params.get("tid") or "").strip()
