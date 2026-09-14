@@ -16,4 +16,8 @@ data/scheduler_run_*.log
 _err.txt
 _out.txt
 plugins/adreport/预览-*.png
-
+**/.profile/
+**/.profile
+*.profile
+**/Crashpad/
+**/Code Cache/
