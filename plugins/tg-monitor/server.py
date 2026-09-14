@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """推广监控台 server：聚合状态（读文件/进程——不碰浏览器常驻）
 数据源：
   1. 推广记录.csv（新——tuiguang_auto 自动化批，料号为行）
@@ -169,6 +169,10 @@ def status():
     today = datetime.date.today().strftime("%m-%d")
     for r in rec_rows[1:]:
         if len(r) >= 2 and r[0].strip():
+            _racct = (r[3].strip() if len(r) > 3 else "") or "46557383"   # 第4列 account（老数据归店铺1）
+            _mid = str(_acct().get("member_id") or "")
+            if _mid and _racct and _racct != _mid:
+                continue
             rec_lh.add(r[0].strip())
             if len(r) >= 3 and r[2].strip().startswith(today):
                 rec_today += 1
