@@ -407,11 +407,35 @@ def smart_refresh(headless=True):
         except Exception:
             pass
     yest = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
-    need_full = (not last) or (last < yest)
+    # ★ 缺口检测（近30天）：不能只看最后一天——中间断档（如死机没采）也得全量补
+    _gaps = []
+    if tgt:
+        try:
+            import sys as _s4
+            if TG not in _s4.path:
+                _s4.path.insert(0, TG)
+            import report_db as _rdb4
+            _rows4 = _rdb4.get_daily(account=tgt)
+            if _rows4:
+                _ds = set(x["date"] for x in _rows4)
+                _earliest = min(_ds)
+                _d0 = _dt.date.today()
+                for _i in range(30):
+                    _k = (_d0 - _dt.timedelta(days=_i)).isoformat()
+                    if _k < _earliest:
+                        break
+                    if _k not in _ds:
+                        _gaps.append(_k)
+        except Exception:
+            _gaps = []
+    need_full = (not last) or (last < yest) or bool(_gaps)
     if need_full:
         r = refresh(headless=headless)
         r["mode"] = "full"
-        r["reason"] = ("该账户暂无历史存档" if not last else "存档止于 %s，需补全" % last)
+        if _gaps:
+            r["reason"] = "近30天缺 %d 天（%s）→ 全量补齐" % (len(_gaps), "、".join(sorted(_gaps)[:5]))
+        else:
+            r["reason"] = ("该账户暂无历史存档" if not last else "存档止于 %s，需补全" % last)
         return r
     r = refresh_today(headless=headless)
     r["mode"] = "today"
