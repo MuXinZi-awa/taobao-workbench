@@ -45,6 +45,9 @@ td{padding:5px 8px;border-bottom:.5px solid var(--border);overflow:hidden;text-o
 .empty{color:var(--text-m);text-align:center;padding:22px 0;font-size:12.5px}
 .hide{display:none}
 .pill{display:inline-flex;padding:2px 8px;font-size:11px;border-radius:var(--r,6px);background:rgba(74,107,74,.1);color:var(--green)}
+.drop{border:.5px dashed var(--border,#ddd);border-radius:var(--r,6px);padding:5px;transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent,#537D96);background:var(--accent-l)}
+.drop input{border:none;background:transparent;width:100%}
 </style></head>
 <body>
 <div class="head">
@@ -216,11 +219,38 @@ function onActionChange(){
   (a.params||[]).forEach(p=>{ PARAMS[p.key] = p.default || ''; });
   document.getElementById('paramBox').innerHTML = (a.params||[]).map(p=>{
     const v = esc(PARAMS[p.key]);
+    if(p.type === 'file'){
+      const opts = (DATA.files||[]).slice(0,40).map(f=>
+        '<option value="' + esc(f.path) + '">' + esc(f.name) + '</option>').join('');
+      return '<label>' + esc(p.label) + '（拖文件进来，或点下方选）'
+        + '<div class="drop" ondragover="dropOver(event)" ondragleave="dropLeave(event)" ondrop="dropFile(event,\'' + p.key + '\')">'
+        +   '<input data-pk="' + p.key + '" value="' + v + '" placeholder="拖动 csv/xlsx 到这里" oninput="setParam(this)">'
+        + '</div>'
+        + '<select style="margin-top:4px" onchange="pickFile(this,\'' + p.key + '\')"><option value="">— 选择已存文件 —</option>' + opts + '</select>'
+        + '</label>';
+    }
     if(p.type === 'account'){
       return '<label>' + esc(p.label) + '<input data-pk="' + p.key + '" placeholder="留空 = 用当前激活连接" oninput="setParam(this)"></label>';
     }
     return '<label>' + esc(p.label) + '<input data-pk="' + p.key + '" value="' + v + '" oninput="setParam(this)"></label>';
   }).join('');
+}
+function dropOver(e){ e.preventDefault(); e.currentTarget.classList.add('over'); }
+function dropLeave(e){ e.currentTarget.classList.remove('over'); }
+async function dropFile(e, key){
+  e.preventDefault(); e.currentTarget.classList.remove('over');
+  const f = (e.dataTransfer.files||[])[0];
+  if(!f) return;
+  const r = await api(P + 'resolve?name=' + encodeURIComponent(f.name));
+  const el = document.querySelector('[data-pk="'+key+'"]');
+  if(r && r.ok){ PARAMS[key] = r.path; if(el) el.value = r.path; }
+  else alert('没找到「' + f.name + '」\n它需要在 推广一键跑 目录或其 runtime / 数据 下');
+}
+function pickFile(sel, key){
+  if(!sel.value) return;
+  PARAMS[key] = sel.value;
+  const el = document.querySelector('[data-pk="'+key+'"]');
+  if(el) el.value = sel.value;
 }
 function setParam(el){ PARAMS[el.dataset.pk] = el.value; }
 

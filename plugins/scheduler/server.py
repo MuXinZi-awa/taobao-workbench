@@ -205,6 +205,43 @@ def daemon_stop():
     return {"ok": True, "msg": "守护未在运行"}
 
 
+def list_files():
+    """可选的批处理数据文件（推广一键跑 下常见位置）——给前端下拉/拖拽用"""
+    out = []
+    for sub in ("runtime", "", "办公室工作"):
+        d = os.path.join(TG, sub) if sub else TG
+        if not os.path.isdir(d):
+            continue
+        try:
+            for fn in sorted(os.listdir(d)):
+                if fn.lower().endswith((".csv", ".xlsx", ".xls")) and not fn.startswith("~$"):
+                    fp = os.path.join(d, fn)
+                    try:
+                        st = os.stat(fp)
+                    except Exception:
+                        continue
+                    out.append({"name": fn, "path": fp, "size": st.st_size, "mtime": st.st_mtime})
+        except Exception:
+            pass
+    out.sort(key=lambda x: -x["mtime"])
+    return out[:80]
+
+
+def resolve_name(name):
+    """拖拽只给文件名 → 在常见目录里找完整路径（找不到返回 None）"""
+    name = (name or "").strip()
+    if not name:
+        return None
+    if os.path.isabs(name) and os.path.isfile(name):
+        return name
+    for sub in ("runtime", "", "办公室工作", os.path.join("办公室工作", "数据")):
+        d = os.path.join(TG, sub) if sub else TG
+        fp = os.path.join(d, name)
+        if os.path.isfile(fp):
+            return fp
+    return None
+
+
 def actions_meta():
     """给前端：动作列表 + 每个动作的参数定义"""
     return [{"key": k, "label": v["label"], "params": v.get("params", [])} for k, v in ACTIONS.items()]
@@ -223,9 +260,14 @@ def logs(limit=40):
 
 def handle(action, qs):
     a = (action or "").strip()
+    if a == "files":
+        return {"ok": True, "files": list_files()}
+    if a == "resolve":
+        p = resolve_name(qs.get("name"))
+        return {"ok": bool(p), "path": p or "", "error": "" if p else "没找到该文件"}
     if a == "list":
         return {"ok": True, "tasks": list_tasks(), "actions": actions_meta(),
-                "daemon": daemon_status(), "logs": logs(30)}
+                "daemon": daemon_status(), "logs": logs(30), "files": list_files()}
     if a == "save":
         d = qs.get("data")
         if isinstance(d, str):
