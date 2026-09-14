@@ -6,6 +6,7 @@
       python daemon.py --once     （跑一轮就退出，调试用）
 """
 import os, io, sys, json, time, sqlite3, subprocess, datetime, calendar
+import msvcrt
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WB = os.path.dirname(os.path.dirname(BASE))
@@ -34,7 +35,29 @@ def log(msg):
         pass
 
 
-# ── 单例 ──
+# ── 单例：文件锁（进程退出自动释放——比心跳判断靠谱）──
+LOCKFILE = os.path.join(DATA, "scheduler.lock")
+_LOCKFH = None
+
+
+def lock_or_exit():
+    """拿到独占锁 → 返回文件句柄；已被占用 → 返回 None"""
+    global _LOCKFH
+    try:
+        os.makedirs(DATA, exist_ok=True)
+        f = io.open(LOCKFILE, "a+", encoding="utf-8")
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)      # 非阻塞加锁（失败抛 OSError）
+        f.seek(0); f.truncate()
+        f.write(str(os.getpid())); f.flush()
+        _LOCKFH = f                                          # 持有引用，别被回收
+        return f
+    except OSError:
+        return None
+    except Exception:
+        return None
+
+
+# ── 旧的心跳判断（保留兼容，不再用于单例）──
 def _alive():
     try:
         with io.open(HB, encoding="utf-8") as f:
@@ -220,9 +243,11 @@ _STARTED = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def main():
     once = "--once" in sys.argv
-    if not once and _alive():
-        log("已有守护在运行（心跳存在），本进程退出")
-        return
+    if not once:
+        fh = lock_or_exit()
+        if fh is None:
+            log("已有守护在运行（文件锁被占），本进程退出")
+            return
     log("=== 调度守护启动 pid=%d ===" % os.getpid())
     _write_hb()
     while True:
