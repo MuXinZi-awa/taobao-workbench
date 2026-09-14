@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """调度守护 · daemon.py（零依赖 · 独立进程 · 不依赖工作台）
 职责：每分钟对齐 tick → 读任务 → 判断该不该跑 → 执行动作 → 写日志/心跳/进度
 单例：锁文件 + pid 校验（防重复启动）
@@ -124,14 +124,14 @@ def should_run(trig, now, last_run):
             return False
     if t == "daily":
         hm = now.strftime("%H:%M")
-        return hm in (trig.get("times") or []) and not _last_min_run(last_run)
+        return hm in S.norm_times(trig.get("times")) and not _last_min_run(last_run)
     if t == "weekly":
         hm = now.strftime("%H:%M")
         days = [int(x) for x in (trig.get("days") or [])]
-        return now.isoweekday() in days and hm in (trig.get("times") or []) and not _last_min_run(last_run)
+        return now.isoweekday() in days and hm in S.norm_times(trig.get("times")) and not _last_min_run(last_run)
     if t == "monthly":
         hm = now.strftime("%H:%M")
-        if hm not in (trig.get("times") or []) or _last_min_run(last_run):
+        if hm not in S.norm_times(trig.get("times")) or _last_min_run(last_run):
             return False
         if trig.get("last_day"):
             lastd = calendar.monthrange(now.year, now.month)[1]
