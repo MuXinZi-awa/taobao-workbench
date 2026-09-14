@@ -8,6 +8,9 @@ plugins/*/state.json
 
 data/*.db
 data/*.sqlite
+data/scheduler.log
+data/scheduler_heartbeat.json
+data/scheduler_run_*.log
 
 # 运行时/临时（勿提交）
 _err.txt
