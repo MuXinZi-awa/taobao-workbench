@@ -9,7 +9,7 @@ PBASE = os.path.dirname(os.path.abspath(__file__))   # 插件目录
 SCRIPTS = os.path.join(PBASE, "scripts")             # 插件内脚本（自包含）
 PY = sys.executable                                  # 工作台 python（含依赖）
 SUCAI = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\产品素材"
-TG_REC = os.path.join(TG, "推广记录.csv")
+TG_REC = os.path.join(r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\数据", "推广记录.csv")
 
 def load_state():
     try:
@@ -20,19 +20,35 @@ def load_state():
 def save_state(st):
     io.open(STATE_FP, "w", encoding="utf-8").write(json.dumps(st, ensure_ascii=False, indent=1))
 
+def _acct():
+    """当前激活店铺连接（多账号：面板显示 + 数据过滤）"""
+    try:
+        import sys as _s
+        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        if _wb not in _s.path:
+            _s.path.insert(0, _wb)
+        import conn_store
+        return conn_store.active_of("taobao") or {}
+    except Exception:
+        return {}
+
+
 def _read_tg_rec():
-    """推广记录.csv → {料号: 最后状态} 只读"""
+    """推广记录.csv（料号,状态,时间,账号）→ {料号: 最后状态}；按当前账号过滤
+    注：该文件无表头，必须用 csv.reader（原来用 DictReader 把首行当表头 → 恒返回空）"""
     out = {}
     if not os.path.exists(TG_REC):
         return out
     try:
+        _mid = str(_acct().get("member_id") or "")
         with io.open(TG_REC, encoding="utf-8-sig", errors="replace") as f:
-            for row in csv.DictReader(f):
-                cols = list(row)
-                lh = row.get("料号") or row.get("lh") or ""
-                st = row.get("状态") or row.get("结果") or ""
-                if lh:
-                    out.setdefault(lh.strip(), st.strip())
+            for _r in csv.reader(f):
+                if not _r or not _r[0].strip():
+                    continue
+                _av = (_r[3].strip() if len(_r) > 3 else "") or "46557383"   # 老数据归店铺1
+                if _mid and _av != _mid:
+                    continue
+                out.setdefault(_r[0].strip(), (_r[1].strip() if len(_r) > 1 else ""))
     except Exception:
         pass
     return out
@@ -311,6 +327,9 @@ def classify_batch(lhs):
 
 
 def handle(action, qs):
+    if action == "acct":
+        _a = _acct()
+        return {"ok": True, "account": {"name": _a.get("name") or "", "member_id": _a.get("member_id") or ""}}
     if action == "scan":
         lhs = qs.get("lhs", "").split(",") if qs.get("lhs") else []
         return {"ok": True, "items": scan_batch(lhs)}

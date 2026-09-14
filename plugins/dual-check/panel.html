@@ -41,7 +41,15 @@ th { background:var(--side,#EFE8DB); font-weight:500; position:sticky; top:0; }
 </style>
 </head>
 <body>
-<h3>查双百</h3>
+<h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">查双百 <span id="acctbar" style="font-size:11.5px;font-weight:400;color:var(--text-m,#888)">账号 —</span></h3><script>
+(async function(){
+  try{
+    var r = await fetch('/api/plg/dual-check/acct').then(function(x){return x.json();});
+    var el = document.getElementById('acctbar');
+    if(el && r && r.account) el.textContent = '账号 ' + (r.account.name || '未命名') + (r.account.member_id ? (' \u00b7 ' + r.account.member_id) : '');
+  }catch(e){}
+})();
+</script>
 <div class="tabs">
   <div class="tab active" data-t="one" onclick="sw('one')">单查</div>
   <div class="tab" data-t="batch" onclick="sw('batch')">批量</div>
