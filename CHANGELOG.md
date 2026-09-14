@@ -4,6 +4,18 @@
 
 ---
 
+## v0.8.3 · 2026-09-14（修 manifest BOM · 插件消失）
+
+### 修复
+- **`tg-monitor` 插件“消失”**：改 manifest 时用了 `utf-8-sig` 写出，文件带了 BOM；内核 `scan_plugins` 用 `json.load(open(mf, encoding="utf-8"))` 读 → **BOM 导致 JSON 解析失败 → 静默跳过** → 插件列表里没了（目录完好、内容正常）
+  - 修为 utf-8 无 BOM；已逐个核查全部 6 个插件 manifest 无 BOM
+
+### 经验
+- **改 manifest 必须 utf-8 无 BOM**
+- **`except: pass` 的静默失败要留痕**（今天第二次栽在同一件事：落库的 try 吞异常、扫描器的 except 吞解析错误）
+
+---
+
 ## v0.8.2 · 2026-09-14（推广数据全按账号）
 
 ### 优化
