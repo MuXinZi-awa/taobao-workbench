@@ -156,6 +156,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         p = self.path
         try:
+            # 插件后端（POST）：/api/plg/<id>/<action>?k=v
+            #   Content-Type: application/json → body 当 JSON 参数
+            #   其它（如文件拖入）→ body 原文当字节，附 _raw 供插件读
+            if p.startswith("/api/plg/"):
+                rest = p[len("/api/plg/"):]
+                parts = rest.split("/", 1)
+                pid = parts[0]
+                tail = parts[1] if len(parts) > 1 else ""
+                action = tail.split("?")[0]
+                qs = tail.split("?", 1)[1] if "?" in tail else ""
+                params = {}
+                import urllib.parse as _up
+                for kv in qs.split("&") if qs else []:
+                    if "=" in kv:
+                        k, _, v = kv.partition("=")
+                        params[k] = _up.unquote_plus(v)
+                ln = int(self.headers.get("Content-Length", 0) or 0)
+                if ln > 0 and ln <= 64 * 1024 * 1024:
+                    body = self.rfile.read(ln)
+                    ct = (self.headers.get("Content-Type") or "").lower()
+                    if "application/json" in ct:
+                        try:
+                            j = json.loads(body.decode("utf-8"))
+                            if isinstance(j, dict):
+                                params.update(j)
+                        except Exception:
+                            params["_json_error"] = body[:120].decode("utf-8", "replace")
+                    else:
+                        params["_raw"] = body
+                return self._json(call_plugin(pid, action, params))
             if p == "/api/install-plugin":
                 # 插件安装：接收 zip bytes → 校验 manifest → 解压到 plugins/<id>/
                 import io, zipfile
