@@ -409,6 +409,7 @@ def smart_refresh(headless=True):
     yest = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
     # ★ 缺口检测（近30天）：不能只看最后一天——中间断档（如死机没采）也得全量补
     _gaps = []
+    _stale = []
     if tgt:
         try:
             import sys as _s4
@@ -426,13 +427,31 @@ def smart_refresh(headless=True):
                         break
                     if _k not in _ds:
                         _gaps.append(_k)
+                # 新鲜度：最近 7 天里，"在当天就采了的"记录 = 那天还没过完 → 不是最终值
+                # （ts 查询需要 ts 字段，report_db.get_daily 不返回它 → 直接查库）
+                import sqlite3 as _sq
+                _cc = _sq.connect(_rdb4.DB)
+                _tsm = {r0: t0 for r0, t0 in _cc.execute(
+                    "SELECT date, ts FROM daily WHERE account=?", (tgt,)).fetchall()}
+                _cc.close()
+                _today_s = _dt.date.today().isoformat()
+                for _r0 in _rows4[-7:]:
+                    _dd = _r0["date"]
+                    if _dd >= _today_s:
+                        continue                     # 今天跳过：今天本就该实时采，不算"未定稿"
+                    _tt = _tsm.get(_dd) or ""
+                    if _tt and _tt[:10] <= _dd:      # 过去某天"当天就采了" → 没等到定稿 → 重采
+                        _stale.append(_dd)
         except Exception:
             _gaps = []
-    need_full = (not last) or (last < yest) or bool(_gaps)
+    need_full = (not last) or (last < yest) or bool(_gaps) or bool(_stale)
     if need_full:
         r = refresh(headless=headless)
         r["mode"] = "full"
-        if _gaps:
+        if _stale:
+            r["reason"] = "有 %d 天是当天采的（未定稿：%s）→ 全量重采" % (
+                len(_stale), "、".join(sorted(_stale)[-3:]))
+        elif _gaps:
             r["reason"] = "近30天缺 %d 天（%s）→ 全量补齐" % (len(_gaps), "、".join(sorted(_gaps)[:5]))
         else:
             r["reason"] = ("该账户暂无历史存档" if not last else "存档止于 %s，需补全" % last)
