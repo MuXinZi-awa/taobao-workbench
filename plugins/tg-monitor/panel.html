@@ -45,6 +45,7 @@ input::placeholder { color:var(--text-m,#999); }
 
 <!-- 监控区 -->
 <div class="top">
+  <div class="chip" id="acct"><span class="dot"></span>账号 —</div>
   <div class="chip" id="login"><span class="dot bad"></span>登录态—</div><button class="chip" style="cursor:pointer;border-color:#4a7cf7;color:#4a7cf7" onclick="chkLogin()">检测登录</button>
   <div class="chip" id="proc"><span class="dot"></span>批次</div>
   <div class="chip" id="rec">已推记录 —</div>
@@ -53,7 +54,7 @@ input::placeholder { color:var(--text-m,#999); }
   <div class="chip" id="tm">—</div>
   <button class="chip" style="cursor:pointer;border-color:#4a7cf7;color:#4a7cf7" onclick="refreshCap()">↻ 刷新容量</button>
 </div>
-<div class="sec">计划组（11）· 容量 count/500</div>
+<div class="sec" id="planTitle">计划组 · 容量 count/500</div>
 <div class="grid" id="grid">加载中…</div>
 
 <!-- 推广工程区 -->
@@ -97,6 +98,12 @@ let curFile="", curFileName="", lastRec=null, lastRun=false;
 
 async function load(){
  const d=await fetch(P+'status').then(r=>r.json()); if(!d.ok) return;
+ const ac=document.getElementById('acct');
+ const an=(d.account&&d.account.name)?d.account.name:'未命名';
+ const am=(d.account&&d.account.member_id)?(' · '+d.account.member_id):'';
+ ac.innerHTML='<span class="dot ok"></span>'+an+am;
+ const pt=document.getElementById('planTitle');
+ if(pt) pt.textContent='计划组（'+((d.plans||[]).length)+'）· 容量 count/500';
  const lg=document.getElementById('login');
  lg.innerHTML='<span class="dot '+(d.login==null?'':(d.login?'ok':'bad'))+'"></span>登录态 '+(d.login==null?'未检测':(d.login?'有效':'失效'));
  const pr=document.getElementById('proc'); pr.innerHTML='<span class="dot '+(d.running?'run':'')+'"></span>'+(d.running?'批次运转中':'空闲');

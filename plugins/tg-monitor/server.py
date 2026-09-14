@@ -24,6 +24,48 @@ _PLAN_ORDER = ["72264315693", "83306736168", "72304256352", "83211993350", "8325
                "83212131417", "83212279185", "83259606767", "83212439397", "83259874852", "83162843849"]
 PLANS = [{"id": pid, "name": _PN.get(pid, pid)} for pid in _PLAN_ORDER]
 
+def _acct():
+    """当前激活店铺连接（多账号：计划/容量按账号取）"""
+    try:
+        import sys as _s
+        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        if _wb not in _s.path:
+            _s.path.insert(0, _wb)
+        import conn_store
+        return conn_store.active_of("taobao") or {}
+    except Exception:
+        return {}
+
+
+def _acct_fp(name):
+    """按账号取 runtime 下的文件（plan_state_<member>.json）
+    已绑账号 → 只认自己的（没有就是空，绝不回退全局，防串号）；未绑 → 用全局（历史兼容）"""
+    mid = str(_acct().get("member_id") or "")
+    base, ext = os.path.splitext(name)
+    if not mid:
+        return os.path.join(TG, "runtime", name)
+    return os.path.join(TG, "runtime", base + "_" + mid + ext)
+
+
+def plans_cur():
+    """当前账号的计划列表（计划ID → 名字）
+    已绑账号 → 只读该账号的 plan_names（没有就是空表，不回退默认 11 个，防串号）
+    未绑 → 用默认列表（历史兼容）"""
+    mid = str(_acct().get("member_id") or "")
+    fp = _acct_fp("plan_names.json")
+    pn = {}
+    if os.path.isfile(fp):
+        try:
+            pn = json.load(io.open(fp, encoding="utf-8"))
+        except Exception:
+            pn = {}
+    if pn:
+        return [{"id": pid, "name": pn.get(pid, pid)} for pid in pn]
+    if mid:
+        return []
+    return [{"id": pid, "name": pid} for pid in _PLAN_ORDER]
+
+
 def _read_rows(fp):
     if not os.path.isfile(fp):
         return []
@@ -134,12 +176,13 @@ def status():
 
     plans = []
     plan_state = {}
-    if os.path.isfile(PLAN_STATE):
+    _psfp = _acct_fp("plan_state.json")
+    if os.path.isfile(_psfp):
         try:
-            plan_state = json.load(open(PLAN_STATE, encoding="utf-8"))
+            plan_state = json.load(open(_psfp, encoding="utf-8"))
         except Exception:
             pass
-    for p in PLANS:
+    for p in plans_cur():
         pid = p["id"]
         st = plan_state.get(pid, {})
         count = st.get("count")
@@ -150,8 +193,10 @@ def status():
     # 0908：login 只读缓存——自动探测已禁（probe headless 抢 chrome_profile → 批/手动 launch 全被顶掉）
     # 登录态用手动「检测」按钮；批跑时状态看 running；容量批自更新+手动刷新
     login = _lg_read().get("v")
+    _a = _acct()
     return {
         "ok": True,
+        "account": {"name": _a.get("name") or "", "member_id": _a.get("member_id") or ""},
         "login": login,
         "running": running,
         "stats": {"rec": len(rec_lh), "today": rec_today, "units": _units_total(plan_state),
