@@ -202,8 +202,9 @@ def _ref_for(lh, audit):
     d = os.path.join(SUCAI, lh)
     if not os.path.isdir(d):
         return ""
-    if audit == "待复检":
-        # 待复检产物（白底/库源/换源——最新）
+    if audit and audit != "放行":
+        # ★ 0915：在途/待复检品（待复检/送修/换源）都先看产物——
+        #   原来只判 "待复检"，标了“送修”就掉到找原图分支 → 没原图就空
         fs = sorted(_g.glob(os.path.join(d, "*_待复检*.*")))
         if fs:
             return fs[0]  # 库源1 在前（首图）
