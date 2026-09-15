@@ -4,6 +4,29 @@
 
 ---
 
+## v0.8.13 · 2026-09-15（送修通道 · 真结论：seedream_5.0 = UI 的 5.0 Lite）
+
+### 纠正 v0.8.12 的错误结论
+- 上一版改“不传 model”：**实测走的是服务端默认 4.0（花积分 1/张）** ✗
+- **正确**：`general_agent_settings.image_model = "seedream_5.0"` —— **= 网页版 UI 的 “Seedream 5.0 Lite”，实测不花积分** ✓
+- 対时据（梓帆核对小云雀）：14:27 那次 5.0 lite 不花积分 = 本侧 14:26 跑的 `seedream_5.0`；14:32 “不传 model” 那次 = 4.0
+
+### 最终设置
+```python
+def submit(message, asset_ids, model="seedream_5.0"):
+    body = {"message": ..., "asset_ids": ...,
+            "general_agent_settings": {"image_model": model}}
+```
+
+### 教训
+- **报时间先对表**（本次因未对表，把 14:26 误以为 17:5x，推出错结论）——梓帆定过的规矩，又忘
+- 对比实验要固定变量：一会儿改位置、一会儿改不传，变量太多无法归因
+
+### 插件
+- `pipeline` 0.2.9 → 0.2.10
+
+---
+
 ## v0.8.12 · 2026-09-15（送修通道 · 最终结论：不传 model）
 
 ### 结论（绕了四轮）
