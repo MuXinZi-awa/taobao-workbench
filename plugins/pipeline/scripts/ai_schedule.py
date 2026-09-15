@@ -80,8 +80,8 @@ def upload_asset(img_path):
         return json.loads(r.read().decode("utf-8"))
 
 
-def submit(message, asset_ids, model="seedream_4.5"):
-    """0903：指定 seedream_4.5（不耗积分——5.0 pro 留给棠溪雾/贵活）——submit_run body 带 model"""
+def submit(message, asset_ids, model="seedream_5.0_lite"):
+    """0915：默认 seedream_5.0_lite（不花积分——pro 留给棠溪雾）；参数可覆盖"""
     d = api(XYQ_BASE + "/api/biz/v1/skill/submit_run", {"message": message, "asset_ids": asset_ids, "model": model})
     run = d.get("run", {})
     return run.get("thread_id", ""), run.get("run_id", "")
