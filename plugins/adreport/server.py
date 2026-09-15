@@ -253,8 +253,8 @@ def report():
     # 库里没今日 → 全 0（绝不回退 JSON）
     today_total = {
         "charge": _f(ta.get("charge")), "adPv": _i(ta.get("adPv")), "click": _i(ta.get("click")),
-        "ctr": _f(ta.get("ctr"), 4), "amt": _f(ta.get("alipayInshopAmt")),
-        "num": _i(ta.get("alipayInshopNum")), "cart": _i(ta.get("cartInshopNum")),
+        "ctr": _f(ta.get("ctr"), 4), "amt": _f(ta.get("amt")),
+        "num": _i(ta.get("num")), "cart": _i(ta.get("cart")),
         "ecpc": _f(ta.get("ecpc"), 3), "cvr": _f(ta.get("cvr"), 4),
     }
     today_total["roi"] = _f(today_total["amt"] / today_total["charge"], 2) if today_total["charge"] else 0
