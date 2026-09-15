@@ -4,6 +4,22 @@
 
 ---
 
+## v0.8.6 · 2026-09-15（流水线登录态修正 · 副本同步）
+
+### 修复
+- **流水线「查询分流」要验证码**：`pipeline/scripts/_mtop_api.py` 是从主脚本复制的**旧副本**，仍用 `BASE/.profile`（无登录态）——而主脚本那份已改成“跟激活连接”
+  - 同步副本 → 两边一致；实测 `PROFILE_DIR = ...chrome_profile`（有登录态）
+  - 同因：`plugins/pipeline/scripts/.profile` 就是这份旧代码生成的（前晚误入库的 271 文件）
+- `tuiguang_auto.py`：`wxt_login_if_needed` 里“已在推广页”却 `return False`（语义反了，原版就错，被早停引爆）→ 已修为 True；登录闸门已回滚
+
+### 经验
+- **脚本有副本时，改主脚本必须同步副本**（流水线插件自包含 `scripts/` 目录）——否则同一个平台两条路会用不同登录态
+
+### 插件
+- `pipeline` 0.2.1 → 0.2.2
+
+---
+
 ## v0.8.5 · 2026-09-14（scheduler 可接替 Hana 定时任务）
 
 ### 新增
