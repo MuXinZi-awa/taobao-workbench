@@ -4,6 +4,23 @@
 
 ---
 
+## v0.8.7 · 2026-09-15（流水线登录态真正修好 · 根因）
+
+### 修复
+- **流水线「查询分流」被卡手机验证（真根因）**：`_mtop_api._profile_dir()` 里的 `import acct_profile` —— `acct_profile.py` 在「推广一键跑」，而插件那份的 `BASE` 指向插件目录 → **import 失败 → 静默回退 `.profile`（无登录态）**
+  - 修：把「推广一键跑」也加进 `sys.path`；“回退 .profile”从默认行为变成“真的拿不到才用”
+  - 实测：插件 `PROFILE_DIR = ...chrome_profile`，分流 `ok=True 8s`（老品-双百跳过）
+- 分流改**子进程**跑（`scripts/_classify_one.py`）：playwright 在内核请求线程里不稳（拿不到 `_m_h5_tk`）
+
+### 经验
+- **“静默回退”是隐形杀手**：`try/except` + 默认值（.profile）会把“配置没读到”变成“默默用错的”（与 BOM、落库同一个病根）
+- 插件自包含脚本的 `BASE` 与主脚本不同——依赖“其他目录里的模块”（acct_profile/conn_store）时必须显式加入 `sys.path`
+
+### 插件
+- `pipeline` 0.2.2 → 0.2.3
+
+---
+
 ## v0.8.6 · 2026-09-15（流水线登录态修正 · 副本同步）
 
 ### 修复
