@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """分流子进程：料号 → 搜商品 + 查双百 → 输出 JSON（给 pipeline 插件当子进程调）
 为什么要子进程：playwright 在内核的请求线程里跑不稳（拿不到 _m_h5_tk）
+为什么要锁：和推广/采集/送修共用同一把浏览器锁（同一 profile 同时只能一个 Chrome）
 用法：python _classify_one.py 料号1,料号2,...   → stdout 最后一行是 JSON
 """
 import sys, os, io, json
@@ -14,21 +15,38 @@ except Exception:
 from _mtop_api import MtopClient
 
 
+def _out(obj):
+    print(json.dumps(obj, ensure_ascii=False))
+
+
 def main():
     raw = sys.argv[1] if len(sys.argv) > 1 else ""
     lhs = [x.strip() for x in raw.split(",") if x.strip()]
     if not lhs:
-        print(json.dumps({"ok": False, "error": "无料号"}, ensure_ascii=False))
-        return
-    mc = MtopClient()
-    try:
-        mc.open(headless=True)
-    except Exception as e:
-        print(json.dumps({"ok": False, "error": "Mtop 打开失败: %s" % str(e)[:100]}, ensure_ascii=False))
+        _out({"ok": False, "error": "无料号"})
         return
 
+    # ★ 0915：浏览器锁——和推广/采集/送修共用同一把（否则和推广批撞 profile）
+    _lk = None
+    try:
+        import browser_lock
+        _lk = browser_lock.guard("流水线分流", timeout=1200)
+        _lk.__enter__()
+        print("[锁] 已取得浏览器锁")
+    except Exception as e:
+        _out({"ok": False, "error": "等浏览器锁失败: %s" % str(e)[:100]})
+        return
+
+    mc = None
     items = []
     try:
+        mc = MtopClient()
+        try:
+            mc.open(headless=True)
+        except Exception as e:
+            _out({"ok": False, "error": "Mtop 打开失败: %s" % str(e)[:120]})
+            return
+
         for lh in lhs:
             it = {"lh": lh, "id": "", "title": "", "type": "", "dual": None, "note": ""}
             try:
@@ -66,11 +84,17 @@ def main():
             print("[%s] %s | id=%s | %s" % (lh, it["type"], it["id"], it["note"]))
     finally:
         try:
-            mc.close()
+            if mc is not None:
+                mc.close()
         except Exception:
             pass
+        if _lk is not None:
+            try:
+                _lk.__exit__(None, None, None)
+            except Exception:
+                pass
 
-    print(json.dumps({"ok": True, "items": items}, ensure_ascii=False))
+    _out({"ok": True, "items": items})
 
 
 main()
