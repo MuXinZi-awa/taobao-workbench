@@ -4,6 +4,19 @@
 
 ---
 
+## v0.8.11 · 2026-09-15（送修通道换 seedream_5.0_lite）
+
+### 优化
+- **送修（clean）通道** 从 `seedream_4.5` 换成 **`seedream_5.0_lite`**（4.5 会花积分；5.0 lite 不花）
+  - `ai_schedule.submit(model=...)` 默认值改；**两份 ai_schedule.py 同步改**（推广一键跑 + 插件 scripts）
+  - **实测跑通**：1379029 clean → 2 张（130s，纯白单主体验证通过）
+  - 注：**CLI 文档里没有 `lite`**（只有 4/4.1/4.3/4.5/5.0/5.0_pro）——UI 显示 “Seedream 5.0 Lite” 对应 API 名 `seedream_5.0_lite`，服务端已实收
+
+### 插件
+- `pipeline` 0.2.7 → 0.2.8
+
+---
+
 ## v0.8.10 · 2026-09-15（产物命名冲突：换源 vs 送修）
 
 ### 修复（设计问题，非 bug）
