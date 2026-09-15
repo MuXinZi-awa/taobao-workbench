@@ -80,9 +80,15 @@ def upload_asset(img_path):
         return json.loads(r.read().decode("utf-8"))
 
 
-def submit(message, asset_ids, model="seedream_5.0_lite"):
-    """0915：默认 seedream_5.0_lite（不花积分——pro 留给棠溪雾）；参数可覆盖"""
-    d = api(XYQ_BASE + "/api/biz/v1/skill/submit_run", {"message": message, "asset_ids": asset_ids, "model": model})
+def submit(message, asset_ids, model=""):
+    """0915：**默认不传模型**——服务端默认就是 5.0 lite（实测不花积分）
+    ★ 传 model 时必须放 general_agent_settings.image_model；放顶层会被静默忽略
+    ★ 服务端白名单：seedream_5.0 / seedream_5.0_pro / seedream_4.3 / nova2 / nova_pro / seedream_4.5 / seedream_4.1 / seedream_4
+      （网页版的 doubao-seedream-5-0-lite-* 走 skill API 会报“不支持的生图模型”）"""
+    body = {"message": message, "asset_ids": asset_ids}
+    if model:
+        body["general_agent_settings"] = {"image_model": model}
+    d = api(XYQ_BASE + "/api/biz/v1/skill/submit_run", body)
     run = d.get("run", {})
     return run.get("thread_id", ""), run.get("run_id", "")
 

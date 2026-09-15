@@ -4,6 +4,27 @@
 
 ---
 
+## v0.8.12 · 2026-09-15（送修通道 · 最终结论：不传 model）
+
+### 结论（绕了四轮）
+1. 原代码传**顶层** `"model"` → **被服务端静默忽略** → 实际用服务端默认 = **5.0 lite（不花积分）**
+2. 改成“正确位置” `general_agent_settings.image_model` 后，服务端才真读：`seedream_5.0_lite` / `doubao-seedream-5-0-lite-260128` **都报“不支持”**
+3. 服务端白名单（skill API）：`seedream_5.0 / seedream_5.0_pro / seedream_4.3 / nova2 / nova_pro / seedream_4.5 / seedream_4.1 / seedream_4`
+4. 网页版的 `doubao-seedream-5-0-lite-260128` 是**另一条通道**，skill API 不收
+
+### 最终改法
+- `ai_schedule.submit(model="")` —— **默认不传模型**（=服务端默认 = 5.0 lite，不花积分）；传时仍必须放 `general_agent_settings.image_model`
+- 实测：不传 model 送修 → 45s 出图 ✓
+- 两份 `ai_schedule.py` 同步
+
+### 校验
+- 服务端报错信息自带白名单，是确认支持模型最快的办法（不用猜）
+
+### 插件
+- `pipeline` 0.2.8 → 0.2.9
+
+---
+
 ## v0.8.11 · 2026-09-15（送修通道换 seedream_5.0_lite）
 
 ### 优化
