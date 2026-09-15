@@ -144,7 +144,7 @@ def src_one(lh):
                 save_st()
             return
         ts = datetime.datetime.now().strftime("%H%M%S")
-        dest = os.path.join(d, "%s_白底_待复检%s.png" % (lh, ts))
+        dest = os.path.join(d, "%s_换源_待复检%s.png" % (lh, ts))   # 0915: 换源≠白底(送修) —— 名字必须分开
         shutil.copy2(got, dest)
         mark_state(lh, "待复检", "换源完成：" + os.path.basename(dest))
         wlog("✓ %s 换源 → %s（待复检）" % (lh, os.path.basename(dest)))
