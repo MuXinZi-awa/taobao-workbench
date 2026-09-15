@@ -24,6 +24,11 @@ def _profile_dir():
         _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
         if _wb not in sys.path:
             sys.path.insert(0, _wb)
+        # ★ 0915：acct_profile.py 在「推广一键跑」——插件里这份 BASE 指向插件目录，
+        #   不把「推广一键跑」加进 sys.path 就会 import 失败→默默回退 .profile（=没登录态）
+        for _cand in (r"C:\Users\jdt-pty\Desktop\推广一键跑", BASE):
+            if os.path.isdir(_cand) and _cand not in sys.path:
+                sys.path.insert(0, _cand)
         import acct_profile
         pf, _c = acct_profile.resolve()          # 连接配了 profile 用它；否则按连接名推导
         if pf:

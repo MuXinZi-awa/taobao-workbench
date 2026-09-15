@@ -233,98 +233,35 @@ def _ref_for(lh, audit):
     return ""
 
 def classify_batch(lhs):
-    """0909 查询分流：每料号搜商品(老/新) + 老品查双百 → type（MtopClient 单连循环）"""
+    """0915: 改成**起子进程**跑（playwright 在内核请求线程里不稳 → 拿不到 _m_h5_tk）
+    子进程：scripts/_classify_one.py 料号1,料号2 → stdout 最后一行是 JSON"""
+    import subprocess
+    fp = os.path.join(SCRIPTS, "_classify_one.py")
+    if not os.path.isfile(fp):
+        return [], "缺少 _classify_one.py"
+    ls = [str(x).strip() for x in lhs if str(x).strip()]
+    if not ls:
+        return [], "无料号"
     try:
-        sys.path.insert(0, SCRIPTS)
-        from _mtop_api import MtopClient
+        r = subprocess.run([PY, "-X", "utf8", "-u", fp, ",".join(ls)],
+                           cwd=SCRIPTS, capture_output=True, timeout=600)
+        out = (r.stdout or b"").decode("utf-8", "replace")
+        err = (r.stderr or b"").decode("utf-8", "replace")
+        tail = ""
+        for line in out.strip().splitlines()[::-1]:
+            if line.strip().startswith("{"):
+                tail = line.strip()
+                break
+        if not tail:
+            return [], ("子进程无结果: " + ((out[-150:] or err[-150:]).strip() or "(空输出)"))
+        d = json.loads(tail)
+        if not d.get("ok"):
+            return [], d.get("error") or "未知错误"
+        return d.get("items") or [], ""
+    except subprocess.TimeoutExpired:
+        return [], "分流子进程超时(600s)"
     except Exception as e:
-        return [], "导入失败: %s" % str(e)[:60]
-    mc = MtopClient()
-    try:
-        mc.open()
-    except Exception as e:
-        return [], "Mtop 打开失败: %s" % str(e)[:60]
-    items = []
-    try:
-        for lh in lhs:
-            lh = (lh or "").strip()
-            if not lh:
-                continue
-            item = {"lh": lh, "id": "", "title": "", "type": "", "dual": None, "素材": "—", "缺列表": [], "note": ""}
-            try:
-                rows, st = mc.search_items(lh, page=1, page_size=3)
-                if rows:
-                    hit = None
-                    for r in rows:
-                        t = str(r.get("title", ""))
-                        if lh.replace("-", "").lower() in t.replace("-", "").lower():
-                            hit = r
-                            break
-                    hit = hit or rows[0]
-                    item["id"] = str(hit.get("itemId", ""))
-                    item["title"] = str(hit.get("title", ""))[:40]
-                    try:
-                        out, _ = mc.check_dual(lh)
-                        if out:
-                            sl = out[0].get("scoreLabel", "")
-                            item["dual"] = sl == "流量加速中"
-                            item["type"] = "老品-双百跳过" if item["dual"] else "老品-需优化"
-                            item["note"] = sl[:20]
-                        else:
-                            item["type"] = "老品-需优化"
-                            item["note"] = "无双百信息"
-                    except Exception as e:
-                        item["type"] = "老品-需优化"
-                        item["note"] = "双百异常:%s" % str(e)[:25]
-                else:
-                    item["type"] = "新品-待上架"
-                    item["note"] = "店铺搜不到该料号"
-            except Exception as e:
-                item["type"] = "查询异常"
-                item["note"] = str(e)[:30]
-            try:
-                m = scan_material(lh)
-                item["素材"] = "缺:" + ",".join(m["缺失"]) if m["缺失"] else "齐"
-                item["缺列表"] = m["缺失"]
-                item["图库数"] = m.get("图库数", 0)
-                if m.get("图库数"):
-                    _only_img = [x for x in m["缺失"] if x in ("封面", "主图")]
-                    if _only_img and len(_only_img) == len(m["缺失"]):
-                        # 只缺图且有库源——标可补（不算硬缺）
-                        item["素材"] = "缺:%s[库%d→可补]" % (",".join(m["缺失"]), m["图库数"])
-                    else:
-                        item["素材"] += "(库%d)" % m["图库数"]
-                item["orig"] = _ref_for(lh, "")
-                try:
-                    _st0 = load_state()
-                except Exception:
-                    _st0 = {}
-                item["audit"] = (_st0.get("items", {}).get(lh, {}) or {}).get("audit", "")
-                item["ref"] = _ref_for(lh, item.get("audit", ""))
-            except Exception:
-                pass
-            try:
-                st = load_state()
-                st["items"].setdefault(lh, {})["type"] = item["type"]
-                if item.get("id"):
-                    st["items"][lh]["id"] = item["id"]
-                if item.get("title"):
-                    st["items"][lh]["title"] = item["title"]
-                save_state(st)
-            except Exception:
-                pass
-            items.append(item)
-    finally:
-        try:
-            mc.close()
-        except Exception:
-            pass
-    try:
-        _wlog("查询分流 %d 品: %s" % (len(items), " | ".join("%s=%s" % (i["lh"], i["type"]) for i in items)))
-    except Exception:
-        pass
-    return items, ""
-
+        return [], "分流异常: %s" % str(e)[:100]
 
 def handle(action, qs):
     if action == "acct":
