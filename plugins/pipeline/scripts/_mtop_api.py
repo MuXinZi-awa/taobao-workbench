@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """MTOP API 客户端（skill 自包含版）——不依赖外部项目文件
 - 登录逻辑内嵌（不再 import publish_auto）
 - chrome profile 用 skill 内 .profile（首次运行自动登录）
@@ -18,14 +18,43 @@ import urllib.parse
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
-PROFILE_DIR = os.path.join(BASE, ".profile")      # skill 内 profile（登录态）
+def _profile_dir():
+    """登录态 profile：跟随**激活的店铺连接**（多账号隔离）；取不到回退 .profile"""
+    try:
+        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        if _wb not in sys.path:
+            sys.path.insert(0, _wb)
+        import acct_profile
+        pf, _c = acct_profile.resolve()          # 连接配了 profile 用它；否则按连接名推导
+        if pf:
+            return pf
+    except Exception:
+        pass
+    return os.path.join(BASE, ".profile")
+
+
+PROFILE_DIR = _profile_dir()                 # 运行期求值（每次新进程 = 当前激活账号）
 RUNTIME_DIR = os.path.join(BASE, "runtime")
 APPKEY = "12574478"
 H5API = "https://h5api.m.taobao.com/h5/{api}/{v}/"
 SELL_URL = "https://myseller.taobao.com/home.htm/SellManage/on_sale?current=1&pageSize=20"
-# 登录账号（千牛卖家中心）
-ACCOUNT = "duopeier:运营"
-PASSWORD = "Lxl2026@"
+# 登录账号（千牛卖家中心）——从工作台连接库读，切号即变
+def _cred():
+    try:
+        import sys as _s
+        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        if _wb not in _s.path:
+            _s.path.insert(0, _wb)
+        import conn_store
+        a = conn_store.active_of("taobao")
+        if a and a.get("username") and a.get("secret"):
+            return a["username"], a["secret"]
+    except Exception:
+        pass
+    return "duopeier:运营", "Lxl2026@"
+
+
+ACCOUNT, PASSWORD = _cred()
 
 
 def find_chrome():
