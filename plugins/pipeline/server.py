@@ -296,6 +296,27 @@ def handle(action, qs):
         items, err = classify_batch(lhs)
         if err:
             return {"ok": False, "error": err}
+        # ★ 0915：分流结果落 state（type/id/title）——否则前端每次“审核”都要重查，
+        #   查询一挂就会把已有类型冲成“查询异常”
+        try:
+            st = load_state()
+            for it in items:
+                _lh = (it.get("lh") or "").strip()
+                if not _lh:
+                    continue
+                rec = st["items"].setdefault(_lh, {})
+                # ★ 0915：“查询异常”不写 state——否则一次查询失败就把已分好的类型永久抹掉
+                if it.get("type") and it["type"] != "查询异常":
+                    rec["type"] = it["type"]
+                if it.get("id"):
+                    rec["id"] = it["id"]
+                if it.get("title"):
+                    rec["title"] = it["title"]
+                if it.get("type") and it["type"] != "查询异常":
+                    rec["type_time"] = _dt.datetime.now().strftime("%m-%d %H:%M:%S")
+            save_state(st)
+        except Exception:
+            pass
         return {"ok": True, "items": items}
     def _batch_busy():
         """repair_state.json 有在跑批（total>done+fail）→ True"""

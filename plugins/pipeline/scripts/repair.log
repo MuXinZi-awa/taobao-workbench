@@ -1,3 +1,52 @@
 [换源][10:51:35] 换源批：1 品 ['1-480275-0']
 [换源][10:51:35] ✓ 1-480275-0 图库换源 3 张 → 待复检
 [换源][10:51:35] 换源批结束 done=1 fail=0
+换源批：4 品 ['1928498059', 'XX99-NOT-EXIST', '33012-2002', '1379029']
+✓ 1928498059 图库换源 1 张 → 待复检
+✓ 33012-2002 图库换源 5 张 → 待复检
+[TE图] ⚠ 1379029 标题[嗯，让我们再试一次]不匹配——跳过（404/错页）
+[TE图] ⚠ XX99-NOT-EXIST 标题[嗯，让我们再试一次]不匹配——跳过（404/错页）
+IMG URLS:
+   https://alimg.szlcsc.com/upload/public/product/source/20230104/5AA04AA978A37518E2DD7FCF0C894F59.jpg
+  ✓ 1379029_lc1.jpg (170KB)
+· 1379029 LCSC: 1379029-3 | 下载 1
+✓ 1379029 换源 → 1379029_白底_待复检114901.png（待复检）
+IMG URLS:
+· XX99-NOT-EXIST LCSC:  | 下载 0
+✗ XX99-NOT-EXIST 无源可换（TE+LCSC 都没图）——保持换源待人工
+换源批结束 done=3 fail=1
+��）——保持换源待人工
+[换源][11:49:24] 换源批结束 done=3 fail=1
+换源批：2 品 ['XX99-NOT-EXIST', '1379029']
+[TE图] ⚠ XX99-NOT-EXIST 标题[嗯，让我们再试一次]不匹配——跳过（404/错页）
+[TE图] ⚠ 1379029 标题[嗯，让我们再试一次]不匹配——跳过（404/错页）
+IMG URLS:
+   https://alimg.szlcsc.com/upload/public/product/source/20230104/5AA04AA978A37518E2DD7FCF0C894F59.jpg
+  ✓ 1379029_lc1.jpg (170KB)
+· 1379029 LCSC: 1379029-3 | 下载 1
+✓ 1379029 换源 → 1379029_白底_待复检115056.png（待复检）
+IMG URLS:
+· XX99-NOT-EXIST LCSC:  | 下载 0
+✗ XX99-NOT-EXIST 无源可换（TE+LCSC 都没图）——保持换源待人工
+换源批结束 done=1 fail=1
+��）——保持换源待人工
+[换源][11:51:20] 换源批结束 done=1 fail=1
+换源批：2 品 ['XX99-NOT-EXIST', '1379029']
+[TE图] ⚠ XX99-NOT-EXIST 标题[嗯，让我们再试一次]不匹配——跳过（404/错页）
+[TE图] ⚠ 1379029 标题[嗯，让我们再试一次]不匹配——跳过（404/错页）
+IMG URLS:
+   https://alimg.szlcsc.com/upload/public/product/source/20230104/5AA04AA978A37518E2DD7FCF0C894F59.jpg
+  ✓ 1379029_lc1.jpg (170KB)
+· 1379029 LCSC: 1379029-3 | 下载 1
+✓ 1379029 换源 → 1379029_白底_待复检115507.png（待复检）
+IMG URLS:
+· XX99-NOT-EXIST LCSC:  | 下载 0
+✗ XX99-NOT-EXIST 无源可换（TE+LCSC 都没图）——保持换源待人工
+换源批结束 done=1 fail=1
+��）——保持换源待人工
+[换源][11:55:30] 换源批结束 done=1 fail=1
+送修批 v2（clean）：1 品 并发3 ['1379029']
+✗ 1379029 无参考图——跳过
+送修批结束 done=0 fail=1
+�
+[09-15 11:57:00] 送修批结束 done=0 fail=1
