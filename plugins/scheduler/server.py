@@ -159,11 +159,30 @@ def toggle_task(tid, on):
 
 
 # ── 守护进程管理 ──
+def _pid_alive(pid):
+    """pid 是否仍在运行（tasklist 探测；探测失败保守回 True）"""
+    try:
+        pid = int(pid or 0)
+    except Exception:
+        return True
+    if not pid:
+        return False
+    try:
+        out = subprocess.run(["tasklist", "/FI", "PID eq %d" % pid, "/NH"],
+                             capture_output=True, text=True, errors="ignore")
+        return str(pid) in (out.stdout or "")
+    except Exception:
+        return True
+
+
 def _daemon_alive():
     try:
         with io.open(HB, encoding="utf-8") as f:
             hb = json.load(f)
-        return (time.time() - float(hb.get("ts") or 0)) < 180      # 3 分钟内有心跳 = 活着
+        # 心跳新鲜 + pid 真在跑（只看心跳会在刚 kill 后 3 分钟内误判为活→start 起不来）
+        if (time.time() - float(hb.get("ts") or 0)) >= 180:
+            return False
+        return _pid_alive(hb.get("pid"))
     except Exception:
         return False
 
@@ -185,8 +204,11 @@ def daemon_start():
     if not os.path.isfile(DAEMON):
         return {"ok": False, "error": "缺少 daemon.py"}
     try:
+        # 守护进程脱离工作台：DETACHED_PROCESS(0x8)|CREATE_NEW_PROCESS_GROUP(0x200)|CREATE_NO_WINDOW(0x08000000)
+        # 原只加 CREATE_NO_WINDOW → daemon 仍是 workbench 子进程，工作台退出/被 taskkill /T 时连坐
+        _flags = 0x00000008 | 0x00000200 | 0x08000000
         subprocess.Popen([PY, "-X", "utf8", "-u", DAEMON],
-                         cwd=BASE, creationflags=0x08000000)   # CREATE_NO_WINDOW（无窗口常驻）
+                         cwd=BASE, creationflags=_flags)
         time.sleep(1.5)
         return {"ok": True, "msg": "守护已启动", **daemon_status()}
     except Exception as e:

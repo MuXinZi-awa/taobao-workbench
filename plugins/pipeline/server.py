@@ -264,6 +264,26 @@ def classify_batch(lhs):
     except Exception as e:
         return [], "分流异常: %s" % str(e)[:100]
 
+# ── 流水线阶段定义（0915 框架 · 数据驱动）────────────────────
+# 明天「填血肉」= 把 ready 改 True + 在 handle("run") 里补该阶段实现；前端不用动。
+STAGES = [
+    {"key": "query",     "label": "查询",      "ready": True,
+     "desc": "按料号搜商品 + 查双百 → 定 type（新品-待上架 / 老品-需优化 / 老品-双百跳过）"},
+    {"key": "attrs",     "label": "属性",      "ready": False,
+     "desc": "爬属性 fetch_attrs → 清单（只读不改商品）→ fill_attrs 回填"},
+    {"key": "material",  "label": "素材",      "ready": True,
+     "desc": "素材清点：封面/主图/规格书/视频 缺啥补啥（素材_prep / _auto_material）"},
+    {"key": "sort",      "label": "整理",      "ready": False,
+     "desc": "素材归位整理（organize）"},
+    {"key": "audit",     "label": "人工审核",  "ready": True,
+     "desc": "逐张看素材 → 放行 / 水印送修 / 质量差换源（铁律：全人工过）"},
+    {"key": "pub",       "label": "上品/优化", "ready": False,
+     "desc": "新品 → _xinpin_shangpin（上品）；老品-需优化 → _batch_optimize（编辑提交+补属性）"},
+    {"key": "tuiguang",  "label": "推广",      "ready": False,
+     "desc": "tuiguang_auto → 万相台（--excel / --campaigns / --no-pop）"},
+]
+
+
 def handle(action, qs):
     if action == "acct":
         _a = _acct()
@@ -400,4 +420,30 @@ def handle(action, qs):
         if lh:
             return {"ok": True, "material": scan_material(lh)}
         return {"ok": False, "error": "缺 lh"}
+    if action == "stages":
+        # 阶段定义（前端渲染阶段条用）
+        return {"ok": True, "stages": STAGES}
+    if action == "run":
+        # 阶段执行入口（0915 框架）：已就绪的转调原 action；未就绪的只提示不动作
+        key = (qs.get("stage") or "").strip()
+        lhs = [x.strip() for x in (qs.get("lhs") or "").split(",") if x.strip()]
+        st = None
+        for _s in STAGES:
+            if _s["key"] == key:
+                st = _s
+                break
+        if st is None:
+            return {"ok": False, "error": "未知阶段: %s" % key}
+        if not st["ready"]:
+            return {"ok": False, "ready": False,
+                    "error": "「%s」还没接血肉（骨架已就位）｜计划调用：%s" % (st["label"], st["desc"])}
+        if key == "query":
+            return handle("classify", {"lhs": ",".join(lhs)})
+        if key == "material":
+            if not lhs:
+                return {"ok": False, "error": "缺 lhs"}
+            return {"ok": True, "items": scan_batch(lhs)}
+        if key == "audit":
+            return {"ok": True, "msg": "人工审核走面板「\U0001F4CB 开始审核」（预览 Tab 标记）", "lhs": lhs}
+        return {"ok": False, "error": "阶段未实现: %s" % key}
     return {"ok": False, "error": "未知 action: %s" % action}

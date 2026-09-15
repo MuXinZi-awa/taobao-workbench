@@ -21,6 +21,12 @@ input::placeholder { color:var(--text-m,#999); }
  .sdot.fail{background:#d33}
  .stagel{font-size:12px;color:var(--text,#333);margin:0 2px}
  .stagenm{font-size:12px;font-weight:600;color:var(--accent,#4a7cf7);margin-right:10px;min-width:80px}
+ .sitem{display:inline-flex;align-items:center;gap:2px;cursor:pointer;padding:2px 6px;border-radius:6px;border:.5px solid transparent}
+ .sitem:hover{background:rgba(74,124,247,.08);border-color:var(--border,#ddd)}
+ .sitem.pending{opacity:.45}
+ .sitem.pending:hover{opacity:.85}
+ .sitem.now{border-color:var(--accent,#4a7cf7);background:rgba(74,124,247,.10)}
+ .sarrow{color:var(--border,#ccc);font-size:11px;margin:0 1px}
  table{border-collapse:collapse;width:100%;font-size:12px}
  th,td{border-bottom:.5px solid var(--border,#eee);padding:5px 6px;text-align:left;white-space:nowrap}
  th{position:sticky;top:0;background:var(--bg-card,#fbf9f4);font-weight:600;color:var(--text-l,#666)}
@@ -63,8 +69,8 @@ input::placeholder { color:var(--text-m,#999); }
   <button class="ghost" onclick="demo()">试填</button>
 </div>
 <div class="drop" id="drop"><div>📥 拖入 csv / xlsx（批量）</div><div style="font-size:11px;color:var(--text-l,#999);font-weight:400">自动识别料号列，逐行扫描——点击或拖拽</div></div>
-<div class="stage" id="stage"><span class="stagenm" id="stnm">待命</span><span style="display:flex;align-items:center;gap:6px;flex:1;justify-content:center">
- <span class="stagel">查询</span><span class="sdot" id="s0"></span><span class="stagel">素材</span><span class="sdot" id="s1"></span><span class="stagel">人工审核</span><span class="sdot" id="s2"></span><span class="stagel">上品/优化</span><span class="sdot" id="s3"></span><span class="stagel">推广</span><span class="sdot" id="s4"></span></span></div>
+<div class="stage" id="stage"><span class="stagenm" id="stnm">待命</span><span id="stageBar" style="display:flex;align-items:center;gap:6px;flex:1;justify-content:center;flex-wrap:wrap">
+ <span style="font-size:12px;color:var(--text-l,#999)">阶段加载中…</span></span></div>
 <div class="cur" id="cur"></div>
 <div id="repairBar" style="display:none;padding:5px 10px;border:.5px solid #b8860b;border-radius:6px;margin-bottom:6px;font-size:12px;color:#b8860b;background:rgba(184,134,11,.06)"></div>
 <div style="overflow:auto;max-height:52vh"><table id="tb">
@@ -98,9 +104,40 @@ function render(items){ curHasAudit(items);
 function highlight(i){ document.querySelectorAll('#tb tr').forEach(r=>r.classList.remove('doing'));
  const r=document.getElementById('r'+i); if(r)r.classList.add('doing'); }
 
-const STAGES=['查询','素材','人工审核','上品/优化','推广'];
-function setStage(idx,st,nm){ if(idx>=0&&idx<5){ const d=document.getElementById('s'+idx); if(d) d.className='sdot '+st; }
- $('#stnm').textContent=nm||STAGES[idx]+'中'; }
+/* ── 阶段条（0915 框架 · 数据驱动：定义从后端 /stages 拉，明天填血肉只动后端）── */
+var STAGES=[];                      // [{key,label,ready,desc}]
+function idxOf(k){ for(var i=0;i<STAGES.length;i++){ if(STAGES[i].key===k) return i; } return -1; }
+async function loadStages(){
+ try{
+  var d=await fetch(P+'stages').then(function(r){return r.json();});
+  if(d&&d.ok&&d.stages&&d.stages.length){ STAGES=d.stages; renderStages(); }
+ }catch(e){}
+}
+function renderStages(){
+ var bar=document.getElementById('stageBar'); if(!bar) return;
+ bar.innerHTML=STAGES.map(function(s,i){
+  return '<span class="sitem'+(s.ready?'':' pending')+'" id="si'+i+'" title="'+esc((s.ready?'':'【未接线】')+(s.desc||''))+'" onclick="runStage('+i+')">'
+   +'<span class="sdot" id="s'+i+'"></span><span class="stagel">'+esc(s.label)+'</span></span>';
+ }).join('<span class="sarrow">\u2192</span>');
+}
+function setStage(idx,st,nm){ if(idx>=0&&idx<STAGES.length){ const d=document.getElementById('s'+idx); if(d) d.className='sdot '+st;
+  const it=document.getElementById('si'+idx); if(it) it.className='sitem'+(STAGES[idx].ready?'':' pending')+(st==='on'?' now':''); }
+ $('#stnm').textContent=nm||(((STAGES[idx]||{}).label||'')+'中'); }
+function setStageKey(k,st,nm){ setStage(idxOf(k),st,nm); }
+/* 阶段入口：点阶段条上的格子 = 跑该阶段（未接线的只提示，不动任何真进程） */
+async function runStage(i){
+ var s=STAGES[i]; if(!s) return;
+ if(!s.ready){ $('#cur').textContent='\u23f3「'+s.label+'」还没接血肉 —— 计划调用：'+s.desc; return; }
+ var v=(curLhs&&curLhs.length)?curLhs.join(','):$('#lh').value.trim();
+ if(!v){ alert('先输料号或拖入清单'); return; }
+ setStage(i,'on',s.label);
+ var d=await fetch(P+'run?stage='+encodeURIComponent(s.key)+'&lhs='+encodeURIComponent(v)).then(function(r){return r.json();});
+ if(!d.ok){ setStage(i,'fail',s.label+' \u2717'); $('#cur').textContent='\u2717 '+(d.error||'执行失败'); return; }
+ if(d.items) render(d.items);
+ setStage(i,'done',s.label+' ok');
+ $('#cur').textContent='「'+s.label+'」完成'+(d.msg?('：'+d.msg):'');
+}
+loadStages();
 var curLhs=[];
 async function scan(lhs){
  curLhs=lhs; const items=[]; $('#cur').textContent='批量 '+lhs.length+' 品…';
@@ -108,8 +145,8 @@ async function scan(lhs){
   const d=await fetch(P+'scan?lhs='+encodeURIComponent(lhs[i])).then(r=>r.json());
   if(d.ok&&d.items&&d.items[0]) items.push(d.items[0]); }
  var missN=items.filter(function(x){return x.素材!=='齐'&&x.素材!=='—';}).length;
- if(missN===0){ setStage(1,'done','素材齐'); }
- else { setStage(1,'on','素材缺'+missN+'品'); }
+ if(missN===0){ setStageKey('material','done','素材齐'); }
+ else { setStageKey('material','on','素材缺'+missN+'品'); }
  $('#cur').textContent='素材扫描完成 '+items.length+' 品（缺素材 '+missN+'——黄灯提示待补）';
  render(items);
 }
@@ -123,7 +160,7 @@ async function classify(){
  var d=await fetch(P+'classify?lhs='+encodeURIComponent(v)).then(r=>r.json());
  if(!d.ok){ $('#cur').textContent='✗ '+(d.error||''); return; }
  render(d.items||[]);
- setStage(0,'done','查询分流完成'); $('#cur').textContent='分流完成 '+d.items.length+' 品——点「开始审核」或行';
+ setStageKey('query','done','查询分流完成'); $('#cur').textContent='分流完成 '+d.items.length+' 品——点「开始审核」或行';
 }
 function openAuditIdx(i){ adStartFrom(i); }
 async function adStartFrom(i){
@@ -150,7 +187,7 @@ async function adStartFrom(i){
    items.push({lh:it.lh,type:it.type||'',ref:rf,orig:og,skip:!!skip,audit:it.audit||''});
  }
  parent.postMessage({type:'wb-audit-start',items:items},'*');
- setStage(2,'on','人工审核中');
+ setStageKey('audit','on','人工审核中');
  var need=items.filter(function(x){return !x.skip;}).length;
  $('#cur').textContent='审核开始 共'+items.length+'（需审 '+need+'，双百跳过 '+(items.length-need)+'）——预览 Tab 标记，确认返回';
 }
@@ -160,8 +197,8 @@ window.addEventListener('message', function(e){ var d=e.data;
   $('#cur').textContent='审核已提交（放行'+((d.stats&&d.stats['放行'])||0)+' 送修'+((d.stats&&d.stats['送修'])||0)+' 换源'+((d.stats&&d.stats['换源'])||0)+'）——刷新状态';
   var passN=((d.stats&&d.stats['放行'])||0), fixN=(d.stats&&d.stats['送修'])||0, srcN=(d.stats&&d.stats['换源'])||0;
   // 人工审核完成 = 无在途处理（送修/换源都处理完）——全放行/无在途即绿
-  if(!fixN && !srcN){ setStage(2,'done','审核完成'); }
-  else { setStage(2,'on','审核中-送修'+fixN+'/换源'+srcN+'待处理'); }
+  if(!fixN && !srcN){ setStageKey('audit','done','审核完成'); }
+  else { setStageKey('audit','on','审核中-送修'+fixN+'/换源'+srcN+'待处理'); }
   var rb=document.getElementById('rpBtn');
   if(rb) rb.style.display=(fixN>0)?'':'none';
   if(fixN>0) $('#cur').textContent='有 '+fixN+' 品标送修——点「🛠 送修处理」触发 AI 修图（回来走复检）';

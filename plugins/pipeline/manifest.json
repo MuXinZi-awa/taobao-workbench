@@ -1,8 +1,8 @@
 {
   "id": "pipeline",
   "name": "流水线",
-  "version": "0.2.10",
-  "desc": "上品/优化/推广 一条龙状态机：拖入清单 → 查询 → 素材整理 → 人工审核 → 上品/优化 → 推广",
+  "version": "0.2.11",
+  "desc": "上品/优化/推广 一条龙状态机：拖入清单 → 查询分流 → 属性 → 素材 → 整理 → 人工审核 → 上品/优化 → 推广",
   "panel": "panel.html",
   "entry": "panel.html",
   "has_server": true,

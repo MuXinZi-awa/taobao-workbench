@@ -4,6 +4,53 @@
 
 ---
 
+## v0.8.15 · 2026-09-15（流水线阶段条骨架 · 数据驱动）
+
+### 新增（`pipeline` 插件）
+- **阶段定义数据驱动**：后端新增模块级 `STAGES`（7 项 —— 查询 / 属性 / 素材 / 整理 / 人工审核 / 上品·优化 / 推广），每项含 `key / label / ready / desc`
+- **`/stages`**：返回阶段定义，前端据此渲染阶段条 → **明天填血肉不用动前端**
+- **`/run?stage=<key>&lhs=<料号列表>`**：统一阶段执行入口
+  - 已就绪（`query` / `material` / `audit`）→ 转调原 action（`classify` / `scan_batch` / 审核提示）
+  - 未就绪（`attrs` / `sort` / `pub` / `tuiguang`）→ 只回 `{ok:false, ready:false, error:"…还没接血肉｜计划调用：…"}`，**不动任何真进程**
+- 前端阶段条：写死的 5 格 → 动态 7 格（`loadStages`/`renderStages`），每格可点，未接线灰显 + 悬停提示计划调用，箭头串联
+- 原写死索引的调用改 key 版（`setStageKey('material'|'query'|'audit', …)`）→ 以后插入/调整阶段不会错位
+
+### 验证
+- `ast.parse` 语法通过；`/stages` 返 7 阶段；`/run?stage=pub` 只提示不动作；`/run?stage=material&lhs=…` 返回清点结果；`/run?stage=audit` 返提示
+- headless 打开 `/panel/pipeline`：7 格渲染、4 格灰显、点未接线格只改文案不动作
+
+### 插件
+- `pipeline` 0.2.10 → 0.2.11
+
+### 明天填血肉（按序）
+1. **属性** → `fetch_attrs`（爬，只读不改商品，最安全）
+2. **整理** → `organize`
+3. **上品/优化 + 推广** → 真动作，先拿 1 品 `--no-submit` 预演
+- 接线**照 `_optimize_flow.py` 拄**（它本身就是调用层范例），但**别直接调它**（一体总装会绕过人工审核闸门）
+
+---
+
+## v0.8.14 · 2026-09-15（报表三表对齐 + 守护进程脱离工作台）
+
+### 修复（报表「今日」三处对不上）
+- **根因 1（主因）**：`_report_today.py` 落库 `plan_snap`/`scene_snap` 时把 ts 传成 date-only `'2026-09-15'`；`report_db.get_plans/get_scenes` 取 `MAX(ts)` 是**字符串比较** → `'2026-09-15T09:00:00' > '2026-09-15'`，面板永远取 09:00 旧批（2.79/188/7），而 daily 是覆盖写已更新（22.24/868/55）
+  - 修：两处 ts 实参 `today` → `None`（改用完整时间戳）
+- **根因 2**：KPI 卡取字段写错 —— `ta.get("alipayInshopAmt")`，而库里字段就是 `amt`（`num`/`cart` 同理）→ 成交额/成交笔数/加购数恒为 0（实为 54 元 / 1 笔 / 6）
+  - 修：改回 `amt`/`num`/`cart`
+- 数据修正：把库里 tag='today' 的 date-only 脏行 ts 掰正为 `2026-09-15T16:45:56`
+- **验证**：KPI 卡 = 场景合计 = 计划合计 = 22.24 / 868 / 55；成交 54 元 / 1 笔 / 加购 6
+
+### 优化（守护进程）
+- `daemon_start()` 的 Popen 补 `DETACHED_PROCESS(0x8)|CREATE_NEW_PROCESS_GROUP(0x200)`：原只加 CREATE_NO_WINDOW，daemon 实为 workbench 子进程，工作台退出/被 `taskkill /T` 会连坐
+- `_daemon_alive()` 补 **pid 存活校验**（tasklist）：原来只看「3 分钟内有心跳」，刚 kill 掉 daemon 后 3 分钟内会误判为活 → `daemon start` 起不来
+- 清理 3 个任务陈旧的 `last_result='running'`（tick 只认 last_run，不阻塞触发，纯显示脏）
+
+### 插件
+- `adreport` 0.2.5 → 0.2.6
+- `scheduler` 0.1.2 → 0.1.3
+
+---
+
 ## v0.8.13 · 2026-09-15（送修通道 · 真结论：seedream_5.0 = UI 的 5.0 Lite）
 
 ### 纠正 v0.8.12 的错误结论
