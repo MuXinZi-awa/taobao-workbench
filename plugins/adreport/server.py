@@ -250,14 +250,34 @@ def report():
         ta = {"charge": _t.get("charge"), "adPv": _t.get("adPv"), "click": _t.get("click"),
               "ctr": _t.get("ctr"), "amt": _t.get("amt"), "num": _t.get("num"),
               "cart": _t.get("cart"), "ecpc": _t.get("ecpc"), "cvr": _t.get("cvr")}
-    # 库里没今日 → 全 0（绝不回退 JSON）
+    # 今日 KPI：优先用 tag='today' 场景快照汇总（与下方「今日计划/场景」表**同源**）。
+    # 为什么：全量采集(_report_fetch.py)的日粒度接口**不含当天**，daily 表只有 T+1 历史，
+    # 今天行仅由「今日采集」(_report_today.py)写入。若只读 daily，全量采集后面板 KPI 会整排 0，
+    # 而下方表格读快照有数 → 同一块「今日」两个数据源打架。此处统一为快照源。
+    _kpi_sc = _sc_db.get("today") or []
+    if _kpi_sc:
+        _k_charge = sum(_f(r.get("charge")) for r in _kpi_sc)
+        _k_pv = sum(_i(r.get("adPv")) for r in _kpi_sc)
+        _k_click = sum(_i(r.get("click")) for r in _kpi_sc)
+        _k_amt = sum(_f(r.get("amt")) for r in _kpi_sc)
+        _k_num = sum(_i(r.get("num")) for r in _kpi_sc)
+    else:
+        # 回退：daily 今天行（今日采集会写；全量采集后通常为空）
+        _k_charge = _f(ta.get("charge"))
+        _k_pv = _i(ta.get("adPv"))
+        _k_click = _i(ta.get("click"))
+        _k_amt = _f(ta.get("amt"))
+        _k_num = _i(ta.get("num"))
     today_total = {
-        "charge": _f(ta.get("charge")), "adPv": _i(ta.get("adPv")), "click": _i(ta.get("click")),
-        "ctr": _f(ta.get("ctr"), 4), "amt": _f(ta.get("amt")),
-        "num": _i(ta.get("num")), "cart": _i(ta.get("cart")),
-        "ecpc": _f(ta.get("ecpc"), 3), "cvr": _f(ta.get("cvr"), 4),
+        "charge": round(_k_charge, 2), "adPv": _k_pv, "click": _k_click,
+        "ctr": round(_k_click / _k_pv, 4) if _k_pv else 0,
+        "amt": round(_k_amt, 2), "num": _k_num,
+        # 加购数：快照表无 cart 列 → 取 daily 今天行（今日采集会写；没跑则为 0）
+        "cart": _i(ta.get("cart")),
+        "ecpc": round(_k_charge / _k_click, 3) if _k_click else 0,
+        "cvr": round(_k_num / _k_click, 4) if _k_click else 0,
     }
-    today_total["roi"] = _f(today_total["amt"] / today_total["charge"], 2) if today_total["charge"] else 0
+    today_total["roi"] = round(_k_amt / _k_charge, 2) if _k_charge else 0
     # 今日计划：从库读（tag='today'，已按 account 隔离）——不再碰 JSON
     plans_today = _pl_out(_pl_db.get("today") or [])
 

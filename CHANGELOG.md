@@ -4,6 +4,28 @@
 
 ---
 
+## v0.8.16 · 2026-09-16（报表 KPI「今日」改读快照 · 与下方表同源）
+
+### 修复（面板「今日」KPI 整排 0，而下方计划/场景表有数）
+- **根因**：同一块「今日」用了两个数据源 —— KPI 卡读 `daily` 表里 `date=今天` 的行，下方表读 `plan_snap`/`scene_snap` 的 `tag='today'` 快照
+- **为什么 daily 没有今天行**：全量采集 `_report_fetch.py` 的**日粒度趋势接口不含当天**（脚本 line 164 原注释已写明），只写 T+1 历史；`daily` 的今天行**仅由「今日采集」`_report_today.py` 写入**。今天只跑了全量（09:00 定时 + 13:29 手动 `refresh-all`）→ `daily` 无 09-16 行 → KPI 全 0
+- **为什么表格有数**：全量采集**会**把今日实时数据写进 `tag='today'` 快照（`_report_fetch.py` line 248-260）→ 表格读快照有数
+- **修**：`adreport/server.py` 的 `today_total` 改为**优先从 `tag='today'` 场景快照汇总**（charge/adPv/click/amt/num 求和，ctr/ecpc/cvr/roi 现算），与 `plansToday`/`scenesToday` 同源；无快照时回退 `daily` 今天行
+  - 加购数 `cart`：快照表无此列 → 仍取 `daily` 今天行（今日采集会写；没跑则为 0）
+- **设计取舍**：**不给 `daily` 补今天行** —— 保持 `daily` 纯 T+1 历史，符合十六段经验「历史只到昨天、走势不画今天」
+
+### 验证
+- 打 `/api/plg/adreport/report`：`today` = charge **17.10** / adPv **615** / click **35** / ctr **5.69%** / ecpc **0.489** / amt 0 / num 0
+  → 与 `scenesToday`（关键词推广 17.10 / 615 / 35 / 0 / 0）**逐项相等** ✓
+
+### 插件
+- `adreport` 0.2.6 → 0.2.7
+
+### 待办
+- 加购数要有值 → 需**每天跑一次「今日采集」**(`_report_today.py`)；建议给 scheduler 加个「报表今日采集」任务（待梓帆定）
+
+---
+
 ## v0.8.15 · 2026-09-15（流水线阶段条骨架 · 数据驱动）
 
 ### 新增（`pipeline` 插件）
