@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-"""优化管理工作台 · 内核（0907 起——简单内核 + 插件丰富）
+"""优化管理工作台 · 内核（简单内核 + 插件丰富）
 四区布局：顶菜单 / 左插件导航 / 中日志监控 / 右文件书桌（当前品联动）
 启动：python workbench.py → http://127.0.0.1:8900/
 零第三方依赖（http.server 标准库）——插件各自声明所需包
@@ -405,7 +405,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if p == "/api/plugins":
                 return self._json({"plugins": scan_plugins(), "core": core_version()})
             if p == "/api/logkeep":
-                # 日志保留天数（0909——设置-通用可改；清理归档超期删除）
+                # 日志保留天数（设置-通用可改；清理归档超期删除）
                 try:
                     v = int(open(r"C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime\\log_keep_days.json", encoding="utf-8").read().strip())
                 except Exception:
@@ -471,7 +471,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         doc.close()
                         return self._json({"error": "页号超界"}, 404)
                     pg = doc.load_page(n)
-                    # 0907：转图清晰度 1.6x → 2.5x（规格书长图放大 2x+ 不糊——位图预览天花板后移）
+                    # 转图清晰度 2.5x（规格书长图放大 2x+ 不糊——位图预览天花板后移）
                     pix = pg.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
                     doc.close()
                     data = pix.tobytes("png")

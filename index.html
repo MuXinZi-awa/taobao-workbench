@@ -747,6 +747,8 @@ window.addEventListener('message', function(e){ var d=e.data;
  if(d&&d.type==='wb-audit-start'){ adStart(d.items||[]); } });
 function adStart(items){
  AD.items=items; AD.idx=0; AD.marks={};
+ AD.force=false;   // 每批重置，否则 force 会跨批残留
+ var _fc=document.getElementById('adForce'); if(_fc) _fc.checked=false;
  var f=document.getElementById('auditMode'); if(f) f.style.display='flex';
  var pb=document.getElementById('prevBody'); if(pb) pb.style.display='none';
  var pn=document.getElementById('prevName'); if(pn) pn.textContent='素材审核';

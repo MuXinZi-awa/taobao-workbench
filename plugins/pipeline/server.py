@@ -35,7 +35,7 @@ def _acct():
 
 def _read_tg_rec():
     """推广记录.csv（料号,状态,时间,账号）→ {料号: 最后状态}；按当前账号过滤
-    注：该文件无表头，必须用 csv.reader（原来用 DictReader 把首行当表头 → 恒返回空）"""
+    注：该文件无表头，必须用 csv.reader（用 DictReader 把首行当表头 → 恒返回空）"""
     out = {}
     if not os.path.exists(TG_REC):
         return out
@@ -87,7 +87,7 @@ def scan_material(lh):
             out["主图"] = True
         if any(k in low for k in (".pdf", ".doc", ".docx", "规格", "spec")): out["规格书"] = True
         if low.endswith((".mp4", ".mov", ".webm")): out["视频"] = True
-    for k in ("封面", "主图", "规格书", "视频"):
+    for k in ("封面", "主图", "规格书", "视频", "详情图"):
         if not out[k]:
             out["缺失"].append(k)
             if k in ("封面", "主图") and out["图库数"]:
@@ -152,7 +152,7 @@ _rot_day = None
 
 
 def _maybe_rotate():
-    """0909 按天归档：日志文件日期≠今天 → 改名加日期保留"""
+    """按天归档：日志文件日期≠今天 → 改名加日期保留"""
     import datetime as _dt2, os as _os2
     global _rot_day
     try:
@@ -166,7 +166,7 @@ def _maybe_rotate():
         _rot_day = today
     except Exception:
         pass
-    # 0909 清理：超期归档删除（保留天数 log_keep_days.json 默认 30）
+    # 清理：超期归档删除（保留天数 log_keep_days.json 默认 30）
     try:
         import glob as _g3, time as _t3
         _kd = 30
@@ -203,8 +203,7 @@ def _ref_for(lh, audit):
     if not os.path.isdir(d):
         return ""
     if audit and audit != "放行":
-        # ★ 0915：在途/待复检品（待复检/送修/换源）都先看产物——
-        #   原来只判 "待复检"，标了“送修”就掉到找原图分支 → 没原图就空
+        # 在途品（待复检/送修/换源）都先看产物
         fs = sorted(_g.glob(os.path.join(d, "*_待复检*.*")))
         if fs:
             return fs[0]  # 库源1 在前（首图）
@@ -223,6 +222,12 @@ def _ref_for(lh, audit):
     for n in names:
         if all(k not in n for k in ("标注", "白底", "待复核", "待复检")) and n.lower().endswith((".png", ".jpg", ".jpeg")):
             return os.path.join(d, n)
+    # 原图缺失时也认产物（白底/待复检/库源/换源）
+    for _pat in ("*_待复检*", "*白底*", "*_库源*", "*_换源*"):
+        _fs = sorted(_g.glob(os.path.join(d, _pat)))
+        _fs = [x for x in _fs if x.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]
+        if _fs:
+            return _fs[0]
     # 素材目录无图 → 图库兜底（自有实拍——审核仍能看到产品图）
     try:
         if lib_images:
@@ -234,7 +239,7 @@ def _ref_for(lh, audit):
     return ""
 
 def classify_batch(lhs):
-    """0915: 改成**起子进程**跑（playwright 在内核请求线程里不稳 → 拿不到 _m_h5_tk）
+    """必须**起子进程**跑（playwright 在内核请求线程里不稳 → 拿不到 _m_h5_tk）
     子进程：scripts/_classify_one.py 料号1,料号2 → stdout 最后一行是 JSON"""
     import subprocess
     fp = os.path.join(SCRIPTS, "_classify_one.py")
@@ -264,23 +269,88 @@ def classify_batch(lhs):
     except Exception as e:
         return [], "分流异常: %s" % str(e)[:100]
 
-# ── 流水线阶段定义（0915 框架 · 数据驱动）────────────────────
-# 明天「填血肉」= 把 ready 改 True + 在 handle("run") 里补该阶段实现；前端不用动。
+# ── 阶段 → 现成脚本（调用层）────────────────────
+#    脚本都吃「表格」不吃参数（表头要有 料号 列）→ 先落临时表，再子进程调（内核线程里别起 playwright）
+RT = os.path.join(TG, "runtime", "python.exe")
+if not os.path.isfile(RT):
+    RT = PY
+TMP = os.path.join(TG, "runtime", "_pl_tmp")
+
+
+def _mid():
+    return str(_acct().get("member_id") or "")
+
+
+def auto_campaigns():
+    """取该账号「未满( count<500 )」的计划 ID —— 与 scheduler/server.py 的 auto_campaigns 同源
+    （读 runtime/plan_state_<mid>.json；那份由推广批的容量预检实时落盘——不写死计划 ID）"""
+    fp = os.path.join(TG, "runtime", ("plan_state_%s.json" % _mid()) if _mid() else "plan_state.json")
+    if not os.path.isfile(fp):
+        fp = os.path.join(TG, "runtime", "plan_state.json")
+    try:
+        d = json.load(io.open(fp, encoding="utf-8"))
+        return ",".join([k for k, v in d.items()
+                         if v.get("count") is not None and int(v.get("count") or 0) < 500])
+    except Exception:
+        return ""
+
+
+def _write_tmp(name, rows, header):
+    """落临时表（脚本们的统一入参形式）——留在 runtime/_pl_tmp 便于事后查「到底给了什么」"""
+    os.makedirs(TMP, exist_ok=True)
+    fp = os.path.join(TMP, name)
+    with io.open(fp, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        w.writerows(rows)
+    return fp
+
+
+def _run_script(script, args, timeout=3600):
+    """子进程跑现成脚本（照 _classify_one 范式）→ (ok, 末行输出)"""
+    if not os.path.isfile(script):
+        return False, "缺少脚本: %s" % os.path.basename(script)
+    try:
+        r = subprocess.run([RT, "-X", "utf8", "-u", script] + [str(a) for a in args],
+                           cwd=os.path.dirname(script), capture_output=True, timeout=timeout)
+        out = (r.stdout or b"").decode("utf-8", "replace")
+        err = (r.stderr or b"").decode("utf-8", "replace")
+        txt = out if out.strip() else err
+        tail = [x for x in txt.strip().splitlines() if x.strip()]
+        return (r.returncode == 0), (tail[-1][:160] if tail else "(无输出)")
+    except subprocess.TimeoutExpired:
+        return False, "子进程超时（%d 秒）" % timeout
+    except Exception as e:
+        return False, "子进程异常: %s" % str(e)[:120]
+
+
+def _types_of(lhs):
+    """读 state 里的 type——查询分流落的 type 是后续阶段的路由依据"""
+    st = load_state()
+    return {lh: str((st["items"].get(lh) or {}).get("type") or "").strip() for lh in lhs}
+
+
+def _ids_of(lhs):
+    st = load_state()
+    return [(lh, str((st["items"].get(lh) or {}).get("id") or "").strip()) for lh in lhs]
+
+
+# ── 流水线阶段定义（数据驱动；改 desc 不影响前端）────────────────────
 STAGES = [
     {"key": "query",     "label": "查询",      "ready": True,
      "desc": "按料号搜商品 + 查双百 → 定 type（新品-待上架 / 老品-需优化 / 老品-双百跳过）"},
-    {"key": "attrs",     "label": "属性",      "ready": False,
-     "desc": "爬属性 fetch_attrs → 清单（只读不改商品）→ fill_attrs 回填"},
+    {"key": "attrs",     "label": "属性",      "ready": True,
+     "desc": "爬属性 fetch_attrs（只读官网 → 写属性清单.csv 累积；不改商品）"},
     {"key": "material",  "label": "素材",      "ready": True,
      "desc": "素材清点：封面/主图/规格书/视频 缺啥补啥（素材_prep / _auto_material）"},
-    {"key": "sort",      "label": "整理",      "ready": False,
-     "desc": "素材归位整理（organize）"},
+    {"key": "sort",      "label": "整理",      "ready": True,
+     "desc": "素材归位整理（organize.py——落位 + 拍前须知）"},
     {"key": "audit",     "label": "人工审核",  "ready": True,
      "desc": "逐张看素材 → 放行 / 水印送修 / 质量差换源（铁律：全人工过）"},
-    {"key": "pub",       "label": "上品/优化", "ready": False,
-     "desc": "新品 → _xinpin_shangpin（上品）；老品-需优化 → _batch_optimize（编辑提交+补属性）"},
-    {"key": "tuiguang",  "label": "推广",      "ready": False,
-     "desc": "tuiguang_auto → 万相台（--excel / --campaigns / --no-pop）"},
+    {"key": "pub",       "label": "上品/优化", "ready": True,
+     "desc": "按 type 自动分流：新品-待上架 → _xinpin_shangpin（上品）；老品-需优化 → _batch_optimize（编辑提交+补属性）"},
+    {"key": "tuiguang",  "label": "推广",      "ready": True,
+     "desc": "tuiguang_auto --excel 临时表 --campaigns 未满计划 --no-pop（计划自动取，不写死）"},
 ]
 
 
@@ -317,8 +387,7 @@ def handle(action, qs):
         items, err = classify_batch(lhs)
         if err:
             return {"ok": False, "error": err}
-        # ★ 0915：分流结果落 state（type/id/title）——否则前端每次“审核”都要重查，
-        #   查询一挂就会把已有类型冲成“查询异常”
+        # 分流结果落 state（type/id/title）——否则前端每次审核都要重查
         try:
             st = load_state()
             for it in items:
@@ -326,7 +395,7 @@ def handle(action, qs):
                 if not _lh:
                     continue
                 rec = st["items"].setdefault(_lh, {})
-                # ★ 0915：“查询异常”不写 state——否则一次查询失败就把已分好的类型永久抹掉
+                # “查询异常”不写 state——否则一次查询失败就把已分好的类型抹掉
                 if it.get("type") and it["type"] != "查询异常":
                     rec["type"] = it["type"]
                 if it.get("id"):
@@ -338,7 +407,20 @@ def handle(action, qs):
             save_state(st)
         except Exception:
             pass
+        # _classify_one 只回 {lh,id,title,type,dual,note}，没有素材/审核/推广列——
+        # 以 scan_batch 为底补齐，再用分流结果覆盖 type/id/title
+        try:
+            _base = {x.get("lh"): x for x in scan_batch([(it.get("lh") or "").strip() for it in items])}
+            _merged = []
+            for it in items:
+                _b = dict(_base.get((it.get("lh") or "").strip()) or {})
+                _b.update({k: v for k, v in it.items() if v not in (None, "")})
+                _merged.append(_b)
+            items = _merged
+        except Exception:
+            pass
         return {"ok": True, "items": items}
+
     def _batch_busy():
         """repair_state.json 有在跑批（total>done+fail）→ True"""
         import json as _j
@@ -424,7 +506,7 @@ def handle(action, qs):
         # 阶段定义（前端渲染阶段条用）
         return {"ok": True, "stages": STAGES}
     if action == "run":
-        # 阶段执行入口（0915 框架）：已就绪的转调原 action；未就绪的只提示不动作
+        # 阶段执行入口：已就绪的转调原 action；未就绪的只提示不动作
         key = (qs.get("stage") or "").strip()
         lhs = [x.strip() for x in (qs.get("lhs") or "").split(",") if x.strip()]
         st = None
@@ -442,8 +524,83 @@ def handle(action, qs):
         if key == "material":
             if not lhs:
                 return {"ok": False, "error": "缺 lhs"}
-            return {"ok": True, "items": scan_batch(lhs)}
+            # 本地一条龙补齐：make_local 出封面/主图/详情图/视频（已生成自动跳过，--force 才重跑）
+            _force = str((qs.get("force") or "")).strip() in ("1", "true", "yes")
+            _fextra = ["--force"] if _force else []
+            _notes = ["强制重做（不跳过已生成）"] if _force else []
+            for _lh in lhs:
+                _ok, _tail = _run_script(os.path.join(TG, "make_local.py"), [_lh] + _fextra, timeout=1800)
+                _notes.append("%s%s" % (_lh, "✓" if _ok else "✗"))
+            _items = scan_batch(lhs)
+            _bad = [x for x in _items if x.get("缺列表")]
+            return {"ok": True, "items": _items,
+                    "msg": "本地一条龙：%s%s" % ("  ".join(_notes),
+                            ("｜仍缺：" + "；".join("%s→%s" % (m["lh"], ",".join(m["缺列表"])) for m in _bad[:6]))
+                            if _bad else "｜素材齐 ✓")}
         if key == "audit":
             return {"ok": True, "msg": "人工审核走面板「\U0001F4CB 开始审核」（预览 Tab 标记）", "lhs": lhs}
+        if key == "attrs":
+            if not lhs:
+                return {"ok": False, "error": "缺 lhs"}
+            fp = _write_tmp("attrs.csv", [[x] for x in lhs], ["料号"])
+            ok, tail = _run_script(os.path.join(TG, "fetch_attrs.py"), [fp, len(lhs)], timeout=3600)
+            return {"ok": ok, "items": scan_batch(lhs), "msg": tail,
+                    "error": None if ok else ("属性爬取失败：" + tail)}
+        if key == "sort":
+            if not lhs:
+                return {"ok": False, "error": "缺 lhs"}
+            fp = _write_tmp("sort.csv", [[x] for x in lhs], ["料号"])
+            ok, tail = _run_script(os.path.join(TG, "organize.py"), [fp], timeout=1800)
+            # 落位后校验齐全：封面/详情图/视频/规格书
+            items = scan_batch(lhs)
+            _bad = [x for x in items if x.get("缺列表")]
+            _chk = "齐全 ✓" if not _bad else "缺：" + "；".join("%s→%s" % (x["lh"], ",".join(x["缺列表"])) for x in _bad[:8])
+            return {"ok": ok, "items": items, "msg": "%s｜齐全校验：%s" % (tail, _chk),
+                    "error": None if ok else ("整理失败：" + tail)}
+        if key == "pub":
+            if not lhs:
+                return {"ok": False, "error": "缺 lhs"}
+            tmap = _types_of(lhs)
+            new = [x for x in lhs if "新品" in tmap.get(x, "")]
+            old = [x for x in lhs if "需优化" in tmap.get(x, "")]
+            skip = [x for x in lhs if (x not in new) and (x not in old)]
+            # 预演：勾「预演不提交」→ 透传 --no-submit（两个脚本都支持）
+            _dry = str((qs.get("dry") or "")).strip() in ("1", "true", "yes")
+            _extra = ["--no-submit"] if _dry else []
+            notes = ["预演模式（不提交）"] if _dry else []
+            if skip:
+                notes.append("跳过 %d 个（type 未定/双百跳过）：%s" % (len(skip), ",".join(skip[:6])))
+            if new:
+                ok, tail = _run_script(os.path.join(TG, "_xinpin_shangpin.py"),
+                                       ["--only", ",".join(new)] + _extra, timeout=7200)
+                notes.append("新品上品 %d 个 → %s（%s）" % (len(new), "ok" if ok else "失败", tail))
+            if old:
+                pairs = _ids_of(old)
+                if not [p for p in pairs if p[1]]:
+                    notes.append("老品优化 %d 个缺淘宝ID——先跑「查询」" % len(old))
+                else:
+                    # _batch_optimize.load_targets 读第 1 列=料号、第 4 列=淘宝ID
+                    fp = _write_tmp("opt.csv", [[lh, "", "", iid] for lh, iid in pairs],
+                                    ["料号", "标题", "类型", "淘宝ID"])
+                    ok, tail = _run_script(os.path.join(TG, "_batch_optimize.py"), [fp] + _extra, timeout=7200)
+                    notes.append("老品优化 %d 个 → %s（%s）" % (len(old), "ok" if ok else "失败", tail))
+            return {"ok": True, "items": scan_batch(lhs), "msg": " ／ ".join(notes) or "无可处理项"}
+        if key == "tuiguang":
+            if not lhs:
+                return {"ok": False, "error": "缺 lhs"}
+            pairs = [p for p in _ids_of(lhs) if p[1]]
+            if not pairs:
+                return {"ok": False, "error": "state 里没有淘宝ID——先跑「查询」分流"}
+            camps = auto_campaigns()
+            if not camps:
+                return {"ok": False,
+                        "error": "取不到可推计划——请先在「scheduler」点「刷新容量」（或手填计划组）"}
+            fp = _write_tmp("tuiguang.csv", [[lh, iid] for lh, iid in pairs], ["料号", "淘宝ID"])
+            ok, tail = _run_script(os.path.join(TG, "tuiguang_auto.py"),
+                                   ["--excel", fp, "--limit", len(pairs),
+                                    "--campaigns", camps, "--no-pop"], timeout=7200)
+            return {"ok": ok, "items": scan_batch(lhs),
+                    "msg": "推广 %d 品（计划 %s）：%s" % (len(pairs), camps, tail),
+                    "error": None if ok else ("推广失败：" + tail)}
         return {"ok": False, "error": "阶段未实现: %s" % key}
     return {"ok": False, "error": "未知 action: %s" % action}

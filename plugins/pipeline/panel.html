@@ -36,6 +36,7 @@ input::placeholder { color:var(--text-m,#999); }
  .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;border:.5px solid}
  .pill.y{border-color:#d33;color:#d33}
  .pill.n{border-color:#2a7a3a;color:#2a7a3a}
+ .batchprog{display:none;align-items:center;gap:8px;padding:5px 10px;border:.5px solid var(--accent,#4a7cf7);border-radius:6px;margin-bottom:6px;font-size:12px;color:var(--accent,#4a7cf7);background:rgba(74,124,247,.06)}
 
  .audit{border:.5px solid var(--border,#ccc);border-radius:10px;padding:10px;margin-top:8px;background:var(--card,#fffdf7);display:none}
  .audit .head{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
@@ -67,11 +68,14 @@ input::placeholder { color:var(--text-m,#999); }
   <input id="lh" type="text" placeholder="料号 或 淘宝 ID（单量回车）">
   <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button onclick="adStartFrom(0)">📋 开始审核</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button><button id="ssBtn" onclick="srcRun()" style="display:none">🔁 换源处理</button>
   <button class="ghost" onclick="demo()">试填</button>
+  <label style="font-size:12px;color:var(--text-l,#999);margin-left:6px" title="上品/优化：只走流程不提交，用来试跑"><input type="checkbox" id="dryChk"> 预演不提交</label>
+  <label style="font-size:12px;color:var(--text-l,#999);margin-left:6px" title="素材：不跳过已生成的图，强制重做（用于清掉旧脏图）"><input type="checkbox" id="forceChk"> 强制重做</label>
 </div>
 <div class="drop" id="drop"><div>📥 拖入 csv / xlsx（批量）</div><div style="font-size:11px;color:var(--text-l,#999);font-weight:400">自动识别料号列，逐行扫描——点击或拖拽</div></div>
 <div class="stage" id="stage"><span class="stagenm" id="stnm">待命</span><span id="stageBar" style="display:flex;align-items:center;gap:6px;flex:1;justify-content:center;flex-wrap:wrap">
  <span style="font-size:12px;color:var(--text-l,#999)">阶段加载中…</span></span></div>
 <div class="cur" id="cur"></div>
+<div class="batchprog" id="batchprog"></div>
 <div id="repairBar" style="display:none;padding:5px 10px;border:.5px solid #b8860b;border-radius:6px;margin-bottom:6px;font-size:12px;color:#b8860b;background:rgba(184,134,11,.06)"></div>
 <div style="overflow:auto;max-height:52vh"><table id="tb">
 <thead><tr><th>料号</th><th>类型</th><th>ID</th><th>素材</th><th>人工审核</th><th>上品/优化</th><th>推广</th></tr></thead>
@@ -131,7 +135,8 @@ async function runStage(i){
  var v=(curLhs&&curLhs.length)?curLhs.join(','):$('#lh').value.trim();
  if(!v){ alert('先输料号或拖入清单'); return; }
  setStage(i,'on',s.label);
- var d=await fetch(P+'run?stage='+encodeURIComponent(s.key)+'&lhs='+encodeURIComponent(v)).then(function(r){return r.json();});
+ var _dry=document.getElementById('dryChk'), _fo=document.getElementById('forceChk');
+ var d=await fetch(P+'run?stage='+encodeURIComponent(s.key)+'&lhs='+encodeURIComponent(v)+((_dry&&_dry.checked)?'&dry=1':'')+((_fo&&_fo.checked)?'&force=1':'')).then(function(r){return r.json();});
  if(!d.ok){ setStage(i,'fail',s.label+' \u2717'); $('#cur').textContent='\u2717 '+(d.error||'执行失败'); return; }
  if(d.items) render(d.items);
  setStage(i,'done',s.label+' ok');
@@ -173,10 +178,12 @@ async function adStartFrom(i){
  }
  if(i>0) list=list.slice(i);
  $('#cur').textContent='收集审核素材（参考图）…';
- var items=[];
+ var items=[], skipN=0;
  for(var k=0;k<list.length;k++){
   var it=list[k];
   var skip = (it.type||'').indexOf('双百跳过')>=0 && !(it.audit||'').match(/送修|待复检|换源/);
+  // 在途品（送修/待复检/换源）不算 skip——仍要复检（上面正则保的就是它）
+  if(skip){ skipN++; continue; }
    var rf=it.ref||'', og=it.orig||'';
    try{ // 在途品（待复检/换源/送修）现场重查 ref——避免送修完成后旧快照显示老图
     var dr=await fetch(P+'audit-ref?lh='+encodeURIComponent(it.lh)).then(r=>r.json());
@@ -184,12 +191,12 @@ async function adStartFrom(i){
    }catch(e){}
    if(!rf){ try{ var d=await fetch(P+'material?lh='+encodeURIComponent(it.lh)).then(r=>r.json());
     rf=(d.material&&d.material['参考图'])||''; }catch(e){} }
-   items.push({lh:it.lh,type:it.type||'',ref:rf,orig:og,skip:!!skip,audit:it.audit||''});
+   items.push({lh:it.lh,type:it.type||'',ref:rf,orig:og,skip:false,audit:it.audit||''});
  }
  parent.postMessage({type:'wb-audit-start',items:items},'*');
  setStageKey('audit','on','人工审核中');
- var need=items.filter(function(x){return !x.skip;}).length;
- $('#cur').textContent='审核开始 共'+items.length+'（需审 '+need+'，双百跳过 '+(items.length-need)+'）——预览 Tab 标记，确认返回';
+ if(!items.length){ $('#cur').textContent='本批无需审核（双百跳过 '+skipN+' 个已排除）——可直接进「上品/优化」'; return; }
+ $('#cur').textContent='审核开始 需审 '+items.length+' 品（双百跳过 '+skipN+' 个已排除）——预览 Tab 标记，确认返回';
 }
 window.addEventListener('message', function(e){ var d=e.data;
  if(d&&d.type==='wb-audit-done'){
@@ -257,6 +264,35 @@ function parseRows(rows){
  $('#cur').textContent='识别到 '+lhs.length+' 个料号（列：'+rows[0][ci]+'）';
  scan(lhs.slice(0,30)); // 本版单批最多 30，防拖垮
 }
+// 跑批进度（读 tg-monitor 的 progress.json——脚本侧单份；running 且 updated 距今 <120s 才算在跑）
+let _bpTimer=null;
+const _BPK={'推广':'推广','上品':'上品','优化':'老品优化'};
+function _bpT(s){ const v=Date.parse(String(s||'').replace(' ','T')); return isNaN(v)?null:v; }
+async function loadBatchProg(){
+ let alive=false;
+ try{
+  const d=await fetch('/api/plg/tg-monitor/progress').then(r=>r.json());
+  const p=d&&d.progress, el=document.getElementById('batchprog');
+  if(!p||!p.total){ el.style.display='none'; }
+  else{
+   el.style.display='flex';
+   const age=(_bpT(p.updated)!=null)?Math.floor((Date.now()-_bpT(p.updated))/1000):1e9;
+   alive=!!p.running&&age<120;
+   if(!alive&&age>1800){ el.style.display='none'; return; }
+   const st=_bpT(p.started), up=_bpT(p.updated);
+   const endRef=alive?Date.now():((up!=null)?up:Date.now());
+   const mins=(st!=null)?Math.max(0,Math.round((endRef-st)/60000)):0;
+   let s='\u{1F680} '+(_BPK[p.kind]||p.kind||'批')+' '+(p.done||0)+'/'+(p.total||0);
+   if(p.current) s+=' \u00b7 \u5f53\u524d '+p.current;
+   s+=' \u00b7 \u6210\u529f'+(p.ok||0)+' \u8df3\u8fc7'+(p.skip||0)+' \u5931\u8d25'+(p.fail||0)+' \u00b7 \u5df2\u8dd1 '+mins+' \u5206\u949f';
+   if(p.running&&!alive) s+=' \u00b7 \u7591\u4f3c\u4e2d\u65ad\uff08\u6700\u540e\u66f4\u65b0 '+String(p.updated||'').slice(11)+'\uff09';
+   else if(!p.running) s+=' \u00b7 \u5df2\u7ed3\u675f';
+   el.textContent=s;
+  }
+ }catch(e){}
+ clearTimeout(_bpTimer); _bpTimer=setTimeout(loadBatchProg, alive?3000:10000);
+}
+loadBatchProg();
 </script>
 <div class="audit" id="auditBox">
  <div class="head"><b id="adLh">—</b><span id="adType" style="font-size:11px"></span>

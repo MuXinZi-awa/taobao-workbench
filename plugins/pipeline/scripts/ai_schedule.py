@@ -81,10 +81,10 @@ def upload_asset(img_path):
 
 
 def submit(message, asset_ids, model="seedream_5.0"):
-    """0915：默认 seedream_5.0（= 网页版 UI 的“5.0 Lite”，**实测不花积分**）
-    ★ 必须放 general_agent_settings.image_model；放顶层会被服务端静默忽略→走默认 4.0（花积分）
-    ★ 白名单：seedream_5.0(=Lite 免费) / seedream_5.0_pro / seedream_4.3 / nova2 / nova_pro / seedream_4.5 / seedream_4.1 / seedream_4
-    ★ 网页版的 doubao-seedream-5-0-lite-* 是另一条通道，skill API 不收"""
+    """默认 seedream_5.0（= 网页版 UI 的“5.0 Lite”，**实测不花积分**）
+    必须放 general_agent_settings.image_model；放顶层会被服务端静默忽略→走默认 4.0（花积分）
+    白名单：seedream_5.0(=Lite 免费) / seedream_5.0_pro / seedream_4.3 / nova2 / nova_pro / seedream_4.5 / seedream_4.1 / seedream_4
+    网页版的 doubao-seedream-5-0-lite-* 是另一条通道，skill API 不收"""
     body = {"message": message, "asset_ids": asset_ids,
             "general_agent_settings": {"image_model": model}}
     d = api(XYQ_BASE + "/api/biz/v1/skill/submit_run", body)
@@ -203,7 +203,7 @@ def generate(lh, img, usage, out):
                     pass
                 continue
             # 基本门槛：能打开 + 尺寸正常（防 404/非图片/缩略图）——参考图混入由 poll 只取 artifact 挡住
-            # 只检测不处理：绝不本地 flood fill（0826 教训——浅灰背景和浅色金属边缘灰度接近，处理会吃掉产品细节）
+            # 只检测不处理：绝不本地 flood fill（浅灰背景和浅色金属边缘灰度接近，处理会吃掉产品细节）
             # 非纯白的落盘标"待复核"（原样保留——人工/重跑，不碰像素）
             try:
                 import make_white as _mw
@@ -261,7 +261,7 @@ def generate_all(lh, img, out):
     # 白底图：发布页"从主图生成"（官方——审核友好）——AI 不再生成/验证白底图
     # （删除旧白底验证+纯白化+主体检测+重出逻辑——本地白底图已不需要）
     # 封面标注（make_cover.py——PIL 加型号/规格条）
-    # 0828：品牌不再写封面（品牌错牵连封面——封面只放型号规格）
+    # 品牌不写封面（品牌错牵连封面——封面只放型号规格）
     cover_src = os.path.join(out, "%s_封面.png" % lh)
     if os.path.isfile(cover_src):
         try:

@@ -207,10 +207,12 @@ function render(){
     +(isToday?'':'<div class="legend"><span><i style="border-color:var(--accent,#537D96)"></i>本期</span>'
     +(prev.length?'<span><i style="border-color:#b9b2a6"></i>上期（'+prev[0].date.slice(5)+' ~ '+prev[prev.length-1].date.slice(5)+'）</span>':'')
     +'</div>')+'<div class="hint">悬浮到折点上可看准确数值 ｜ 点上方指标卡切换走势主角</div></div>';
-  // 计划表（真·计划维度 · 跟随范围）
-  const plans = isToday ? (DATA.plansToday||[]) : ((DATA.plansByRange || {})[MODE==='30'?'30':(MODE==='7'?'7':'all')] || []);
+  // 计划表（真·计划维度 · 跟随范围）——自定义区间走后端按 cs/ce 算出的 plansCustom
+  const plans = isToday ? (DATA.plansToday||[])
+    : ((MODE==='custom' && DATA.customOk) ? (DATA.plansCustom||[])
+       : ((DATA.plansByRange || {})[MODE==='30'?'30':(MODE==='7'?'7':'all')] || []));
   if(plans.length){
-    const rl = isToday?'今日实时':(MODE==='7'?'近7天':(MODE==='30'?'近30天':'全区间'));
+    const rl = isToday?'今日实时':((MODE==='custom'&&DATA.customOk)?('自定义 '+CS.slice(5)+' ~ '+CE.slice(5)):(MODE==='7'?'近7天':(MODE==='30'?'近30天':'全区间')));
     html+='<div class="sec"><h3>推广计划<span class="u">'+rl+' 合计 · '+plans.length+' 个计划</span></h3>'
       +'<table><colgroup><col style="width:40%"><col style="width:12%"><col style="width:12%"><col style="width:12%"><col style="width:12%"><col style="width:12%"></colgroup>'
       +'<tr><th>计划</th><th>花费</th><th>展现</th><th>点击</th><th>CTR</th><th>成交额</th></tr>';
@@ -221,8 +223,10 @@ function render(){
     html+='</table></div>';
   }
   // 场景表
-  const scen = isToday ? (DATA.scenesToday||[]) : ((DATA.scenesByRange||{})[MODE==='30'?'30':(MODE==='7'?'7':'all')] || DATA.scenes || []);
-  const sl = isToday?'今日实时':(MODE==='7'?'近7天':(MODE==='30'?'近30天':'全区间'));
+  const scen = isToday ? (DATA.scenesToday||[])
+    : ((MODE==='custom' && DATA.customOk) ? (DATA.scenesCustom||[])
+       : ((DATA.scenesByRange||{})[MODE==='30'?'30':(MODE==='7'?'7':'all')] || DATA.scenes || []));
+  const sl = isToday?'今日实时':((MODE==='custom'&&DATA.customOk)?('自定义 '+CS.slice(5)+' ~ '+CE.slice(5)):(MODE==='7'?'近7天':(MODE==='30'?'近30天':'全区间')));
   html+='<div class="sec"><h3>营销场景<span class="u">'+sl+' 合计</span></h3>'
     +'<table><colgroup><col style="width:34%"><col style="width:13.2%"><col style="width:13.2%"><col style="width:13.2%"><col style="width:13.2%"><col style="width:13.2%"></colgroup>'
     +'<tr><th>场景</th><th>花费</th><th>展现</th><th>点击</th><th>CTR</th><th>成交额</th></tr>';
@@ -232,10 +236,16 @@ function render(){
   });
   if(!scen.length) html+='<tr><td colspan="6" style="color:var(--text-m)">无场景数据</td></tr>';
   html+='</table></div>';
-  if((DATA.insight||[]).length){
-    html+='<div class="sec insight"><h3>趋势解读</h3><ul>';
-    DATA.insight.forEach(x=>{ html+='<li>'+esc(x)+'</li>'; });
-    html+='</ul></div>';
+  if(!isToday){
+    // 趋势解读：跟随所选范围（后端按区间算好 insightByRange / insightCustom）
+    let ins = (MODE==='custom' && DATA.customOk) ? (DATA.insightCustom||[])
+      : (((DATA.insightByRange||{})[MODE==='30'?'30':(MODE==='7'?'7':'all')]) || DATA.insight || []);
+    const il = (MODE==='custom'&&DATA.customOk)?('自定义 '+CS.slice(5)+' ~ '+CE.slice(5)):(MODE==='7'?'近7天':(MODE==='30'?'近30天':'全区间'));
+    if(ins.length){
+      html+='<div class="sec insight"><h3>趋势解读<span class="u">'+il+'</span></h3><ul>';
+      ins.forEach(x=>{ html+='<li>'+esc(x)+'</li>'; });
+      html+='</ul></div>';
+    }
   }
   root.innerHTML=html;
   renderBar();
@@ -248,7 +258,7 @@ function applyCustom(){
   if(s>e){ alert('起始日期不能晚于结束'); return; }
   const span=Math.round((new Date(e)-new Date(s))/86400000)+1;
   if(span>30){ alert('为避免数据溢出，自定义范围最多 30 天（当前 '+span+' 天）'); return; }
-  CS=s; CE=e; MODE='custom'; render();
+  CS=s; CE=e; MODE='custom'; load();   // 重新取数（带 cs/ce），区间表才能真正跟随
 }
 function renderBar(){
   const el=document.getElementById('rangebar');
@@ -264,11 +274,15 @@ function renderBar(){
     +'<span class="sep"></span>'
     +'<span class="lb">'+(MODE==='1'?'今日实时数据':('本期 '+cur.length+' 天 · 与前一 '+cur.length+' 天对比'))+'</span>';
 }
+function _rq(){
+  // 自定义范围：把窗口带给后端（区间表按 cs/ce 从按日明细算，与 KPI 同源）
+  return (MODE==='custom' && CS && CE) ? ('?cs='+encodeURIComponent(CS)+'&ce='+encodeURIComponent(CE)) : '';
+}
 async function load(){
   const btn=document.getElementById('rfbtn'); if(btn){ btn.textContent='刷新中…'; btn.disabled=true; }
   const root=document.getElementById('root');
   let d;
-  try{ d = await fetch(P+'report').then(r=>r.json()); }
+  try{ d = await fetch(P+'report'+_rq()).then(r=>r.json()); }
   catch(e){
     root.innerHTML='<div class="empty">服务未响应（工作台内核没起？）</div>';
     if(btn){ btn.textContent='刷新'; btn.disabled=false; } return;
@@ -289,7 +303,7 @@ async function pollUntilDone(){
   const t=setInterval(async()=>{
     n++;
     let dd;
-    try{ dd=await fetch(P+'report').then(x=>x.json()); }catch(e){}
+    try{ dd=await fetch(P+'report'+_rq()).then(x=>x.json()); }catch(e){}
     if(dd && dd.ok && !dd.refreshing){ clearInterval(t); DATA=dd; updateMeta(dd); render(); }
     else if(n>=48){ clearInterval(t); }
   }, 5000);

@@ -52,7 +52,7 @@ def ref_img(lh):
     for n in names:
         if all(k not in n for k in ("标注", "白底", "待复核", "待复检")) and n.lower().endswith((".png", ".jpg", ".jpeg")):
             return os.path.join(d, n)
-    # ★ 0915：兜底——只有“白底待复检”产物（换源/修过）时拿它当参考（与审核预览口径一致）
+    # 兜底——只有“白底待复检”产物（换源/修过）时拿它当参考（与审核预览口径一致）
     #   原图优先；实在没原图时也不至于“无参考图—跳过”（clean 模式不重绘，安全）
     _c = [n for n in names if "待复检" in n and "标注" not in n
           and n.lower().endswith((".png", ".jpg", ".jpeg"))]

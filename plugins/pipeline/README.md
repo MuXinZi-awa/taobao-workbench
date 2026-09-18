@@ -27,21 +27,31 @@
 - **素材审核视图**：图片大图 + 左右切换（←/→）+ 标记按钮（放行/AI送修/换源）——已标记可反悔重标；一批审完统一提交
 - 日志：批量"当前处理的料号"高亮显示
 
-## 阶段骨架（0915 · 数据驱动，0915 当天只搭骨架未接真进程）
+## 阶段接线（0915 搭骨架 → **0917 全部接血肉**）
 
 ```
 查询 → 属性 → 素材 → 整理 → 人工审核 → 上品/优化 → 推广
- ✓     灰     ✓     灰      ✓           灰          灰     ← 0915 状态
+ ✓      ✓     ✓      ✓      ✓            ✓           ✓     ← 0917 已全通
 ```
 
 - **唯一真相源**：`server.py` 模块级 `STAGES`（每项 `key / label / ready / desc`）
-- `GET /api/plg/pipeline/stages` → 阶段定义；前端 `loadStages()` 拉取后 `renderStages()` 渲染阶段条，每格可点
-- `GET /api/plg/pipeline/run?stage=<key>&lhs=1-967628-1,DTM06-12SA` → 统一执行入口
-  - `ready=True`（query / material / audit）→ 转调原 action
-  - `ready=False`（attrs / sort / pub / tuiguang）→ 只回 `{ok:false, ready:false, error:"…还没接血肉｜计划调用：…"}`，**不起进程**
-- **填血肉动线**：改 `STAGES` 该项 `ready` → True + 在 `handle("run")` 里补该 key 分支；**前端不用动**
-- 建议顺序：属性（`fetch_attrs` 只读最安全）→ 整理（`organize`）→ 上品/优化 + 推广（真动作，先 1 品 `--no-submit` 预演）
-- 接线**照 `_optimize_flow.py` 拄**（它本身就是调用层范例），但**别直接调它**（一体总装会绕过人工审核闸门）
+- `GET /api/plg/pipeline/stages` → 阶段定义；前端 `loadStages()` → `renderStages()` 渲染，每格可点
+- `GET /api/plg/pipeline/run?stage=<key>&lhs=1-967628-1,DTM06-12SA` → 统一入口；**每格跑完回吐刷新后的状态表**（前端 `render(d.items)` 直接刷）
+
+| 阶段 | 调的现成脚本 | 入参形式 |
+|---|---|---|
+| 查询 | `scripts/_classify_one.py`（子进程） | `料号,料号` |
+| 属性 | `推广一键跑/fetch_attrs.py` | 临时表 `料号` 列 + N（**只爬不改商品**；已爬自动跳） |
+| 素材 | `scan_batch`（只清点） | `lhs` |
+| 整理 | `推广一键跑/organize.py` | 临时表 `料号` 列 |
+| 人工审核 | 面板「开始审核」 | — |
+| 上品/优化 | 新品 → `_xinpin_shangpin.py --only <新品料号>`；老品 → `_batch_optimize.py <临时表>` | 按 state 里的 `type` **自动分流** |
+| 推广 | `推广一键跑/tuiguang_auto.py --excel <临时表> --limit N --campaigns <未满计划> --no-pop` | 计划 ID 读 `plan_state_<member>.json`（未满的）——**不写死** |
+
+- **临时表**：脚本们都吃「表格」不吃参数 → `_write_tmp()` 落 `runtime/_pl_tmp/*.csv`（留盘便于事后查“到底给了什么”）
+- **一律子进程**：playwright 在内核请求线程里不稳（0915 教训）→ 走 `_run_script()`
+- 上品/优化**按 type 分流**：查询阶段落的 `type` 就是路由依据（梓帆 0915）；type 未定/双百跳过 → 只报跳过
+- 推广计划**取不到就明确拒绝**（先去 scheduler 点「刷新容量」），绝不默认推旧计划
 
 ## 状态
 - 独立 state：`plugins/pipeline/state.json`（逐料号：类型/双百/阶段/素材标记/审核结果/时间戳）——断点续
@@ -55,4 +65,5 @@
 - v0.1.0：拖 csv/输料号 → 素材清点 + 推广记录 → 表格 + 阶段灯（面板可跑 0907）
 - v0.2 规划：查询分流(找到=优化/没找到=上新 + 双百跳过)、素材整批人工审核(切换/反悔/统一提交)、AI 送修复检
 - v0.2.10：送修通道 seedream_5.0（=UI 5.0 Lite，不花积分）
-- v0.2.11（0915）：阶段条改 7 格**数据驱动** + `/stages` / `/run` 统一入口；碰提交的 4 格先留桩（`ready=False`，点下去只提示不动作）—— 详见 CHANGELOG v0.8.15
+- v0.2.11（0915）：阶段条改 7 格**数据驱动** + `/stages` / `/run` 统一入口；碰提交的 4 格先留桩（`ready=False`）
+- v0.2.12（0917）：四格接血肉（属性/整理/上品优化/推广）——**只调现成脚本，无底层改动**；临时表 + 子进程范式；上品/优化按 `type` 自动分流；推广计划自动取未满的 —— 详见 CHANGELOG v0.8.19

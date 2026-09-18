@@ -19,7 +19,7 @@ _rot_day = None
 
 
 def _maybe_rotate():
-    """0909 按天归档：日志文件日期≠今天 → 改名加日期保留"""
+    """按天归档：日志文件日期≠今天 → 改名加日期保留"""
     import datetime as _dt2, os as _os2
     global _rot_day
     try:
@@ -33,7 +33,7 @@ def _maybe_rotate():
         _rot_day = today
     except Exception:
         pass
-    # 0909 清理：超期归档删除（保留天数 log_keep_days.json 默认 30）
+    # 清理：超期归档删除（保留天数 log_keep_days.json 默认 30）
     try:
         import glob as _g3, time as _t3
         _kd = 30
@@ -155,7 +155,7 @@ def handle(action, params):
                             results.append({"lh": lh, "dual": False, "result": "未搜到"})
                     except Exception as e:
                         results.append({"lh": lh, "dual": False, "result": "异常:%s" % str(e)[:40]})
-                # 0909：每品结果落日志（工作流日志——老 opt_server 风格）
+                # 每品结果落日志（工作流日志——老 opt_server 风格）
                 try:
                     _wlog("查双百 共%d品: %s" % (len(lhs), " | ".join("%s=%s" % (r["lh"], r["result"][:20]) for r in results)))
                 except Exception:

@@ -13,7 +13,7 @@ TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
 TG_REC = os.path.join(r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\数据", "推广记录.csv")
 ALL_CSV = os.path.join(r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\数据", "上品全量汇总.csv")
 PLAN_STATE = os.path.join(TG, "runtime", "plan_state.json")
-# 11 计划组真名（0908 从 campaign/horizontal/findPage.json 抓——存 runtime/plan_names.json）
+# 11 计划组真名（从 campaign/horizontal/findPage.json 抓——存 runtime/plan_names.json）
 PLAN_NAMES_FP = os.path.join(TG, "runtime", "plan_names.json")
 _PN = {}
 try:
@@ -79,7 +79,7 @@ TG_PID = os.path.join(TG, "runtime", "tg_pid.txt")
 
 
 def _running():
-    """0908 v2：PID 文件检测（绕开 PowerShell 进程查询转义坑）——start-batch 写 PID，查存活"""
+    """PID 文件检测（绕开 PowerShell 进程查询转义坑）——start-batch 写 PID，查存活"""
     try:
         if not os.path.isfile(TG_PID):
             return False
@@ -144,13 +144,13 @@ def _lg_write(v):
 
 def _login(force=False):
     """登录态探测：probe_status.py 一次 headless 启动——登录判定（万相台域）+ 顺手拉 11 计划容量
-    （梓帆 0908：拉登录态时连带容量一起拉——一次浏览器启动干两件事）+ 90s 缓存"""
+    （拉登录态时连带容量一起拉——一次浏览器启动干两件事）+ 90s 缓存"""
     import time as _t
     _d = _lg_read()
     if not force and _d.get("v") is not None and _t.time() - _d.get("t", 0) < 90:
         return _d.get("v")
     try:
-        # 0908：万相台 headless probe 拿不到 csrf（新 profile 无头不授）——改 _dual_one（淘宝 mtop API headless 可用）
+        # 万相台 headless probe 拿不到 csrf（新 profile 无头不授）——用 _dual_one（淘宝 mtop API headless 可用）
         r = subprocess.run([os.path.join(TG, "runtime", "python.exe"), "-X", "utf8", "-u",
                             os.path.join(TG, "_dual_one.py"), "1379668", "", "--headless"],
                            capture_output=True, timeout=90)
@@ -160,6 +160,15 @@ def _login(force=False):
         return ok
     except Exception:
         return False
+
+def progress():
+    """跑批进度：脚本侧写的单份 runtime/progress.json 原样返回（单份多任务共用——判活/超时/区分批次由面板算）"""
+    try:
+        d = json.load(io.open(os.path.join(TG, "runtime", "progress.json"), encoding="utf-8"))
+    except Exception:
+        return {"ok": True, "progress": None}
+    return {"ok": True, "progress": d}
+
 
 def status():
     # 1. 推广记录.csv
@@ -176,7 +185,7 @@ def status():
             rec_lh.add(r[0].strip())
             if len(r) >= 3 and r[2].strip().startswith(today):
                 rec_today += 1
-    # 2. 计划状态（rec 即全集——0908 已并入全量汇总，不再两源合并）
+    # 2. 计划状态（rec 即全集——已并入全量汇总，不再两源合并）
 
     plans = []
     plan_state = {}
@@ -194,7 +203,7 @@ def status():
         plans.append({"id": pid, "name": p["name"], "count": count, "time": ts,
                       "full_known": pid in ("72264315693", "83306736168")})
     running = _running()
-    # 0908：login 只读缓存——自动探测已禁（probe headless 抢 chrome_profile → 批/手动 launch 全被顶掉）
+    # login 只读缓存——自动探测已禁（probe headless 抢 chrome_profile → 批/手动 launch 全被顶掉）
     # 登录态用手动「检测」按钮；批跑时状态看 running；容量批自更新+手动刷新
     login = _lg_read().get("v")
     _a = _acct()
@@ -212,6 +221,8 @@ def status():
 def handle(action, qs):
     if action == "status":
         return status()
+    if action == "progress":
+        return progress()
     if action == "login-check":
         """手动检测登录态（probe headless 起一次——慎用：会短暂占 profile，别在批跑时点）"""
         import time as _t
@@ -232,7 +243,7 @@ def handle(action, qs):
     if action == "start-batch":
         """面板手动起批：默认池或指定 csv（qs.file=绝对路径）；返回本次待推清单头几个"""
         import subprocess as _sp
-        _cleanup_probe()  # 0908：起批前清残留 probe（防同 profile 冲突杀批）
+        _cleanup_probe()  # 起批前清残留 probe（防同 profile 冲突杀批）
         try:
             limit = int(qs.get("limit", "30") or 30)
         except Exception:
@@ -315,7 +326,7 @@ def handle(action, qs):
         camps = ",".join(_PLAN_ORDER[1:])
         out = os.path.join(TG, "runtime", "tg_panel.log")
         err = out.replace(".log", "_err.log")
-        _cleanup_probe()  # 0908：单品起批前清理
+        _cleanup_probe()  # 单品起批前清理
         try:
             proc = _sp.Popen([rt, "-X", "utf8", "-u", os.path.join(TG, "tuiguang_auto.py"),
                               "--liaohao", lh, "--taobao_id", iid, "--campaigns", camps, "--no-pop"],

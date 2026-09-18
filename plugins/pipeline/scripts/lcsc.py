@@ -79,7 +79,7 @@ def lcsc_fetch_images(lh, outdir, max_imgs=5):
         ctx = b.new_context(locale="zh-CN", user_agent=UA)
         page = ctx.new_page()
         try:
-            # 0901：中文立创 so.szlcsc.com（国际站 www.lcsc.com 搜索第一个是分类推荐——货不对板实锤）
+            # 中文立创 so.szlcsc.com（国际站 www.lcsc.com 搜索第一个是分类推荐——货不对板）
             page.goto("https://so.szlcsc.com/global.html?k=%s" % lh, timeout=45000, wait_until="domcontentloaded")
             page.wait_for_timeout(6000)
             try:
@@ -103,7 +103,7 @@ def lcsc_fetch_images(lh, outdir, max_imgs=5):
                 }""", lh)
                 if item_url:
                     page.goto(item_url, timeout=45000, wait_until="domcontentloaded")
-                    page.wait_for_timeout(6000)  # 0901：等主图加载（5000 不够——懒加载）
+                    page.wait_for_timeout(6000)  # 等主图加载（5000 不够——懒加载）
                     try:
                         t = page.locator("h1, [class*='product-name'], [class*='goods-name'], [class*='title']").first
                         title = (t.inner_text() or "").strip()[:80]
@@ -111,7 +111,7 @@ def lcsc_fetch_images(lh, outdir, max_imgs=5):
                         pass
             except Exception:
                 pass
-            # 0901：只保留产品主图（alimg.szlcsc.com/.../product/source/——evaluate 方式——探测验证有效）
+            # 只保留产品主图（alimg.szlcsc.com/.../product/source/——evaluate 方式）
             imgs = page.evaluate("""() => {
                 const out = [];
                 document.querySelectorAll('img').forEach(e => {
@@ -134,7 +134,7 @@ def lcsc_fetch_images(lh, outdir, max_imgs=5):
                     resp = ctx.request.get(s, timeout=30000)
                     if resp.ok:
                         data = resp.body()
-                        if len(data) > 50000:  # 0901：只保留大图（>50KB——缩略图太糊）
+                        if len(data) > 50000:  # 只保留大图（>50KB——缩略图太糊）
                             dest = os.path.join(outdir, "%s_lc%d.jpg" % (lh, ok_cnt + 1))
                             with open(dest, "wb") as f:
                                 f.write(data)

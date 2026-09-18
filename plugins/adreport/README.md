@@ -1,4 +1,4 @@
-# 报表（adreport）· v0.2.0
+# 报表（adreport）· v0.2.8
 
 万相台报表台：把"要点很深才看得到"的数据拉平到一处——**账户概览 / 推广计划(11) / 营销场景 / 日走势**，指标可点切走势、本期比上期、随范围联动。
 
@@ -11,7 +11,7 @@
 | 日走势 | 选中指标的折线（本期实线 vs 上期虚线）；**悬浮折点看准确值** |
 | 推广计划 | 11 个计划（关键词1_已满 … 关键词11），**随范围切换** |
 | 营销场景 | 关键词推广等，**随范围切换**（今日走实时） |
-| 趋势解读 | 高点 / 挂零日 / 投产比 / 场景集中度 |
+| 趋势解读 | 高点 / 挂零日 / 投产比 / 场景集中度——**跟随所选范围**（今日模式不显示，因为无按日明细）|
 
 ## 采集
 
@@ -29,8 +29,10 @@
 | 表 | 内容 |
 |---|---|
 | `daily` | 账户按日（date 主键 upsert，历史越攒越长）|
-| `plan_snap` | 每次采集的计划区间快照（带时间/范围）|
-| `scene_snap` | 场景区间快照 |
+| `plan_daily` | 计划**按日明细**（区间表的数据源 —— 任意窗口按日聚合，与 KPI 同源）|
+| `scene_daily` | 场景**按日明细**（同上）|
+| `plan_snap` | 每次采集的计划区间快照（带时间/范围；仅作无按日明细时的回退）|
+| `scene_snap` | 场景区间快照（同上）|
 
 - 读取**优先走库**（`days` 从 `daily` 读，全历史、秒回）；库空才回退 JSON
 - 采集脚本每次跑完自动入库（账户按日 upsert）
@@ -38,7 +40,9 @@
 
 ## server action
 
-- `report` → `days / total / scenes / scenesByRange / plansByRange / today / plansToday / scenesToday / insight / refreshing`
+- `report` → `days / total / scenes / scenesByRange / plansByRange / today / plansToday / scenesToday / insight / insightByRange / refreshing`
+  - 可选 `?cs=YYYY-MM-DD&ce=YYYY-MM-DD`（自定义窗口，≤30 天）→ 额外返回 `plansCustom / scenesCustom / customOk / insightCustom`
+  - **区间表与趋势解读口径**：一律从 `plan_daily`/`scene_daily`/`daily` 按区间聚合，**窗口截至【昨天】**（T+1，与 KPI/走势同源）；「今日」才走 `tag='today'` 快照
 - `refresh` → 后台启动静默采集
 
 ## 接口备忘（以后扩展用）

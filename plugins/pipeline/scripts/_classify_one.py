@@ -26,7 +26,7 @@ def main():
         _out({"ok": False, "error": "无料号"})
         return
 
-    # ★ 0915：浏览器锁——和推广/采集/送修共用同一把（否则和推广批撞 profile）
+    # 浏览器锁——和推广/采集/送修共用同一把（否则和推广批撞 profile）
     _lk = None
     try:
         import browser_lock

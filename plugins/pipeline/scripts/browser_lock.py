@@ -17,8 +17,7 @@
 import os, io, time, msvcrt, datetime
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-# ★ 0915：锁必须共用同一把——插件目录里的副本也要锁到「推广一键跑\runtime」
-#   （否则 base 指向插件目录 → 锁到另一个文件 → 等于没锁，和推广撞车）
+# 锁必须共用同一把——插件目录里的副本也要锁到「推广一键跑\runtime」（否则会锁到另一个文件 = 没锁）
 _TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
 _RT = os.path.join(_TG, "runtime")
 RUNTIME = _RT if os.path.isdir(_RT) else os.path.join(BASE, "runtime")

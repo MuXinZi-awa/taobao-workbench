@@ -41,6 +41,9 @@ input::placeholder { color:var(--text-m,#999); }
  .stbar b{color:#2a7a3a}
  .blist{font-size:11px;color:var(--text-l,#666);background:#fffdf7;border:.5px solid var(--border,#eee);border-radius:6px;padding:6px 10px;max-height:80px;overflow:auto;margin-top:8px;display:none;line-height:1.6}
  .hint{font-size:11px;color:var(--text-l,#999);line-height:1.7;margin-top:10px}
+ .prog{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:600;margin:-2px 0 10px;padding:8px 12px;border:.5px solid var(--border,#ddd);border-radius:8px;background:var(--bg-card,#fbf9f4)}
+ .prog .pd{width:9px;height:9px;border-radius:50%;flex:none}
+ .prog .sub{font-weight:400;font-size:11px;color:var(--text-l,#999)}
 </style>
 
 <!-- 监控区 -->
@@ -54,6 +57,7 @@ input::placeholder { color:var(--text-m,#999); }
   <div class="chip" id="tm">—</div>
   <button class="chip" style="cursor:pointer;border-color:#4a7cf7;color:#4a7cf7" onclick="refreshCap()">↻ 刷新容量</button>
 </div>
+<div class="prog" id="prog" style="display:none"></div>
 <div class="sec" id="planTitle">计划组 · 容量 count/500</div>
 <div class="grid" id="grid">加载中…</div>
 
@@ -210,6 +214,42 @@ async function chkLogin(){
  load();
 }
 load(); setInterval(load,10000);
+
+// 跑批进度：单份 progress.json；running 且 updated 距今 <120s 才算在跑（否则显示疑似中断）
+let progTimer=null;
+const KIND={'推广':'推广','上品':'上品','优化':'老品优化'};
+function _t(s){ const v=Date.parse(String(s||'').replace(' ','T')); return isNaN(v)?null:v; }
+async function loadProg(){
+ let alive=false;
+ try{
+  const d=await fetch(P+'progress').then(r=>r.json());
+  const p=d&&d.progress, el=document.getElementById('prog');
+  if(!p||!p.total){ el.style.display='none'; }
+  else{
+   el.style.display='flex';
+   const age=(_t(p.updated)!=null)?Math.floor((Date.now()-_t(p.updated))/1000):1e9;
+   alive=!!p.running&&age<120;
+   if(p.kind&&p.kind!=='推广'){ el.style.display='none'; return; }   // 推广监控只认推广批
+   if(!alive&&age>1800){ el.style.display='none'; return; }
+   const st=_t(p.started), up=_t(p.updated);
+   const endRef=alive?Date.now():((up!=null)?up:Date.now());
+   const mins=(st!=null)?Math.max(0,Math.round((endRef-st)/60000)):0;
+   const col=alive?'#4a7cf7':(p.running?'#b8860b':'#2a7a3a');
+   let s='<span class="pd" style="background:'+col+'"></span>'+(KIND[p.kind]||esc(p.kind||'批'))+' '+
+         (p.done||0)+'/'+(p.total||0);
+   if(p.current) s+=' · 当前 '+esc(p.current);
+   s+=' · 成功'+(p.ok||0)+' 跳过'+(p.skip||0)+' 失败'+(p.fail||0)+' · 已跑 '+mins+' 分钟';
+   s+=' <span class="sub">（起 '+esc(String(p.started||'').slice(11)||'—')+' · 更 '+esc(String(p.updated||'').slice(11)||'—')+'）</span>';
+   if(p.running&&!alive) s+=' <span style="color:#b8860b">疑似中断（最后更新 '+esc(String(p.updated||'').slice(11))+'）</span>';
+   else if(!p.running) s+=' <span class="sub">已结束</span>';
+   if(p.note) s+=' <span class="sub">'+esc(p.note)+'</span>';
+   el.innerHTML=s;
+  }
+ }catch(e){}
+ clearTimeout(progTimer);
+ progTimer=setTimeout(loadProg, alive?3000:10000);
+}
+loadProg();
 </script>
 <script>
 /* wb-theme 接收器：宿主切主题广播 CSS 变量 → 应用到自身 */

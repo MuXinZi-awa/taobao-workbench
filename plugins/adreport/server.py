@@ -32,6 +32,29 @@ def _i(x):
         return 0
 
 
+def _rdb_fresh():
+    """强制按**文件路径**加载最新 report_db。
+    为什么：工作台进程会缓存同名模块（sys.modules），插件热更新后拿到的可能是旧版
+    （例如缺 get_plan_daily/get_scene_daily）→ 区间表静默退回快照、自定义区间全空。"""
+    import sys as _s
+    if TG not in _s.path:
+        _s.path.insert(0, TG)
+    try:
+        import report_db as _m
+        if hasattr(_m, "get_plan_daily") and hasattr(_m, "get_scene_daily"):
+            return _m
+    except Exception:
+        pass
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location("_rdb_hot", os.path.join(TG, "report_db.py"))
+        _m2 = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_m2)
+        return _m2
+    except Exception:
+        return None
+
+
 def _insight(days, total, scenes, charge):
     """规则化趋势解读——把数字讲成人话"""
     lines = []
@@ -86,13 +109,13 @@ def _active_conn():
         return {}
 
 
-def report():
+def report(q=None):
     d = _load()
     if not d:
         return {"ok": False, "error": "暂无数据——先双击「推广一键跑\\采集报表数据.bat」采一次"}
     raw = d.get("raw") or {}
     trend_rows = []          # 已弃用：历史一律走库（原为 JSON 回退，会跨账号串台）
-    acct = {}                # 已弃用：总计改为从 days(库) 汇总
+    acct = {}                # 已弃用：总计从 days(库) 汇总
     _mid = _resolve_account(raw)   # JSON（上次采集）的账号
     _act = _active_conn()          # 当前激活连接（名称 + 绑定的 memberId）
     # 该显示谁的数：激活连接的绑定优先；未绑定（新号未采集）→ 空 → 面板清空
@@ -139,15 +162,19 @@ def report():
         "roi": round(_ta / _tc, 2) if _tc else 0,
     }
 
-    # ── 场景/计划：一律从**库**读（按激活账户）——JSON 是单份文件，跨账号必串台 ──
-    #    区间口径：库快照(7/30/all) + 今日(tag='today') 合并 —— 与「总计含今日」对齐
+    # ── 区间表（计划/场景）：从**按日明细**按区间聚合 —— 与 KPI/走势**同源**（daily 表） ──
+    #    何必改：旧法用「区间快照(7/30/all) + 今日快照合并」，与 KPI/走势（读 daily，T+1）口径不同
+    #    （实测：全区间快照 410.98 + 今日 20.1 = 431.08，而 KPI 是 T+1 值）；且「自定义范围」没有对应快照，
+    #    前端只能落到 all。按日明细后任意区间可算。
+    #    口径：窗口截至【昨天】，与前端 curDays() 的 T+1 对齐；今天未定稿，不进区间表。
     _rng = ("7", "30", "all")
     _sc_db, _pl_db = {}, {}
+    _rdb0 = None
     try:
         import sys as _s0
         if TG not in _s0.path:
             _s0.path.insert(0, TG)
-        import report_db as _rdb0
+        _rdb0 = _rdb_fresh()      # 按文件强制加载最新版（进程里缓存的可能是旧版）
         if _target:
             for _t in _rng + ("today",):
                 _sc_db[_t], _ = _rdb0.get_scenes(account=_target, tag=_t)
@@ -192,12 +219,93 @@ def report():
 
     _today_sc = _sc_db.get("today") or []
     _today_pl = _pl_db.get("today") or []
-    scenes_by_range = {t: _sc_out(_merge_by(_sc_db.get(t) or [], _today_sc, lambda r: r.get("name") or "?"))
-                       for t in _rng}
-    plans_by_range = {t: _pl_out(_merge_by(_pl_db.get(t) or [], _today_pl,
-                                           lambda r: str(r.get("campaignId") or r.get("name") or "?")))
-                      for t in _rng}
+
+    import datetime as _dt4
+    _yd = _dt4.date.today() - _dt4.timedelta(days=1)
+
+    def _win(tag):
+        if tag == "7":
+            return (_yd - _dt4.timedelta(days=6)).isoformat(), _yd.isoformat()
+        if tag == "30":
+            return (_yd - _dt4.timedelta(days=29)).isoformat(), _yd.isoformat()
+        return "1970-01-01", _yd.isoformat()   # all：起点钉死（空串会被 report_db 当"不过滤"）
+
+    def _range_plans(_s, _e):
+        """按区间从**按日明细**聚合；无明细（老库）返回 None → 调用方回退快照"""
+        if not (_rdb0 and _target):
+            return None
+        try:
+            _rows = _rdb0.get_plan_daily(account=_target, start=_s or None, end=_e)
+        except Exception:
+            return None
+        return _pl_out(_rows) if _rows else None
+
+    def _range_scenes(_s, _e):
+        if not (_rdb0 and _target):
+            return None
+        try:
+            _rows = _rdb0.get_scene_daily(account=_target, start=_s or None, end=_e)
+        except Exception:
+            return None
+        return _sc_out(_rows) if _rows else None
+
+    plans_by_range, scenes_by_range = {}, {}
+    for _t in _rng:
+        _ws, _we = _win(_t)
+        _pr, _sr = _range_plans(_ws, _we), _range_scenes(_ws, _we)
+        if _pr is None:      # 回退：老库尚无按日明细 → 用区间快照（合并今日）
+            _pr = _pl_out(_merge_by(_pl_db.get(_t) or [], _today_pl,
+                                    lambda r: str(r.get("campaignId") or r.get("name") or "?")))
+        if _sr is None:
+            _sr = _sc_out(_merge_by(_sc_db.get(_t) or [], _today_sc,
+                                    lambda r: r.get("name") or "?"))
+        plans_by_range[_t], scenes_by_range[_t] = _pr, _sr
     scenes = scenes_by_range.get("all") or []
+
+    # 自定义区间（前端传 cs/ce）—— 同样走按日明细 → 真·联动（任意 ≤30 天窗口）
+    def _qval(_n):
+        try:
+            if isinstance(q, dict):
+                _v = q.get(_n)
+            else:
+                import urllib.parse as _up
+                _qq = _up.parse_qs(str(q or "").lstrip("?"))
+                _v = (_qq.get(_n) or [""])[0]
+            return str(_v or "").strip()
+        except Exception:
+            return ""
+
+    _cs, _ce = _qval("cs"), _qval("ce")
+    custom_ok = bool(_cs and _ce and _cs <= _ce)
+    plans_custom = _range_plans(_cs, _ce) if custom_ok else None
+    scenes_custom = _range_scenes(_cs, _ce) if custom_ok else None
+
+    # ── 趋势解读：也跟随所选范围（与区间表同源、同窗口）──
+    #    解读必须只读所选区间——否则会让 2 天范围的表底下写「区间内 82 天挂零」。
+    def _tot_of(_ds):
+        _c = sum(x["charge"] for x in _ds); _a = sum(x["amt"] for x in _ds)
+        _pv = sum(x["adPv"] for x in _ds); _k = sum(x["click"] for x in _ds)
+        _n = sum(x["num"] for x in _ds)
+        return {"charge": round(_c, 2), "adPv": _pv, "click": _k,
+                "ctr": round(_k / _pv, 4) if _pv else 0, "amt": round(_a, 2), "num": _n,
+                "cart": sum(x["cart"] for x in _ds),
+                "ecpc": round(_c / _k, 3) if _k else 0,
+                "cvr": round(_n / _k, 4) if _k else 0,
+                "roi": round(_a / _c, 2) if _c else 0}
+
+    def _days_win(_s, _e):
+        _s = _s or ""; _e = _e or "9999-12-31"
+        return [x for x in days if _s <= x["date"] <= _e]
+
+    insight_by_range = {}
+    for _t in _rng:
+        _ws, _we = _win(_t)
+        _dd = _days_win(_ws, _we)
+        insight_by_range[_t] = _insight(_dd, _tot_of(_dd), scenes_by_range.get(_t) or [], None)
+    insight_custom = None
+    if custom_ok:
+        _dd = _days_win(_cs, _ce)
+        insight_custom = _insight(_dd, _tot_of(_dd), scenes_custom or [], None)
 
     if stale:
         try:
@@ -205,16 +313,7 @@ def report():
             if TG not in _s2.path:
                 _s2.path.insert(0, TG)
             import report_db as _rdb2
-            for _tag in ("7", "30", "all"):
-                _pr, _ = _rdb2.get_plans(account=_target, tag=_tag) if _target else ([], None)
-                plans_by_range[_tag] = [{"name": p.get("name") or "?", "campaignId": p.get("campaignId"),
-                    "charge": _f(p.get("charge")), "adPv": _i(p.get("adPv")), "click": _i(p.get("click")),
-                    "ctr": _f(p.get("ctr"), 4), "amt": _f(p.get("amt")), "num": _i(p.get("num")),
-                    "ecpc": _f((p.get("charge") or 0) / p.get("click"), 3) if p.get("click") else 0} for p in _pr]
-                _sr, _ = _rdb2.get_scenes(account=_target, tag=_tag) if _target else ([], None)
-                scenes_by_range[_tag] = [{"name": s.get("name") or "?", "charge": _f(s.get("charge")),
-                    "adPv": _i(s.get("adPv")), "click": _i(s.get("click")), "ctr": _f(s.get("ctr"), 4),
-                    "amt": _f(s.get("amt")), "num": _i(s.get("num"))} for s in _sr]
+            # 区间表已改由「按日明细」在 report() 里直接算（与 KPI 同源）—— 此处不再用快照覆盖
         except Exception:
             pass
         scenes = scenes_by_range.get("all") or []
@@ -304,6 +403,9 @@ def report():
                              else (False if _mid else None)),
             "days": days, "total": total, "scenes": scenes, "scenesByRange": scenes_by_range,
             "plansByRange": plans_by_range, "today": today_total, "plansToday": plans_today,
+            "plansCustom": plans_custom or [], "scenesCustom": scenes_custom or [],
+            "customOk": custom_ok, "customRange": {"cs": _cs, "ce": _ce} if custom_ok else None,
+            "insightByRange": insight_by_range, "insightCustom": insight_custom,
             "scenesToday": scenes_today, "refreshing": refreshing,
             "chargeSum": charge, "insight": _insight(days, total, scenes, charge)}
 
@@ -402,7 +504,7 @@ def smart_refresh(headless=True):
         except Exception:
             pass
     yest = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
-    # ★ 缺口检测（近30天）：不能只看最后一天——中间断档（如死机没采）也得全量补
+    # 缺口检测（近30天）：不能只看最后一天——中间断档（如死机没采）也得全量补
     _gaps = []
     _stale = []
     if tgt:
@@ -459,7 +561,7 @@ def smart_refresh(headless=True):
 
 def handle(action, qs):
     if action == "report":
-        return report()
+        return report(qs)
     if action == "refresh":
         return smart_refresh(headless=True)      # 智能分流：缺历史走全量，否则只补今日
     if action == "refresh-all":
