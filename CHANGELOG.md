@@ -4,6 +4,23 @@
 
 ---
 
+## v0.8.28 · 2026-09-19（起批切接口版 + 全量输出落盘 + 运行产物出库）
+
+### 修复
+- **起批切到接口版 `tuiguang_api.py`**（`scheduler` / `tg-monitor`）：`promo_batch` 与面板起批的 `script` 从 `tuiguang_auto.py` 改指 `tuiguang_api.py`
+  - `--campaigns` **留空** → 由接口自取「未满」计划（写死计划列表会带上已满的）
+  - 实测：**30 品 2 分 37 秒**（29 成功 / 1 跳过 / 0 失败），锁只占 2.5 分钟
+  - 对比：此前 UI 版约 **48 分钟/批 + 锁占 80 分钟**，会把报表任务顶掉
+  - 踩坑（今天的）：**配置改了但没生效**——`daemon` 是常驻进程，动作表缓存在内存里，**必须重启守护**才读新配置
+
+### 新增
+- **`pipeline` 脚本全量输出落盘** `runtime/stage_out.log`（脚本的关键判断只打在 stdout，不存就没法事后查）
+
+### 备注（如实记账）
+- `plugins/pipeline/scripts/lib_index.json`（约 10MB 图片库缓存，由 `lib_images` 扫 `F:\连接图图库` 生成、可重建）及 `odoo_erp.log` / `repair.log` / `repair_err.log` / `repair_state.json` 已 `rm --cached` 移出版本控制，本地文件保留
+
+---
+
 ## v0.8.27 · 2026-09-18（进度计时冻结 + 取图只认审核产物 + 强制重做）
 
 ### 修复（梓帆实测报的）
