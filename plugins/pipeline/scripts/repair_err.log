@@ -1,2 +1,0 @@
-C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench\plugins\pipeline\scripts\lcsc.py:95: SyntaxWarning: "\." is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\."? A raw string is also an option.
-  const norm = links.filter(a => !a.href.includes('/details/') && /item\.szlcsc\.com\/\d+/.test(a.href));

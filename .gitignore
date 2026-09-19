@@ -8,6 +8,7 @@ plugins/*/state.json
 plugins/*/scripts/*_state.json
 plugins/*/*.log
 plugins/*/scripts/*.log
+plugins/pipeline/scripts/lib_index.json
 data/*.lock
 
 data/*.db
