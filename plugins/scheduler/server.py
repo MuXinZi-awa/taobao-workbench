@@ -34,9 +34,10 @@ ACTIONS = {
         "params": [{"key": "account", "label": "关联账号", "type": "account", "default": ""}],
     },
     "promo_batch": {
-        "label": "流水线 · 推广一批",
+        "label": "流水线 · 推广一批（接口版）",
         "kind": "script",
-        "script": os.path.join(TG, "tuiguang_auto.py"),
+        # 接口版：每品两次 POST（可投校验+建单元），实测 1~2 秒/品；回滚就改回 tuiguang_auto.py（参数同名兼容）
+        "script": os.path.join(TG, "tuiguang_api.py"),
         "args": ["--excel", "{file}", "--limit", "{limit}", "--campaigns", "{campaigns}", "--no-pop"],
         "params": [
             {"key": "file", "label": "数据文件", "type": "file", "default": "runtime\\推广池_0905.csv"},

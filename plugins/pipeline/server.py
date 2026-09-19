@@ -315,6 +315,14 @@ def _run_script(script, args, timeout=3600):
                            cwd=os.path.dirname(script), capture_output=True, timeout=timeout)
         out = (r.stdout or b"").decode("utf-8", "replace")
         err = (r.stderr or b"").decode("utf-8", "replace")
+        # 全量输出落盘——脚本的关键判断（上传/提交）只打在 stdout，不存就没法事后查
+        try:
+            with io.open(os.path.join(TG, "runtime", "stage_out.log"), "a", encoding="utf-8") as _f:
+                _f.write("\n=== %s %s rc=%s ===\n%s\n%s\n" % (
+                    _dt.datetime.now().strftime("%m-%d %H:%M:%S"),
+                    os.path.basename(script), r.returncode, out[-8000:], err[-2000:]))
+        except Exception:
+            pass
         txt = out if out.strip() else err
         tail = [x for x in txt.strip().splitlines() if x.strip()]
         return (r.returncode == 0), (tail[-1][:160] if tail else "(无输出)")

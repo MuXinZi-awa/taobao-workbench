@@ -251,7 +251,7 @@ def handle(action, qs):
         limit = max(1, min(limit, 200))
         rt = os.path.join(TG, "runtime", "python.exe")
         pool = qs.get("file", "") or os.path.join(TG, "runtime", "推广池_0905.csv")
-        camps = ",".join(_PLAN_ORDER[1:])
+        camps = ""    # 留空 → 由 tuiguang_api 自己取「未满」的计划（写死列表会带上已满的）
         out = os.path.join(TG, "runtime", "tg_panel.log")
         err = out.replace(".log", "_err.log")
         # 读取本次待推清单（表头行后的料号，跳过已推记录）
@@ -281,7 +281,7 @@ def handle(action, qs):
         with io.open(out, "a", encoding="utf-8") as _f:
             _f.write("\n[%s] === 面板起批 limit=%d 源=%s ===\n" % (datetime.datetime.now().strftime("%H:%M:%S"), limit, os.path.basename(pool)))
         try:
-            proc = _sp.Popen([rt, "-X", "utf8", "-u", os.path.join(TG, "tuiguang_auto.py"),
+            proc = _sp.Popen([rt, "-X", "utf8", "-u", os.path.join(TG, "tuiguang_api.py"),
                               "--excel", pool, "--limit", str(limit), "--campaigns", camps, "--no-pop"],
                              cwd=TG, stdout=io.open(out, "a", encoding="utf-8"),
                              stderr=io.open(err, "a", encoding="utf-8"))
@@ -323,12 +323,12 @@ def handle(action, qs):
         if not iid:
             return {"ok": False, "error": "无该料号 ID——先填淘宝ID（或料号输完整）"}
         rt = os.path.join(TG, "runtime", "python.exe")
-        camps = ",".join(_PLAN_ORDER[1:])
+        camps = ""    # 留空 → 由 tuiguang_api 自己取「未满」的计划（写死列表会带上已满的）
         out = os.path.join(TG, "runtime", "tg_panel.log")
         err = out.replace(".log", "_err.log")
         _cleanup_probe()  # 单品起批前清理
         try:
-            proc = _sp.Popen([rt, "-X", "utf8", "-u", os.path.join(TG, "tuiguang_auto.py"),
+            proc = _sp.Popen([rt, "-X", "utf8", "-u", os.path.join(TG, "tuiguang_api.py"),
                               "--liaohao", lh, "--taobao_id", iid, "--campaigns", camps, "--no-pop"],
                              cwd=TG, stdout=io.open(out, "a", encoding="utf-8"),
                              stderr=io.open(err, "a", encoding="utf-8"))
