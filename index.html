@@ -508,7 +508,7 @@ function connFormHtml(d){
    +row('账号','cfUser',d.username,'登录账号')
    +row('密码','cfPass',d.id?'':d.secret||'',d.id?'留空=不修改':'ERP 密码',true);
  }else{
-  body+=row('账号','cfUser',d.username,'<REDACTED>')
+  body+=row('账号','cfUser',d.username,'')
    +row('密码','cfPass',d.id?'':d.secret||'',d.id?'留空=不修改':'淘宝密码',true)
    +row('Profile','cfProfile',d.profile,'留空=默认；多账号各配一个')
    +row('备注','cfNote',d.note,'');

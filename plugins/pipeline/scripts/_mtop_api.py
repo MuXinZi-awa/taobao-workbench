@@ -55,7 +55,9 @@ def _cred():
             return a["username"], a["secret"]
     except Exception:
         pass
-    return "<REDACTED>", "<REDACTED>"
+    raise RuntimeError(
+        "未取到淘宝凭据：请在工作台「连接导航」添加并激活店铺连接。"
+        "（已不再内置默认账号密码：兜底默认值会随源码进入版本历史）")
 
 
 ACCOUNT, PASSWORD = _cred()
