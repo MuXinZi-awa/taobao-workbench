@@ -1,0 +1,293 @@
+<!doctype html><meta charset="utf-8">
+<style>
+  body{font-family:inherit;margin:0;background:transparent;color:var(--text,#333);font-size:13px}
+  input,select,textarea,button{font-family:inherit;font-size:13px}
+  .wrap{display:flex;flex-direction:column;gap:10px;padding:2px}
+  .card{background:var(--card,#fffdf7);border:.5px solid var(--border,#ddd);border-radius:var(--r,8px);padding:10px 12px}
+  .card h3{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--text-l,#888);letter-spacing:.3px}
+  .ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+  .fld{display:flex;align-items:center;gap:6px}
+  .lab{font-size:12px;color:var(--text-l,#888);white-space:nowrap}
+  input[type=text],input[type=number],select{
+    border:.5px solid var(--border,#ccc);border-radius:6px;padding:6px 9px;background:#fffdf7;color:var(--text,#333)}
+  input[type=text]{flex:1;min-width:180px}
+  input[type=number]{width:92px;text-align:right}
+  select{padding:6px 8px}
+  textarea{width:100%;box-sizing:border-box;min-height:96px;border:.5px solid var(--border,#ccc);border-radius:8px;
+    padding:9px 10px;line-height:1.6;background:#fffdf7;color:var(--text,#333);resize:vertical}
+  textarea.over{border-color:var(--accent,#4a7cf7);background:rgba(74,124,247,.06)}
+  button{border:0;border-radius:7px;padding:7px 15px;cursor:pointer;background:var(--accent,#4a7cf7);color:#fff}
+  button:disabled{opacity:.45;cursor:default}
+  button.ghost{background:transparent;border:.5px solid var(--border,#ccc);color:var(--text,#333)}
+  .hint{font-size:11.5px;color:var(--text-m,#999);line-height:1.6}
+  .msg{font-size:12px;color:var(--text-l,#888);min-height:17px}
+  .prog{display:none;align-items:center;gap:8px;padding:6px 10px;border:.5px solid var(--accent,#4a7cf7);
+    border-radius:7px;color:var(--accent,#4a7cf7);background:rgba(74,124,247,.06);font-size:12px}
+  .tabs{display:flex;gap:4px;margin-bottom:8px}
+  .tab{padding:4px 11px;border:.5px solid var(--border,#ddd);border-radius:6px;font-size:12px;cursor:pointer;
+    color:var(--text-l,#888);background:transparent;border-bottom-left-radius:0;border-bottom-right-radius:0}
+  .tab.on{color:var(--accent,#4a7cf7);border-color:var(--accent,#4a7cf7);background:rgba(74,124,247,.07);font-weight:600}
+  .tblwrap{overflow:auto;max-height:46vh;border:.5px solid var(--border,#eee);border-radius:7px}
+  table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
+  th,td{border-bottom:.5px solid var(--border,#eee);padding:6px 8px;text-align:left;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  th{position:sticky;top:0;z-index:1;background:var(--bg-card,#fbf9f4);font-weight:600;color:var(--text-l,#666)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.ok{color:var(--green,#2a7a3a)}td.bad{color:var(--danger,#d33)}td.dim{color:var(--text-m,#999)}
+  .empty{padding:18px;text-align:center;color:var(--text-m,#aaa);font-size:12px}
+</style>
+
+<div class="wrap">
+  <div class="card">
+    <h3>操作</h3>
+    <div class="ctl" style="margin-bottom:8px">
+      <div class="fld"><span class="lab">改什么</span>
+        <select id="what" onchange="applyWhat()">
+          <option value="stock">库存</option>
+          <option value="price">售价（ERP 成本 × 倍数）</option>
+          <option value="both">库存 + 售价</option>
+        </select></div>
+      <div class="fld"><span class="lab" id="qtyLab">库存</span><input id="qty" type="number" value="50000"><span class="lab" id="qtyUnit">件</span></div>
+      <div class="fld"><span class="lab">间隔</span><input id="gap" type="number" value="2.5" step="0.5" style="width:74px"><span class="lab">秒/品</span></div>
+      <div class="fld"><span class="lab">最多</span><input id="limit" type="number" value="0" style="width:74px"><span class="lab">个（0=不限）</span></div>
+      <label class="lab" id="mirrorLab" title="把改后的表单发给 previewDraftSubmit 照一次镜子（非提交，不改商品）">
+        <input type="checkbox" id="mirror" checked> 照镜子</label>
+    </div>
+    <div class="hint" id="whatHint"></div>
+    <div class="ctl">
+      <button id="goShop" onclick="start('shop')">▶ 开始改全店</button>
+      <button class="ghost" id="goRows" onclick="start('rows')">▶ 只跑下面这些</button>
+      <button class="ghost" onclick="clearAll()">清空</button>
+      <span class="msg" id="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>指定商品（可留空；全店模式不用填）</h3>
+    <textarea id="rows" placeholder="粘一列料号或淘宝ID（一行一个）
+也支持 料号,淘宝ID 两列
+—— 或者直接把 csv/xlsx 拖进来"></textarea>
+    <div class="hint" style="margin-top:6px">
+      只写料号也行（先查流水线 state，查不到再走一次分流）。<b>本轮只到照镜子，不会提交。</b>
+      已跑过的会自动跳过（想重跑清空 <code>runtime/stock_edit.csv</code> 里对应行）。
+    </div>
+  </div>
+
+  <div class="prog" id="bar"></div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab on" id="tabNow" onclick="switchTab('now')">本次结果</div>
+      <div class="tab" id="tabHis" onclick="switchTab('his')">历史留痕</div>
+    </div>
+    <div class="tblwrap">
+      <table>
+        <colgroup>
+          <col style="width:14%"><col style="width:15%"><col style="width:11%"><col style="width:9%">
+          <col style="width:13%"><col style="width:13%"><col style="width:25%">
+        </colgroup>
+        <thead><tr>
+          <th>料号</th><th>淘宝ID</th><th>形态</th><th class="num">项目</th>
+          <th class="num">旧值</th><th class="num">新值</th><th>结果</th>
+        </tr></thead>
+        <tbody id="tb"><tr><td colspan="7" class="empty">还没有结果</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="../../vendor/xlsx.min.js"></script>
+<script>
+const P = "/api/plg/stock-edit/";
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+let timer = null, tab = 'now';
+
+function fmt(v){
+  if(v === null || v === undefined) return '—';
+  if(Array.isArray(v)) return v.map(x => (x===null||x===undefined)?'—':x).join(' / ');
+  return String(v);
+}
+
+/* 每个模式要有自己的界面：值标签/单位/可用性/提示都跟着变 */
+function applyWhat(){
+  const w = $('#what').value, qty = $('#qty');
+  if(w === 'stock'){
+    $('#qtyLab').textContent='库存'; $('#qtyUnit').textContent='件'; qty.disabled=false;
+    if(!qty.value) qty.value='50000';
+    $('#whatHint').textContent='把每个品的库存改成这个数（多 SKU 的每个 SKU 都写这个数）。';
+  } else if(w === 'price'){
+    $('#qtyLab').textContent='库存（本次不动）'; $('#qtyUnit').textContent='—'; qty.disabled=true;
+    $('#whatHint').textContent='售价 = ERP 成本 × 倍数（<1 → 1.8，1~20 → 1.5，>20 → 1.7）。老品不许低于原价，低于就跳过并写明原因。';
+  } else {
+    $('#qtyLab').textContent='库存'; $('#qtyUnit').textContent='件'; qty.disabled=false;
+    if(!qty.value) qty.value='50000';
+    $('#whatHint').textContent='库存 + 售价 一起改。售价 = ERP 成本 × 倍数；老品不许低于原价，低于就跳过并写明原因。';
+  }
+  const m = $('#mirrorLab');
+  if(m) m.title = '把改后的表单发给 previewDraftSubmit 照一次镜子（非提交，不改商品）——本次改的是：' + $('#what').selectedOptions[0].textContent;
+}
+function rowHTML(lh, tid, mode, item, oldV, newV, res, cls){
+  return '<tr>'
+    + '<td>'+esc(lh||'—')+'</td>'
+    + '<td>'+esc(tid||'—')+'</td>'
+    + '<td>'+esc(mode||'—')+'</td>'
+    + '<td class="num">'+esc(item||'—')+'</td>'
+    + '<td class="num">'+esc(fmt(oldV))+'</td>'
+    + '<td class="num">'+esc(fmt(newV))+'</td>'
+    + '<td class="'+cls+'">'+res+'</td>'
+  + '</tr>';
+}
+function modeText(r){
+  if(!r.mode) return '—';
+  return r.mode === 'multi' ? ('多SKU×'+(r.nSku||'?')) : '单SKU';
+}
+
+async function start(mode){
+  const qty = $('#qty').value, what = $('#what').value;
+  const rows = $('#rows').value.trim();
+  if(mode === 'rows' && !rows){ $('#msg').textContent = '先粘一列料号或淘宝ID'; return; }
+  $('#goShop').disabled = $('#goRows').disabled = true;
+  $('#msg').textContent = '启动中…';
+  try{
+    const d = await fetch(P+'start', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mode: mode, rows: rows, qty: qty, what: what, gap: $('#gap').value,
+                            limit: $('#limit').value, mirror: $('#mirror').checked ? 1 : ''})}).then(r=>r.json());
+    if(!d.ok){ $('#msg').textContent = '✗ ' + (d.error||'启动失败'); $('#goShop').disabled = $('#goRows').disabled = false; return; }
+    $('#msg').textContent = d.msg;
+    switchTab('now');
+    $('#tb').innerHTML = '<tr><td colspan="7" class="empty">跑起来了…（全店首次要列清单，稍等）</td></tr>';
+    poll(true);
+  }catch(e){ $('#msg').textContent = '✗ ' + e; $('#goShop').disabled = $('#goRows').disabled = false; }
+}
+
+async function poll(first){
+  clearTimeout(timer);
+  let alive = false;
+  try{
+    const d = await fetch(P+'progress').then(r=>r.json());
+    const p = d.progress;
+    if(p && p.total){
+      $('#bar').style.display = 'flex';
+      const age = p.updated ? Math.floor((Date.now() - Date.parse(String(p.updated).replace(' ','T')))/1000) : 1e9;
+      alive = !!p.running && age < 120;
+      let s = '📦 ' + (p.note||'改库存') + ' ' + (p.done||0) + '/' + (p.total||0);
+      if(p.current) s += ' · 当前 ' + p.current;
+      s += ' · 通过' + (p.ok||0) + ' 跳过' + (p.skip||0) + ' 失败' + (p.fail||0);
+      if(p.running && !alive) s += ' · 疑似中断（最后更新 ' + String(p.updated||'').slice(11) + '，重跑会接着跑）';
+      else if(!p.running) s += ' · 已结束';
+      $('#bar').textContent = s;
+      if(!p.running){ alive = false; await showResult(); $('#goShop').disabled = $('#goRows').disabled = false; }
+    } else if(first){
+      $('#bar').style.display = 'flex';
+      $('#bar').textContent = '⏳ 等子进程起来…（首次要起浏览器，约 8-15 秒）';
+      alive = true;
+    }
+  }catch(e){}
+  timer = setTimeout(()=>poll(false), alive ? 2000 : 6000);
+}
+
+async function showResult(){
+  try{
+    const d = await fetch(P+'result').then(r=>r.json());
+    const rows = d.rows || [];
+    const ok = rows.filter(x=>x.ok&&!x.skip).length;
+    const skip = rows.filter(x=>x.skip).length;
+    const bad = rows.length - ok - skip;
+    if(rows.length){
+      $('#msg').textContent = '完成：通过 ' + ok + ' / 跳过 ' + skip + ' / 失败 ' + bad
+        + (ok===0 && skip>0 ? '（没有需要改的，跳过原因见表）' : '');
+    }
+    // 空也要渲染——否则切到留痕后再切回来会“卡在留痕”（看着像点不回去）
+    if(tab === 'now') renderNow(rows);
+  }catch(e){ if(tab === 'now') renderNow([]); }
+}
+
+function renderNow(rows){
+  const tb = $('#tb');
+  if(!rows.length){ tb.innerHTML = '<tr><td colspan="7" class="empty">还没有结果</td></tr>'; return; }
+  tb.innerHTML = rows.map(r=>{
+    const item = r.stock ? '库存' : (r.price ? '售价' : (r.oldPrice != null ? '售价' : '—'));
+    const oldV = r.stock ? r.stock.old : (r.price ? r.price.old : r.oldPrice);
+    const newV = r.stock ? r.stock.new : (r.price ? r.price.new : r.newPrice);
+    let res, cls;
+    if(r.skip){
+      const w = String(r.why||'').replace(/^跳过：/,'') || '无事可做';
+      res = '⏭ 跳过：' + esc(w); cls = 'dim';
+    }
+    else if(r.ok){ res = '✓ 照镜子通过'; cls = 'ok'; }
+    else { res = '✗ 失败：' + esc(r.why||'未知原因'); cls = 'bad'; }
+    if(r.ok && !r.skip && r.costUsed){ res += '（成本 ' + esc(r.costUsed) + ' · 来源 ' + esc(r.costSrc||'—') + '）'; }
+    return rowHTML(r.lh, r.tid, modeText(r), item, oldV, newV, res, cls);
+  }).join('');
+}
+
+async function renderHistory(){
+  const d = await fetch(P+'ledger').then(r=>r.json());
+  const rows = (d.rows||[]).slice(1).reverse();     // 去掉表头，新的在上
+  const tb = $('#tb');
+  if(!rows.length){ tb.innerHTML = '<tr><td colspan="7" class="empty">还没有留痕</td></tr>'; return; }
+  tb.innerHTML = rows.map(r=>{
+    const res = String(r[7]||'');
+    const cls = res.indexOf('通过') >= 0 ? 'ok' : (res.indexOf('跳过') >= 0 ? 'dim' : 'bad');
+    return rowHTML(r[2], r[3], '', r[4], r[5], r[6], esc(res), cls);
+  }).join('');
+}
+
+function switchTab(t){
+  tab = t;
+  $('#tabNow').className = 'tab' + (t==='now' ? ' on' : '');
+  $('#tabHis').className = 'tab' + (t==='his' ? ' on' : '');
+  if(t === 'his') renderHistory(); else showResult();
+}
+
+function clearAll(){
+  $('#rows').value=''; $('#msg').textContent=''; $('#bar').style.display='none';
+  $('#tb').innerHTML = '<tr><td colspan="7" class="empty">还没有结果</td></tr>';
+}
+
+/* 拖入 csv / xlsx → 读成文本塞进输入框 */
+const ta = $('#rows');
+['dragover','drop'].forEach(ev => ta.addEventListener(ev, e => {
+  e.preventDefault(); ta.classList.toggle('over', ev === 'dragover');
+}));
+ta.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if(!f) return;
+  const nm = f.name.toLowerCase();
+  if(nm.endsWith('.csv')){
+    const rd = new FileReader();
+    rd.onload = () => { ta.value = rd.result; $('#msg').textContent = '已读入 ' + f.name; };
+    rd.readAsText(f);
+  } else if(nm.endsWith('.xls') || nm.endsWith('.xlsx')){
+    const rd = new FileReader();
+    rd.onload = () => {
+      const wb = XLSX.read(new Uint8Array(rd.result), {type:'array'});
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1});
+      const head = rows[0] || [];
+      let ci = 0, hi = -1;
+      for(let i=0;i<head.length;i++){
+        const h = String(head[i]||'');
+        if(/淘宝ID|itemid|商品ID/i.test(h)) hi = i;
+        if(/料号|型号|part|mpn/i.test(h)) ci = i;
+      }
+      ta.value = rows.slice(1).map(r => {
+        const lh = String(r[ci]||'').trim();
+        const tid = hi >= 0 ? String(r[hi]||'').trim() : '';
+        return tid ? (lh + ',' + tid) : lh;
+      }).filter(x=>x).join('\n');
+      $('#msg').textContent = '已读入 ' + f.name;
+    };
+    rd.readAsArrayBuffer(f);
+  } else {
+    $('#msg').textContent = '不支持的格式：' + f.name;
+  }
+});
+
+/* wb-theme 接收器：宿主切主题广播 CSS 变量 → 应用到自身 */
+window.addEventListener('message', function(e){ var d=e.data; if(!d||d.type!=='wb-theme'||!d.vars) return;
+  var st=document.documentElement.style; for(var k in d.vars){ if(d.vars[k]) st.setProperty(k, d.vars[k]); } });
+
+applyWhat();
+poll(false);
+</script>

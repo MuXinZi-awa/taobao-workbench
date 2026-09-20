@@ -53,9 +53,34 @@ input::placeholder { color:var(--text-m,#999); }
  .audit .fix{border-color:#b8860b;color:#b8860b}.audit .fix.on{background:#b8860b;color:#fff}
  .audit .src{border-color:#4a7cf7;color:#4a7cf7}.audit .src.on{background:#4a7cf7;color:#fff}
  .audit .st{font-size:12px;margin-left:auto;color:var(--text-l,#888)}
+
+ /* ── 分区与节奏：每块一个卡，8px 竖节奏，标题行打头 ── */
+ .phead{display:flex;align-items:center;gap:10px;padding:0 2px 8px}
+ .ptitle{font-size:12.5px;font-weight:600;color:var(--text,#333)}
+ .pdim{font-size:11.5px;color:var(--text-m,#888)}
+ div:has(> #acctbar){margin-bottom:0 !important}
+ .bar{background:var(--card,#fffdf7);border:.5px solid var(--border,#ddd);border-radius:var(--r,8px);
+      padding:10px 12px;margin-bottom:8px;gap:8px 10px;align-items:center;flex-wrap:wrap}
+ .bar::before{content:attr(data-zone);font-size:11.5px;font-weight:600;color:var(--text-m,#888);
+      margin-right:2px;padding-right:10px;border-right:.5px solid var(--border,#eee)}
+ .bar input[type=text]{min-width:200px}
+ .bar label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-size:12px;color:var(--text-l,#888)}
+ .bar select{font-size:12px;border:.5px solid var(--border,#ccc);border-radius:6px;padding:6px 8px;background:#fffdf7;color:var(--text,#333)}
+ .stage{background:var(--card,#fffdf7);border-color:var(--border,#ddd);padding:10px 12px;margin-bottom:8px}
+ .cur{margin-bottom:6px}
+ #batchprog{margin-bottom:8px}
+ #repairBar{margin-bottom:8px}
+ div:has(> #tb){background:var(--card,#fffdf7);border:.5px solid var(--border,#ddd);
+      border-radius:var(--r,8px);padding:0;overflow:auto;max-height:52vh;margin-bottom:8px}
+ #tb th:first-child,#tb td:first-child{padding-left:12px}
+ #tb th:last-child,#tb td:last-child{padding-right:12px}
+ #tb tbody tr:hover td{background:rgba(74,124,247,.05)}
+ .drop{min-height:96px;margin-bottom:8px;border-radius:var(--r,8px)}
+ #catSt{margin:0 0 4px 2px !important}
+ #fieldbar{margin:0 0 8px 2px !important}
 </style>
 
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span id="acctbar" style="font-size:11.5px;color:var(--text-m,#888)">账号 —</span></div><script>
+<div class="phead"><span class="ptitle">流水线 · 上品 / 优化 / 推广</span><span id="acctbar" class="pdim">账号 —</span></div><script>
 (async function(){
   try{
     var r = await fetch('/api/plg/pipeline/acct').then(function(x){return x.json();});
@@ -64,13 +89,29 @@ input::placeholder { color:var(--text-m,#999); }
   }catch(e){}
 })();
 </script>
-<div class="bar">
+<div class="bar" id="mainbar" data-zone="查询与操作">
   <input id="lh" type="text" placeholder="料号 或 淘宝 ID（单量回车）">
   <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button onclick="adStartFrom(0)">📋 开始审核</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button><button id="ssBtn" onclick="srcRun()" style="display:none">🔁 换源处理</button>
   <button class="ghost" onclick="demo()">试填</button>
   <label style="font-size:12px;color:var(--text-l,#999);margin-left:6px" title="上品/优化：只走流程不提交，用来试跑"><input type="checkbox" id="dryChk"> 预演不提交</label>
   <label style="font-size:12px;color:var(--text-l,#999);margin-left:6px" title="素材：不跳过已生成的图，强制重做（用于清掉旧脏图）"><input type="checkbox" id="forceChk"> 强制重做</label>
 </div>
+<div class="bar" id="catbar" data-zone="类目与实现">
+  <span style="font-size:12px;color:var(--text-l,#888);white-space:nowrap">类目</span>
+  <input id="catKw" type="text" placeholder="打类目名，如 连接器 / 保险丝 / 文胸内衣" style="max-width:240px">
+  <button class="ghost" onclick="catSearch()">🔍 搜类目</button>
+  <select id="catSel" style="flex:1;min-width:220px;font-size:12px;border:.5px solid var(--border,#ccc);border-radius:6px;padding:6px;background:#fffdf7"><option value="">（先搜类目）</option></select>
+  <button class="ghost" onclick="catSave()">记住类目</button>
+  <span style="flex:1"></span>
+  <span style="font-size:12px;color:var(--text-l,#888);white-space:nowrap">上品/优化实现</span>
+  <select id="pubImpl" onchange="pubImplSave()" style="font-size:12px;border:.5px solid var(--border,#ccc);border-radius:6px;padding:6px;background:#fffdf7">
+    <option value="script">脚本（UI全流程·可提交）</option>
+    <option value="api">接口（只出计划+照镜子·不提交）</option>
+  </select>
+  <label style="font-size:12px;color:var(--text-l,#999)" title="仅接口版：把改后的表单发给 previewDraftSubmit.htm 照一次镜子（非提交，不改商品）"><input type="checkbox" id="mirrorChk"> 照镜子</label>
+</div>
+<div id="catSt" style="font-size:11.5px;color:var(--text-m,#888);margin:-4px 0 6px 2px">类目 —</div>
+<div id="fieldbar" style="font-size:11.5px;color:var(--text-m,#888);margin:-2px 0 8px 2px"></div>
 <div class="drop" id="drop"><div>📥 拖入 csv / xlsx（批量）</div><div style="font-size:11px;color:var(--text-l,#999);font-weight:400">自动识别料号列，逐行扫描——点击或拖拽</div></div>
 <div class="stage" id="stage"><span class="stagenm" id="stnm">待命</span><span id="stageBar" style="display:flex;align-items:center;gap:6px;flex:1;justify-content:center;flex-wrap:wrap">
  <span style="font-size:12px;color:var(--text-l,#999)">阶段加载中…</span></span></div>
@@ -136,13 +177,59 @@ async function runStage(i){
  if(!v){ alert('先输料号或拖入清单'); return; }
  setStage(i,'on',s.label);
  var _dry=document.getElementById('dryChk'), _fo=document.getElementById('forceChk');
- var d=await fetch(P+'run?stage='+encodeURIComponent(s.key)+'&lhs='+encodeURIComponent(v)+((_dry&&_dry.checked)?'&dry=1':'')+((_fo&&_fo.checked)?'&force=1':'')).then(function(r){return r.json();});
+ var _mi=document.getElementById('mirrorChk');
+ var d=await fetch(P+'run?stage='+encodeURIComponent(s.key)+'&lhs='+encodeURIComponent(v)+((_dry&&_dry.checked)?'&dry=1':'')+((_fo&&_fo.checked)?'&force=1':'')+((_mi&&_mi.checked)?'&mirror=1':'')).then(function(r){return r.json();});
  if(!d.ok){ setStage(i,'fail',s.label+' \u2717'); $('#cur').textContent='\u2717 '+(d.error||'执行失败'); return; }
  if(d.items) render(d.items);
  setStage(i,'done',s.label+' ok');
  $('#cur').textContent='「'+s.label+'」完成'+(d.msg?('：'+d.msg):'');
 }
 loadStages();
+/* ── 类目（面板打人话 → 脚本自己搜 catId；命中缓存秒回）+ 上品/优化实现开关 ── */
+function _catSt(t){ var e=document.getElementById('catSt'); if(e) e.textContent=t; }
+async function loadSettings(){
+ try{
+  var d=await fetch(P+'settings').then(function(r){return r.json();});
+  if(!d||!d.ok) return;
+  var s=d.settings||{}, c=s.category||{};
+  if(c.kw){ var e=document.getElementById('catKw'); if(e) e.value=c.kw; }
+  var pi=document.getElementById('pubImpl'); if(pi&&s.pub_impl) pi.value=s.pub_impl;
+  _catSt(c.catId ? ('类目 已记：'+c.kw+' → '+c.catId+'  '+(c.path||[]).join(' > ')) : '类目 未指定（上品要先定类目）');
+  var fb=document.getElementById('fieldbar');
+  if(fb&&d.fields) fb.textContent='上品/优化字段集（一处维护 item_fields.py）：'+d.fields.map(function(f){return f.label;}).join(' · ');
+ }catch(e){}
+}
+async function catSearch(){
+ var kw=(document.getElementById('catKw').value||'').trim();
+ if(!kw){ alert('先打一个类目词，比如 连接器'); return; }
+ _catSt('搜「'+kw+'」中…（首次要起浏览器，约 10-20 秒；之后走缓存）');
+ var d=await fetch(P+'catsearch?kw='+encodeURIComponent(kw)).then(function(r){return r.json();});
+ if(!d.ok){ _catSt('✗ '+(d.error||'搜索失败')); return; }
+ var cs=(d.result&&d.result.candidates)||[];
+ var sel=document.getElementById('catSel');
+ sel.innerHTML = cs.length ? cs.map(function(c,i){
+   return '<option value="'+i+'">'+esc(c.id)+'  '+(c.path||[]).join(' > ')+'</option>';
+ }).join('') : '<option value="">（没搜到候选类目）</option>';
+ _catSt('候选 '+cs.length+' 个'+(d.cached?'（缓存命中·秒回）':'')+'——选中后点「记住类目」');
+}
+async function catSave(){
+ var kw=(document.getElementById('catKw').value||'').trim();
+ var sel=document.getElementById('catSel');
+ if(!sel||!sel.value){ alert('先搜一下类目再选'); return; }
+ var txt=(sel.options[sel.selectedIndex].textContent||'').trim();
+ var id=txt.split(/\s+/)[0];
+ var path=txt.replace(/^\S+\s*/,'');
+ var d=await fetch(P+'catset',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({kw:kw,catId:id,path:path?path.split(' > '):[]})}).then(function(r){return r.json();});
+ if(d.ok){ var c=(d.settings||{}).category||{}; _catSt('类目 已记：'+c.kw+' → '+c.catId+'  '+(c.path||[]).join(' > ')); }
+ else _catSt('✗ '+(d.error||'保存失败'));
+}
+async function pubImplSave(){
+ var v=(document.getElementById('pubImpl')||{}).value||'script';
+ await fetch(P+'setsetting?pub_impl='+encodeURIComponent(v)).then(function(r){return r.json();});
+ _catSt('实现已切：'+(v==='api'?'接口版（只出计划+照镜子，不提交）':'脚本版（UI 全流程）'));
+}
+loadSettings();
 var curLhs=[];
 async function scan(lhs){
  curLhs=lhs; const items=[]; $('#cur').textContent='批量 '+lhs.length+' 品…';
@@ -224,17 +311,23 @@ async function srcRun(){
  $('#cur').textContent=d.ok?d.msg:('✗ '+(d.error||'启动失败'));
 }
 
+var PANEL_T0 = Math.floor(Date.now()/1000);   // 本轮面板打开的时刻——比它早的状态一律不认（旧档不走）
 function repairPoll(){
  fetch(P+'repair-status').then(function(r){return r.json();}).then(function(d){
   var bar=document.getElementById('repairBar'); if(!bar) return;
   var st=d.state;
-  if(st&&st.total>0&&(st.done+st.fail<st.total||st.cur)){
-   bar.style.display='block';
-   bar.innerHTML='🛠 送修中 '+st.done+'/'+st.total+'（当前 '+(st.cur||'—')+'，失败 '+st.fail+'）——完成后自动标待复检';
-  } else if(st&&st.total>0&&st.done+st.fail>=st.total&&st.total>0&&st.msg){
-   bar.style.display='block';
-   bar.innerHTML='✅ 送修批结束：'+st.msg+'——待复检品进审核复检';
-  } else if(st&&(!st.total||st.total===0)){ bar.style.display='none'; }
+  // 旧记录赖着不走：repair_state.json 跑完不自清，只看内容会天天冒旧横幅。
+  // 所以只认两种情况：① 真在跑（且不过期）② 本轮面板打开之后才结束的。
+  var age=(typeof d.age_sec==='number')?d.age_sec:1e9;
+  var stale=!!d.stale||age>7200;
+  var running=!!(st&&st.total>0&&(st.done+st.fail<st.total||st.cur));
+  var endedNow=!!(st&&st.total>0&&st.done+st.fail>=st.total&&st.msg
+                  &&typeof d.mtime==='number'&&d.mtime>=PANEL_T0-120);
+  if(!st||stale||(!running&&!endedNow)){ bar.style.display='none'; return; }
+  bar.style.display='block';
+  bar.textContent=running
+    ? ('🛠 送修中 '+st.done+'/'+st.total+'（当前 '+(st.cur||'—')+'，失败 '+st.fail+'）——完成后自动标待复检')
+    : ('✅ 送修批结束：'+st.msg+'——待复检品进审核复检');
  });
 }
 setInterval(repairPoll,5000);

@@ -67,3 +67,17 @@
 - v0.2.10：送修通道 seedream_5.0（=UI 5.0 Lite，不花积分）
 - v0.2.11（0915）：阶段条改 7 格**数据驱动** + `/stages` / `/run` 统一入口；碰提交的 4 格先留桩（`ready=False`）
 - v0.2.12（0917）：四格接血肉（属性/整理/上品优化/推广）——**只调现成脚本，无底层改动**；临时表 + 子进程范式；上品/优化按 `type` 自动分流；推广计划自动取未满的 —— 详见 CHANGELOG v0.8.19
+- v0.2.16：面板加「类目」输入行（打人话 → 脚本搜 catId，缓存 `runtime/cat_map.json`）+ 「上品/优化实现」开关（script / api）；`state.json` 新增顶层 `settings`；接口版只出计划 + 照镜子（`previewDraftSubmit`），**不提交**
+
+## 面板新增（v0.2.16）
+
+```
+类目 [连接器] [🔍 搜类目] [候选下拉] [记住类目]    上品/优化实现 [脚本|接口] □照镜子
+类目 已记：连接器 → 50018820  电子元器件市场 > 连接器
+上品/优化字段集（一处维护 item_fields.py）：标题 · 属性 · 主图 · 详细图 · 视频 · 白底图
+```
+
+- 后端新增 action：`settings` / `setsetting` / `catsearch` / `catset`
+- `catsearch` 命中 `runtime/cat_map.json` 缓存就不起浏览器（秒回），未命中 → 子进程 `attr_api.py --search`
+- `pub` 阶段读 `settings.pub_impl`：`script`（默认，维持现状）/ `api`（老品走 `attr_api.py --plan-batch`，只出计划；新品明确拒绝）
+- 字段集定义在 `推广一键跑/item_fields.py`（上品/优化共用一份）

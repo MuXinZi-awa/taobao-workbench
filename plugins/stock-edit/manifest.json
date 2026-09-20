@@ -1,0 +1,10 @@
+{
+  "id": "stock-edit",
+  "name": "改库存",
+  "version": "0.2.0",
+  "desc": "改库存 / 改售价：全店或指定品，粘一列即可；照镜子确认，不提交",
+  "panel": "panel.html",
+  "has_server": true,
+  "icon": "📦",
+  "log": "stock_edit_run.log"
+}

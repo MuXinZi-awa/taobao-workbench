@@ -306,6 +306,20 @@ def _write_tmp(name, rows, header):
     return fp
 
 
+def _last_script_out(n=10):
+    """读 stage_out.log 最后一块（子进程 stdout 尾部）——末行常是 browser_lock 的锁日志，没用
+    故取最近 n 行、剔除锁/登录噪声，用于面板提示"""
+    try:
+        txt = io.open(os.path.join(TG, "runtime", "stage_out.log"),
+                      encoding="utf-8", errors="replace").read()
+        blk = txt.rsplit("=== ", 1)[-1]
+        lines = [x.strip() for x in blk.splitlines()
+                 if x.strip() and not any(k in x for k in ("拿到锁", "释放锁", "[登录]", "\u91ca\u653e\u9501"))]
+        return " | ".join(lines[-n:])[:400] or "(无输出)"
+    except Exception:
+        return ""
+
+
 def _run_script(script, args, timeout=3600):
     """子进程跑现成脚本（照 _classify_one 范式）→ (ok, 末行输出)"""
     if not os.path.isfile(script):
@@ -343,6 +357,50 @@ def _ids_of(lhs):
     return [(lh, str((st["items"].get(lh) or {}).get("id") or "").strip()) for lh in lhs]
 
 
+# ── 面板设置（存 state.json 顶层 settings）──────────────────────────
+#   类目：梓帆在面板上打「连接器」这种人话，脚本自己搜 catId；存下来给上品/优化阶段读
+#   上品/优化实现：script（现有 UI 脚本）/ api（接口版，只出计划+照镜子，不提交）
+SETTINGS_DEF = {
+    "category": {"kw": "", "catId": "", "path": []},
+    "pub_impl": "script",
+}
+
+
+def get_settings():
+    st = load_state()
+    s = json.loads(json.dumps(SETTINGS_DEF))
+    cur = st.get("settings") or {}
+    for k, v in cur.items():
+        if isinstance(v, dict) and isinstance(s.get(k), dict):
+            s[k].update(v)
+        else:
+            s[k] = v
+    return s
+
+
+def set_settings(patch):
+    st = load_state()
+    s = st.setdefault("settings", {})
+    for k, v in (patch or {}).items():
+        if isinstance(v, dict) and isinstance(s.get(k), dict):
+            s[k].update(v)
+        else:
+            s[k] = v
+    save_state(st)
+    return get_settings()
+
+
+def item_fields_def():
+    """上品/优化 共用字段集 —— 定义在 推广一键跑/item_fields.py（一处维护）"""
+    try:
+        if TG not in sys.path:
+            sys.path.insert(0, TG)
+        import item_fields
+        return item_fields.FIELDS
+    except Exception as e:
+        return [{"label": "读不到 item_fields.py", "note": str(e)[:80]}]
+
+
 # ── 流水线阶段定义（数据驱动；改 desc 不影响前端）────────────────────
 STAGES = [
     {"key": "query",     "label": "查询",      "ready": True,
@@ -356,7 +414,7 @@ STAGES = [
     {"key": "audit",     "label": "人工审核",  "ready": True,
      "desc": "逐张看素材 → 放行 / 水印送修 / 质量差换源（铁律：全人工过）"},
     {"key": "pub",       "label": "上品/优化", "ready": True,
-     "desc": "按 type 自动分流：新品-待上架 → _xinpin_shangpin（上品）；老品-需优化 → _batch_optimize（编辑提交+补属性）"},
+     "desc": "按 type 分流：新品 → _xinpin_shangpin；老品 → _batch_optimize。实现可切（面板选脚本/接口）"},
     {"key": "tuiguang",  "label": "推广",      "ready": True,
      "desc": "tuiguang_auto --excel 临时表 --campaigns 未满计划 --no-pop（计划自动取，不写死）"},
 ]
@@ -496,13 +554,19 @@ def handle(action, qs):
         except Exception as e:
             return {"ok": False, "error": str(e)[:80]}
     if action == "repair-status":
+        # 外部系统行为：repair_state.json 跑完不会自清——多天前的「已结束」会一直留在盘上，
+        # 面板若只看内容就天天冒旧横幅（梓帆说的“旧记录赖着不走”）。所以这里把 mtime/age/stale
+        # 一并回给面板，由面板判「是不是本轮产生的」。
         try:
-            import json as _j
             fp = os.path.join(SCRIPTS, "repair_state.json")
-            if os.path.isfile(fp):
-                st = _j.load(io.open(fp, encoding="utf-8"))
-                return {"ok": True, "state": st}
-            return {"ok": True, "state": None}
+            if not os.path.isfile(fp):
+                return {"ok": True, "state": None}
+            with io.open(fp, encoding="utf-8") as f:
+                st = json.load(f)
+            import time as _t
+            age = int(_t.time() - os.path.getmtime(fp))
+            return {"ok": True, "state": st, "mtime": int(os.path.getmtime(fp)),
+                    "age_sec": age, "stale": age > 7200}
         except Exception as e:
             return {"ok": False, "error": str(e)[:80]}
     if action == "material":
@@ -513,6 +577,58 @@ def handle(action, qs):
     if action == "stages":
         # 阶段定义（前端渲染阶段条用）
         return {"ok": True, "stages": STAGES}
+    if action == "settings":
+        return {"ok": True, "settings": get_settings(), "fields": item_fields_def()}
+    if action == "setsetting":
+        # 面板开关类设置（目前就 pub_impl：script / api）
+        patch = {}
+        if qs.get("pub_impl"):
+            patch["pub_impl"] = str(qs.get("pub_impl")).strip()
+        if patch:
+            set_settings(patch)
+        return {"ok": True, "settings": get_settings()}
+    if action == "catset":
+        # 面板选定的类目 → state.settings.category（上品/优化阶段读它）
+        kw = (qs.get("kw") or "").strip()
+        cid = (qs.get("catId") or "").strip()
+        path = qs.get("path")
+        if isinstance(path, str):
+            try:
+                path = json.loads(path)
+            except Exception:
+                path = [path]
+        return {"ok": True, "settings": set_settings(
+            {"category": {"kw": kw, "catId": cid, "path": path or []}})}
+    if action == "catsearch":
+        # 关键词 → catId 候选。命中 cat_map.json 缓存就不启浏览器（秒回）；未命中走 attr_api --search
+        kw = (qs.get("kw") or "").strip()
+        if not kw:
+            return {"ok": False, "error": "缺 kw"}
+        refresh = str(qs.get("refresh") or "").strip() in ("1", "true", "yes")
+        fp = os.path.join(TG, "runtime", "cat_map.json")
+        _out = os.path.join(TG, "runtime", "_cat_search_out.json")
+        try:
+            if os.path.isfile(_out):
+                os.remove(_out)
+        except Exception:
+            pass
+        if not refresh:
+            try:
+                cached = json.load(io.open(fp, encoding="utf-8")).get(kw)
+                if cached and cached.get("candidates"):
+                    return {"ok": True, "kw": kw, "cached": True, "result": cached}
+            except Exception:
+                pass
+        ok, tail = _run_script(os.path.join(TG, "attr_api.py"),
+                               ["--search", kw, "--json-out", _out]
+                               + (["--refresh"] if refresh else []), timeout=600)
+        try:
+            rec = json.load(io.open(_out, encoding="utf-8"))
+        except Exception:
+            return {"ok": False, "error": "搜索失败：%s" % tail[:200]}
+        if not rec.get("candidates"):
+            return {"ok": True, "kw": kw, "cached": False, "result": rec}
+        return {"ok": True, "kw": kw, "cached": False, "result": rec}
     if action == "run":
         # 阶段执行入口：已就绪的转调原 action；未就绪的只提示不动作
         key = (qs.get("stage") or "").strip()
@@ -578,6 +694,30 @@ def handle(action, qs):
             notes = ["预演模式（不提交）"] if _dry else []
             if skip:
                 notes.append("跳过 %d 个（type 未定/双百跳过）：%s" % (len(skip), ",".join(skip[:6])))
+            # 实现可切：脚本(UI) / 接口(API)。默认脚本——接口版目前只能到「照镜子」
+            _impl = (qs.get("impl") or "").strip() or str(get_settings().get("pub_impl") or "script")
+            if _impl == "api":
+                if new:
+                    notes.append("新品 %d 个：接口版还没有「创建」端点（未探索）——仍走脚本" % len(new))
+                if not old:
+                    return {"ok": True, "items": scan_batch(lhs),
+                            "msg": " ／ ".join(notes) or "无可处理项"}
+                _pairs = [(lh, iid) for lh, iid in _ids_of(old) if iid]
+                if not _pairs:
+                    return {"ok": False, "error": "老品缺淘宝ID——先跑「查询」分流"}
+                _cat = (get_settings().get("category") or {}).get("catId") or ""
+                _fp = _write_tmp("opt_api.csv", [[lh, iid] for lh, iid in _pairs], ["料号", "淘宝ID"])
+                _args = ["--plan-batch", _fp]
+                if _cat:
+                    _args += ["--expect-cat", str(_cat)]
+                if str(qs.get("mirror") or "").strip() in ("1", "true", "yes"):
+                    _args.append("--mirror")
+                _ok, _tail = _run_script(os.path.join(TG, "attr_api.py"), _args, timeout=7200)
+                notes.append("接口版（只出计划·不提交）：%s" % (_last_script_out(14) or _tail))
+                if _cat:
+                    notes.append("面板类目=%s（%s）" % ((get_settings().get("category") or {}).get("kw"), _cat))
+                return {"ok": _ok, "items": scan_batch(lhs), "msg": " ／ ".join(notes),
+                        "error": None if _ok else ("接口版失败：" + _tail)}
             if new:
                 ok, tail = _run_script(os.path.join(TG, "_xinpin_shangpin.py"),
                                        ["--only", ",".join(new)] + _extra, timeout=7200)
