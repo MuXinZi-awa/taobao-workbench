@@ -51,6 +51,7 @@ _DEFAULTS = {
     "root": ROOT,
     "runtime": os.path.join(ROOT, "runtime"),
     "cache": os.path.join(ROOT, "cache"),
+    "port": 8900,
     "state": os.path.join(ROOT, "plugins", "pipeline", "state.json"),
     "mat_root": os.path.join(WS, "办公室工作", "素材", "产品素材"),
     "data": os.path.join(WS, "办公室工作", "数据"),
@@ -64,7 +65,7 @@ _DEFAULTS = {
                   os.path.join(_DESKTOP, "推广一键跑", "xyq_key.txt")],
 }
 
-_KEYS = ["root", "runtime", "cache", "state", "mat_root", "data", "product",
+_KEYS = ["root", "runtime", "cache", "port", "state", "mat_root", "data", "product",
          "tg_root", "tg_runtime", "chrome", "key_files"]
 
 
@@ -141,6 +142,11 @@ def _refresh():
     g = globals()
     for k in _KEYS:
         g[k.upper()] = _as_list(k) if k == "key_files" else get(k)
+    try:
+        g["PORT"] = int(str(get("port")).strip())
+    except Exception:
+        g["PORT"] = 8900
+    g["PORT_FILE"] = os.path.join(g["RUNTIME"], "port.json")   # 实际端口写这里，壳靠它找已跑的实例
     g["LOG_KEEP_DAYS"] = os.path.join(g["TG_RUNTIME"], "log_keep_days.json")
     g["TG_PYTHON"] = os.path.join(g["TG_RUNTIME"], "python.exe")   # 推广一键跑自带的解释器
     # Chrome 候选：配置值优先，其后是系统常见安装位（同一个 Chrome，只是路径不同）
@@ -158,6 +164,7 @@ NOTES = {
     "root": ("工作台根目录", "程序所在目录，通常不用改", "目录"),
     "runtime": ("运行目录", "进度、留痕、断点、锁日志都存这里", "目录"),
     "cache": ("缓存·临时目录", "临时文件一律落这里（不再散在脚本旁边）", "目录"),
+    "port": ("内核端口", "默认 8900；被占时内核会自动往后找（面板地址栏里看到的才是实际端口）", "端口号"),
     "state": ("流水线状态文件", "选品/送修/换源的进度状态", "文件"),
     "mat_root": ("素材根目录", "产品素材（封面 / 主图 / 详情图）", "目录"),
     "data": ("数据目录", "推广记录、全量汇总、定价表等数据文件", "目录"),

@@ -313,7 +313,7 @@ body[data-theme="dawn"] .modal-mask { background:rgba(70,110,150,.22); backdrop-
   </div>
 </div>
 <script>
-const API='http://127.0.0.1:8900';
+const API='';   /* 同源：端口不写死（内核可能顺延到 8901…），靠相对地址自己找 */
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 const ICO={plug:'<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="1.5" width="4.6" height="4.6" rx="1"/><rect x="7.9" y="1.5" width="4.6" height="4.6" rx="1"/><rect x="1.5" y="7.9" width="4.6" height="4.6" rx="1"/><rect x="7.9" y="7.9" width="4.6" height="4.6" rx="1"/></svg>',dir:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1.5 3.5h4l1.5 2h7.5v7h-13z"/></svg>',img:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="2.5" width="13" height="11" rx="1"/><circle cx="5.5" cy="6.5" r="1.3"/><path d="M2.5 13l4-4.5 3 3 2-2 2 2.5"/></svg>',pdf:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 1.5h7l3 3v10h-10z"/><path d="M10 1.5v3h3"/><text x="4.5" y="12" font-size="5" fill="currentColor" stroke="none" font-family="sans-serif">PDF</text></svg>',vid:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><path d="M6.5 6v4l3.5-2z" fill="currentColor" stroke="none"/></svg>',csv:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="2" width="13" height="12" rx="1"/><path d="M4 6h8M4 9h8M4 12h5"/></svg>',md:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="2.5" width="13" height="11" rx="1"/><path d="M4.5 11V6.5l2 2 2-2V11"/></svg>',file:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 1.5h7l3 3v10h-10z"/><path d="M10 1.5v3h3"/></svg>'};
 function iconFor(n,isd){ if(isd)return ICO.dir; n=n.toLowerCase();
@@ -728,11 +728,12 @@ async function setAutoStart(){ const d=await api('/api/autostart'); alert(d.msg|
 uiApply();
 function renderAbout(c){ c.innerHTML='<h3>关于</h3><div class="desc">优化管理工作台</div>'
  +'<div class="about-row"><span class="k">版本</span><span id="corever">v…</span></div>'
- +'<div class="about-row"><span class="k">内核</span><span>workbench.py · 8900</span></div>'
+ +'<div class="about-row"><span class="k">内核</span><span>workbench.py · 端口 <b id="corePort">…</b></span></div>'
  +'<div class="about-row"><span class="k">设计</span><span>简单内核 + 插件丰富</span></div>'
  +'<div class="about-row"><span class="k">书桌联动</span><span>当前品素材</span></div>'
  +'<div class="about-row"><span class="k">全盘浏览</span><span>批注工作台</span></div>';
- try{ api('/api/plugins').then(function(d){ var e=document.getElementById('corever'); if(e) e.textContent='v'+((d&&d.core)||'?'); }); }catch(e){} }
+ try{ api('/api/plugins').then(function(d){ var e=document.getElementById('corever'); if(e) e.textContent='v'+((d&&d.core)||'?'); }); }catch(e){}
+ try{ api('/api/ping').then(function(d){ var e=document.getElementById('corePort'); if(e&&d&&d.port) e.textContent=d.port; }); }catch(e){} }
 let searchTimer=null;
 function bindUI(){ const inp=document.getElementById('searchInput'), sg=document.getElementById('suggest');
  const show=async kw=>{ if(!kw){sg.style.display='none';return;} const d=await api('/api/search?q='+encodeURIComponent(kw));

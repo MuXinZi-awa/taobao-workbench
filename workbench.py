@@ -21,7 +21,7 @@ except Exception:
     conn_store = None
 MAT_ROOT = paths.MAT_ROOT
 DATA_DIR = paths.DATA
-PORT = 8900
+PORT = paths.PORT          # 首选端口（设置-通用或 paths.local.json 可改；被占会自动往后顺延）
 
 
 def _refresh_path_consts():
@@ -438,6 +438,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             if p == "/api/plugins":
                 return self._json({"plugins": scan_plugins(), "core": core_version()})
+            if p == "/api/ping":
+                # 固定探针：壳/其它工具靠它确认「这个端口上跑的是工作台」（端口可变，所以不能靠端口号认）
+                return self._json({"app": "workbench", "pid": os.getpid(),
+                                   "port": self.server.server_address[1],
+                                   "core": core_version(), "root": BASE})
             if p == "/api/paths":
                 # 设置-通用：路径项列表（当前生效值 / 默认值 / 来源）
                 return self._json({"ok": True, "config_file": paths._CFG_FP,
@@ -674,9 +679,46 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
 
+def _bind_server():
+    """绑端口：先试配置端口，被占则往后顺延，最后交给系统分配。
+    端口不写死——壳靠 runtime/port.json + /api/ping 认出跑着的实例。"""
+    tried = [PORT] + [PORT + i for i in range(1, 11)] + [0]
+    last = None
+    for p in tried:
+        try:
+            srv = socketserver.ThreadingTCPServer(("127.0.0.1", p), Handler)
+        except OSError as e:
+            last = e
+            continue
+        srv.allow_reuse_address = True
+        srv.daemon_threads = True      # 请求线程跟着主进程走：窗口一关不留幽灵进程
+        return srv, srv.server_address[1]
+    raise RuntimeError("端口都占着（%s）：%s" % (tried[:-1], last))
+
+
+def _write_port_file(port):
+    """把实际端口写下来，供桌面壳/其它工具找到这个实例"""
+    import datetime
+    try:
+        os.makedirs(os.path.dirname(paths.PORT_FILE), exist_ok=True)
+        with open(paths.PORT_FILE, "w", encoding="utf-8") as f:
+            json.dump({"app": "workbench", "port": port, "pid": os.getpid(),
+                       "url": "http://127.0.0.1:%d/" % port, "core": core_version(),
+                       "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+                      f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def serve():
+    """起服务并返回 (srv, 实际端口)；桌面壳也用这个入口"""
+    srv, port = _bind_server()
+    _write_port_file(port)
+    print("优化管理工作台: http://127.0.0.1:%d/" % port)
+    return srv, port
+
+
 if __name__ == "__main__":
     os.chdir(BASE)
-    srv = socketserver.ThreadingTCPServer(("127.0.0.1", PORT), Handler)
-    srv.allow_reuse_address = True
-    print("优化管理工作台: http://127.0.0.1:%d/" % PORT)
-    srv.serve_forever()
+    _srv, _port = serve()
+    _srv.serve_forever()
