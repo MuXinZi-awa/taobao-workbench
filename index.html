@@ -679,12 +679,50 @@ function logKeepSave(){
  var e=document.getElementById('logKeepDays'); var v=e?e.value:30;
  fetch(API+'/api/logkeep',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
   body:'days='+encodeURIComponent(v)}).then(r=>r.json()).then(d=>{ alert(d.ok?('已保存：保留 '+d.days+' 天日志'):('失败 '+(d.error||''))); }); }
+
+/* ===== 设置-通用 · 路径与目录（取值一律走 paths.py，覆盖层是 paths.local.json）===== */
+function pathsPost(url,body,cb){
+ fetch(API+url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
+  .then(r=>r.json()).then(cb); }
+function pathsLoad(){
+ fetch(API+'/api/paths').then(r=>r.json()).then(d=>{
+  var box=document.getElementById('pathsBox'); if(!box) return;
+  if(!d.ok){ box.textContent='读取失败：'+(d.error||''); return; }
+  box.innerHTML=d.keys.map(function(it){
+   var col=it.source==='默认'?'var(--text-m)':'var(--accent,#537D96)';
+   return '<div style="padding:7px 0;border-bottom:.5px solid rgba(0,0,0,.05)">'
+    +'<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:13px">'+esc(it.label)+'</span>'
+    +'<span style="font-size:10px;color:'+col+';border:.5px solid '+col+';border-radius:3px;padding:0 4px">'+it.source+'</span>'
+    +'<span style="flex:1"></span><span style="font-size:10px;color:var(--text-m)">'+(it.kind||'')+'</span></div>'
+    +'<div style="font-size:11px;color:var(--text-m);margin:1px 0 4px">'+esc(it.note)+'</div>'
+    +'<div style="display:flex;gap:6px"><input id="pth_'+it.key+'" value="'+esc(it.value)+'" style="flex:1;min-width:0;border:.5px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">'
+    +'<button class="iconbtn" style="width:auto;padding:0 8px;font-size:12px" onclick="pathsSave(\''+it.key+'\')">保存</button>'
+    +'<button class="iconbtn" style="width:auto;padding:0 8px;font-size:12px" onclick="pathsReset(\''+it.key+'\')">默认</button></div>'
+    +'<div style="font-size:10px;color:var(--text-m);margin-top:2px">默认：'+esc(it.default)+'</div></div>';
+  }).join('');
+ }); }
+function pathsSave(k){
+ var el=document.getElementById('pth_'+k); if(!el) return;
+ var v=(k==='key_files')?el.value.replace(/[;\n]+/g,';'):el.value;
+ pathsPost('/api/paths','key='+encodeURIComponent(k)+'&value='+encodeURIComponent(v),function(d){
+  if(!d.ok){ alert('保存失败：'+(d.error||'')); return; }
+  alert('已保存：'+d.item.label+'\n'+d.item.value); pathsLoad(); }); }
+function pathsReset(k){
+ pathsPost('/api/paths-reset','key='+encodeURIComponent(k||''),function(d){
+  if(!d.ok){ alert('恢复失败：'+(d.error||'')); return; }
+  alert(k?'已恢复默认':'已全部恢复默认'); pathsLoad(); }); }
+function pathsResetAll(){ pathsReset(''); }
 function renderGeneral(c){
  c.innerHTML='<h3>通用</h3><div class="desc">启动与后台</div>'
  +'<div style="background:var(--bg-card);border:.5px solid var(--border);border-radius:var(--r);padding:8px 12px">'
  +'<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div style="font-size:13px">日志保留</div><div style="font-size:11px;color:var(--text-m)">归档日志自动删除前的保留天数（默认30）</div></div><input id="logKeepDays" type="number" min="1" max="365" value="30" style="width:60px;border:.5px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px"><button class="iconbtn" onclick="logKeepSave()" style="width:auto;padding:0 8px;font-size:12px">保存</button></div>'
  +'<div style="display:flex;align-items:center;padding:6px 0;border-bottom:.5px solid rgba(0,0,0,.05)"><div style="flex:1"><div style="font-size:13px">开机自启</div><div style="font-size:11px;color:var(--text-m)">登录 Windows 时自动启动工作台（8900）</div></div><button class="iconbtn" style="width:auto;padding:3px 12px" onclick="setAutoStart()">启用</button></div>'
- +'<div style="display:flex;align-items:center;padding:6px 0"><div style="flex:1"><div style="font-size:13px">锁屏/后台保持运行</div><div style="font-size:11px;color:var(--text-m)">工作台是本地服务——锁屏照常跑（勿睡眠/休眠）</div></div><span style="font-size:11px;color:var(--green)">始终运行</span></div></div>'; }
+ +'<div style="display:flex;align-items:center;padding:6px 0"><div style="flex:1"><div style="font-size:13px">锁屏/后台保持运行</div><div style="font-size:11px;color:var(--text-m)">工作台是本地服务——锁屏照常跑（勿睡眠/休眠）</div></div><span style="font-size:11px;color:var(--green)">始终运行</span></div></div>'
+ +'<div class="set-block" style="margin-top:14px;border-top:.5px solid var(--border);padding-top:12px">'
+ +'<div style="display:flex;align-items:center;margin-bottom:6px"><div style="font-size:14px;font-weight:600">路径与目录</div><span style="flex:1"></span>'
+ +'<button class="iconbtn" style="width:auto;padding:2px 10px;font-size:11px" onclick="pathsResetAll()">全部恢复默认</button></div>'
+ +'<div style="font-size:11px;color:var(--text-m);margin-bottom:8px">工作台各处的目录都从这里取；默认按程序位置自动识别，换机器不用改代码。改完<b>立即生效</b>；<b>正在跑的批处理、调度守护</b>要用新路径需重启。</div>'
+ +'<div id="pathsBox" style="font-size:12px">读取中…</div></div>'; pathsLoad(); }
  logKeepLoad();
 async function setAutoStart(){ const d=await api('/api/autostart'); alert(d.msg||d.error||'完成'); }
 uiApply();

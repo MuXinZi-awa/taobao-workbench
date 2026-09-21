@@ -81,17 +81,27 @@ def _write_template(path, values):
 
 def _load_cfg():
     if os.path.isfile(_CFG_FP):
+        return _read_cfg()
+    # 首次运行：落一份带说明的模板供参考；但不把它当成「用户配置」——
+    # 否则每个键都显示「来自本地配置」，看不出哪些是默认、哪些是人改过的。
+    # 真正的 paths.local.json 只在用户改过某键后才生成，只装被改过的键。
+    vals = {}
+    for k in _KEYS:
+        v = os.environ.get("WB_" + k.upper())
+        vals[k] = v if v else _DEFAULTS[k]
+    _write_template(_CFG_FP + ".example", vals)
+    return {}
+
+
+def _read_cfg():
+    """只读配置（reload 用：不会去重建模板）"""
+    if os.path.isfile(_CFG_FP):
         try:
             with open(_CFG_FP, encoding="utf-8") as f:
                 d = json.load(f)
             return d if isinstance(d, dict) else {}
         except Exception:
             return {}
-    cfg = {}
-    for k in _KEYS:
-        v = os.environ.get("WB_" + k.upper())
-        cfg[k] = v if v else _DEFAULTS[k]
-    _write_template(_CFG_FP, cfg)
     return {}
 
 
@@ -119,28 +129,114 @@ def _as_list(key):
     return list(_DEFAULTS.get(key) or [])
 
 
-# ---- 对外名字（业务代码只引用这些）----
-ROOT = get("root")
-RUNTIME = get("runtime")          # 运行目录：进度、留痕、断点、锁日志
-CACHE = get("cache")              # 缓存/临时目录：临时文件一律落这里
-STATE = get("state")
-MAT_ROOT = get("mat_root")
-DATA = get("data")
-PRODUCT = get("product")
-TG_ROOT = get("tg_root")
-TG_RUNTIME = get("tg_runtime")
-CHROME = get("chrome")
-KEY_FILES = _as_list("key_files")
+# ---- 对外名字（业务代码只引用这些；改配置后由 reload() 刷新）----
+def _refresh():
+    """把配置解析结果写回本模块的对外名字"""
+    g = globals()
+    for k in _KEYS:
+        g[k.upper()] = _as_list(k) if k == "key_files" else get(k)
+    g["LOG_KEEP_DAYS"] = os.path.join(g["TG_RUNTIME"], "log_keep_days.json")
+    g["TG_PYTHON"] = os.path.join(g["TG_RUNTIME"], "python.exe")   # 推广一键跑自带的解释器
+    # Chrome 候选：配置值优先，其后是系统常见安装位（同一个 Chrome，只是路径不同）
+    g["CHROME_CANDIDATES"] = [g["CHROME"]] + [p for p in (
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ) if p != g["CHROME"]]
 
-# 跨脚本复用的具体文件（同一定义，避免多处各写一遍字面量）
-LOG_KEEP_DAYS = os.path.join(TG_RUNTIME, "log_keep_days.json")
-TG_PYTHON = os.path.join(TG_RUNTIME, "python.exe")      # 推广一键跑自带的解释器
 
-# Chrome 候选：配置值优先，其后是系统常见安装位（同一个 Chrome，只是路径不同）
-CHROME_CANDIDATES = [CHROME] + [p for p in (
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-) if p != CHROME]
+_refresh()
+
+# 面板/设置用元信息：键 → (人话名称, 一句说明, 有几种候选可填)
+KEYS = list(_KEYS)
+NOTES = {
+    "root": ("工作台根目录", "程序所在目录，通常不用改", "目录"),
+    "runtime": ("运行目录", "进度、留痕、断点、锁日志都存这里", "目录"),
+    "cache": ("缓存·临时目录", "临时文件一律落这里（不再散在脚本旁边）", "目录"),
+    "state": ("流水线状态文件", "选品/送修/换源的进度状态", "文件"),
+    "mat_root": ("素材根目录", "产品素材（封面 / 主图 / 详情图）", "目录"),
+    "data": ("数据目录", "推广记录、全量汇总、定价表等数据文件", "目录"),
+    "product": ("产品目录", "按料号落盘的工作目录", "目录"),
+    "tg_root": ("推广一键跑目录", "外部脚本本体（上品/推广/采集）", "目录"),
+    "tg_runtime": ("推广一键跑·运行目录", "它的进度、日志都在这里", "目录"),
+    "chrome": ("Chrome 程序", "自动登录与采集用的浏览器", "文件"),
+    "key_files": ("密钥查找顺序", "多个候选路径，按先后顺序找 xyq_key.txt", "列表，用 ; 分隔"),
+}
+
+
+def default_of(key):
+    """该项的默认值（相对程序位置/主目录推导出来的那个）"""
+    return list(_DEFAULTS.get(key)) if isinstance(_DEFAULTS.get(key), list) else _DEFAULTS.get(key)
+
+
+def _write_cfg(d):
+    body = dict(d)
+    body.setdefault("_说明", "工作台路径本地覆盖。不进版本控制。只写需要改的键；未写的走默认推导（相对程序位置）。")
+    body.setdefault("_环境变量", "也可用环境变量覆盖：WB_ROOT / WB_RUNTIME / WB_CACHE / WB_STATE / "
+                                "WB_MAT_ROOT / WB_DATA / WB_PRODUCT / WB_TG_ROOT / WB_TG_RUNTIME / WB_CHROME")
+    with open(_CFG_FP, "w", encoding="utf-8") as f:
+        json.dump(body, f, ensure_ascii=False, indent=2)
+
+
+def set_value(key, value):
+    """写一项到 paths.local.json 并即时刷新（面板保存走这里）"""
+    if key not in _KEYS:
+        raise KeyError("未知键: %s" % key)
+    d = _read_cfg()
+    if key == "key_files":
+        items = [x.strip() for x in str(value).split(";") if x.strip()]
+        if not items:
+            d.pop(key, None)
+        else:
+            d[key] = items
+    else:
+        v = str(value).strip()
+        if v:
+            d[key] = v
+        else:
+            d.pop(key, None)          # 清空 = 回默认（不把空串写进配置）
+    _write_cfg(d)
+    reload()
+    return globals().get(key.upper())
+
+
+def reset(key=None):
+    """恢复默认：从本地配置里删掉该键（删掉才回到推导，写死默认值又变成硬编码）"""
+    d = _read_cfg()
+    if key:
+        d.pop(key, None)
+    else:
+        for k in _KEYS:
+            d.pop(k, None)
+    _write_cfg(d)
+    reload()
+    return globals().get(key.upper()) if key else None
+
+
+def reload():
+    """重读配置并刷新本模块（面板改完路径后调用，让同一进程内立即生效）"""
+    global _CFG
+    _CFG = _read_cfg()
+    _refresh()
+
+
+def info(key):
+    """面板展示用：当前生效值 / 默认值 / 来源"""
+    label, note, kind = NOTES.get(key, (key, "", ""))
+    v = globals().get(key.upper())
+    if isinstance(v, list):
+        shown = ";".join(v)
+    else:
+        shown = v or ""
+    if isinstance(_CFG.get(key), (str, list)) and _CFG.get(key):
+        src = "本地配置"
+    elif os.environ.get("WB_" + key.upper()):
+        src = "环境变量"
+    else:
+        src = "默认"
+    dv = default_of(key)
+    return {"key": key, "label": label, "note": note, "kind": kind,
+            "value": shown, "default": ";".join(dv) if isinstance(dv, list) else (dv or ""),
+            "source": src}
 
 
 def under(base, *parts):

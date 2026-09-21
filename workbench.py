@@ -24,6 +24,14 @@ DATA_DIR = paths.DATA
 PORT = 8900
 
 
+def _refresh_path_consts():
+    """设置里改了路径后，内核自己捕获过的那几个常量要跟着换——否则得重启才生效。
+    其它地方都是用到时才读 paths.X，不用管。"""
+    global MAT_ROOT, DATA_DIR
+    MAT_ROOT = paths.MAT_ROOT
+    DATA_DIR = paths.DATA
+
+
 def core_version():
     """内核版本 = CHANGELOG 首条 ## vX.Y.Z（单一来源，永不滞后）"""
     try:
@@ -262,6 +270,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return self._json({"ok": True, "days": days})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:80]})
+            if p == "/api/paths":
+                # 设置-通用：改路径（写 paths.local.json，内核立即改用新值）
+                try:
+                    import urllib.parse
+                    length = int(self.headers.get("Content-Length") or 0)
+                    q = urllib.parse.parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
+                    key = (q.get("key", [""])[0] or "").strip()
+                    paths.set_value(key, q.get("value", [""])[0])
+                    _refresh_path_consts()
+                    return self._json({"ok": True, "item": paths.info(key)})
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)[:120]})
+            if p == "/api/paths-reset":
+                # 恢复默认：从本地配置里删掉该键（删掉才回到推导）
+                try:
+                    import urllib.parse
+                    length = int(self.headers.get("Content-Length") or 0)
+                    q = urllib.parse.parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
+                    key = (q.get("key", [""])[0] or "").strip()
+                    paths.reset(key or None)
+                    _refresh_path_consts()
+                    return self._json({"ok": True, "keys": [paths.info(k) for k in paths.KEYS]})
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)[:120]})
             return self._json({"ok": False, "error": "未知 POST"}, 404)
         except Exception as e:
             return self._json({"error": str(e)[:100]}, 500)
@@ -406,6 +438,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             if p == "/api/plugins":
                 return self._json({"plugins": scan_plugins(), "core": core_version()})
+            if p == "/api/paths":
+                # 设置-通用：路径项列表（当前生效值 / 默认值 / 来源）
+                return self._json({"ok": True, "config_file": paths._CFG_FP,
+                                   "keys": [paths.info(k) for k in paths.KEYS]})
             if p == "/api/logkeep":
                 # 日志保留天数（设置-通用可改；清理归档超期删除）
                 try:
