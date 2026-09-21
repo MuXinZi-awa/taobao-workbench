@@ -7,12 +7,20 @@
 """
 import os, io, json, time, sqlite3, subprocess, datetime, sys
 
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 WB = os.path.dirname(os.path.dirname(BASE))          # workbench 目录
 DATA = os.path.join(WB, "data")
 DB = os.path.join(DATA, "schedule.db")
-TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
-PY = os.path.join(TG, "runtime", "python.exe")
+TG = paths.TG_ROOT
+PY = paths.TG_PYTHON
 DAEMON = os.path.join(BASE, "daemon.py")
 LOCK = os.path.join(DATA, "scheduler.lock")
 HB = os.path.join(DATA, "scheduler_heartbeat.json")

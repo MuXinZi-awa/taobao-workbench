@@ -9,9 +9,17 @@ import sys, os, re
 sys.stdout.reconfigure(encoding="utf-8")
 from playwright.sync_api import sync_playwright
 
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
+
 CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-DEFAULT_OUT = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\产品素材"
+DEFAULT_OUT = paths.MAT_ROOT
 
 
 def _norm(s):

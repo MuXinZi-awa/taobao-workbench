@@ -18,14 +18,21 @@ import urllib.parse
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
+
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in sys.path:
+    sys.path.insert(0, _d)
+import paths
 def _profile_dir():
     """登录态 profile：跟随**激活的店铺连接**（多账号隔离）；取不到回退 .profile"""
     try:
-        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        _wb = paths.ROOT
         if _wb not in sys.path:
             sys.path.insert(0, _wb)
         # acct_profile.py 在「推广一键跑」——不把它加进 sys.path 会 import 失败并静默回退 .profile（=没登录态）
-        for _cand in (r"C:\Users\jdt-pty\Desktop\推广一键跑", BASE):
+        for _cand in (paths.TG_ROOT, BASE):
             if os.path.isdir(_cand) and _cand not in sys.path:
                 sys.path.insert(0, _cand)
         import acct_profile
@@ -46,7 +53,7 @@ SELL_URL = "https://myseller.taobao.com/home.htm/SellManage/on_sale?current=1&pa
 def _cred():
     try:
         import sys as _s
-        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        _wb = paths.ROOT
         if _wb not in _s.path:
             _s.path.insert(0, _wb)
         import conn_store
@@ -64,9 +71,7 @@ ACCOUNT, PASSWORD = _cred()
 
 
 def find_chrome():
-    for p in (r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-              r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-              r"C:\Users\jdt-pty\AppData\Local\Google\Chrome\Application\chrome.exe"):
+    for p in paths.CHROME_CANDIDATES:
         if os.path.isfile(p):
             return p
     return None

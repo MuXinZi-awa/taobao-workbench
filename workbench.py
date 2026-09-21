@@ -11,14 +11,16 @@ import os
 import glob
 import re
 
+import paths            # 机器特有路径的唯一出处（换机/换目录只改 paths.local.json）
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 PLUGINS_DIR = os.path.join(BASE, "plugins")
 try:
     import conn_store  # 连接导航（SQLite+DPAPI）
 except Exception:
     conn_store = None
-MAT_ROOT = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\产品素材"
-DATA_DIR = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\数据"
+MAT_ROOT = paths.MAT_ROOT
+DATA_DIR = paths.DATA
 PORT = 8900
 
 
@@ -256,7 +258,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     q = urllib.parse.parse_qs(body)
                     days = int(q.get("days", ["30"])[0])
                     days = max(1, min(days, 365))
-                    open(r"C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime\\log_keep_days.json", "w", encoding="utf-8").write(str(days))
+                    open(paths.LOG_KEEP_DAYS, "w", encoding="utf-8").write(str(days))
                     return self._json({"ok": True, "days": days})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:80]})
@@ -407,7 +409,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if p == "/api/logkeep":
                 # 日志保留天数（设置-通用可改；清理归档超期删除）
                 try:
-                    v = int(open(r"C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime\\log_keep_days.json", encoding="utf-8").read().strip())
+                    v = int(open(paths.LOG_KEEP_DAYS, encoding="utf-8").read().strip())
                 except Exception:
                     v = 30
                 return self._json({"ok": True, "days": v})
@@ -416,7 +418,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 import urllib.parse
                 q = urllib.parse.parse_qs(p.split("?", 1)[1])
                 fn = q.get("f", ["tg_panel.log"])[0]
-                log_root = r"C:\Users\jdt-pty\Desktop\推广一键跑\runtime"
+                log_root = paths.TG_RUNTIME
                 fp2 = os.path.join(log_root, os.path.basename(fn))
                 all_mode = q.get("all", ["0"])[0] == "1"
                 if os.path.isfile(fp2):
@@ -487,7 +489,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # 浏览器登录态检测（chrome_profile cookie 有效性——跑一次查询探测）
                 try:
                     import subprocess
-                    TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+                    TG = paths.TG_ROOT
                     RT = os.path.join(TG, "runtime", "python.exe")
                     r = subprocess.run([RT, "-X", "utf8", "-u", os.path.join(TG, "_dual_one.py"), "1379668", ""],
                                        capture_output=True, timeout=90)
@@ -502,7 +504,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 import subprocess
                 try:
                     chrome = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-                    TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+                    TG = paths.TG_ROOT
                     prof, conn = _acct_profile(TG)
                     os.makedirs(prof, exist_ok=True)
                     subprocess.Popen([chrome, "--user-data-dir=" + prof,
@@ -515,7 +517,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if p == "/api/browser-clear":
                 # 清除 Cookie：删 chrome_profile cookie 文件（登出）——重登需引导登录
                 try:
-                    _tg = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+                    _tg = paths.TG_ROOT
                     prof = _acct_profile(_tg)[0]      # 只清当前激活连接的 profile
                     removed = []
                     for cand in [os.path.join(prof, "Default", "Cookies"),
@@ -538,7 +540,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                                          r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
                     exe = os.path.join(BASE, "workbench.py")
-                    py = r"C:\Users\jdt-pty\Desktop\推广一键跑\runtime\python.exe"
+                    py = paths.TG_PYTHON
                     cmd = '"%s" "%s"' % (py, exe)
                     winreg.SetValueEx(key, "OHWorkbench", 0, winreg.REG_SZ, cmd)
                     winreg.CloseKey(key)

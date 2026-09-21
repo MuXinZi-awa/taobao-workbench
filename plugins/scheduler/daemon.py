@@ -8,14 +8,22 @@
 import os, io, sys, json, time, sqlite3, subprocess, datetime, calendar
 import msvcrt
 
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 WB = os.path.dirname(os.path.dirname(BASE))
 DATA = os.path.join(WB, "data")
 DB = os.path.join(DATA, "schedule.db")
 HB = os.path.join(DATA, "scheduler_heartbeat.json")
 LOG = os.path.join(DATA, "scheduler.log")
-TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
-PY = os.path.join(TG, "runtime", "python.exe")
+TG = paths.TG_ROOT
+PY = paths.TG_PYTHON
 
 sys.path.insert(0, BASE)
 import server as S          # 复用 ACTIONS 注册表与库连接

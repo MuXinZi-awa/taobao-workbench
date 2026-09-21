@@ -13,11 +13,16 @@ import urllib.request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in sys.path:
+    sys.path.insert(0, _d)
+import paths
+
 # 找 xyq key
 KEY = ""
-for cand in [r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\xyq_key.txt",
-             r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\xyq_key.txt",
-             r"C:\Users\jdt-pty\Desktop\推广一键跑\xyq_key.txt"]:
+for cand in paths.KEY_FILES:
     if os.path.isfile(cand):
         KEY = open(cand).read().strip()
         break
@@ -306,7 +311,7 @@ def main():
     lh = sys.argv[1] if len(sys.argv) > 1 else None
     img = sys.argv[2] if len(sys.argv) > 2 else None
     usage = sys.argv[3] if len(sys.argv) > 3 else "cover"
-    out = sys.argv[4] if len(sys.argv) > 4 else r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\产品\%s" % lh
+    out = sys.argv[4] if len(sys.argv) > 4 else os.path.join(paths.PRODUCT, lh)
     if not lh or not img or not os.path.isfile(img):
         print("用法: python ai_schedule.py 料号 参考图.jpg cover|white|detail|main2-5|all [输出目录]")
         return

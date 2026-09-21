@@ -8,10 +8,18 @@
 """
 import os, io, csv, json, subprocess, datetime
 
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
+
 BASE = os.path.dirname(os.path.abspath(__file__))
-TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
-TG_REC = os.path.join(r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\数据", "推广记录.csv")
-ALL_CSV = os.path.join(r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\数据", "上品全量汇总.csv")
+TG = paths.TG_ROOT
+TG_REC = os.path.join(paths.DATA, "推广记录.csv")
+ALL_CSV = os.path.join(paths.DATA, "上品全量汇总.csv")
 PLAN_STATE = os.path.join(TG, "runtime", "plan_state.json")
 # 11 计划组真名（从 campaign/horizontal/findPage.json 抓——存 runtime/plan_names.json）
 PLAN_NAMES_FP = os.path.join(TG, "runtime", "plan_names.json")
@@ -28,7 +36,7 @@ def _acct():
     """当前激活店铺连接（多账号：计划/容量按账号取）"""
     try:
         import sys as _s
-        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        _wb = paths.ROOT
         if _wb not in _s.path:
             _s.path.insert(0, _wb)
         import conn_store

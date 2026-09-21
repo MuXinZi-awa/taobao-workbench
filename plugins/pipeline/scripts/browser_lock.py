@@ -17,8 +17,16 @@
 import os, io, time, msvcrt, datetime
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
 # 锁必须共用同一把——插件目录里的副本也要锁到「推广一键跑\runtime」（否则会锁到另一个文件 = 没锁）
-_TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+_TG = paths.TG_ROOT
 _RT = os.path.join(_TG, "runtime")
 RUNTIME = _RT if os.path.isdir(_RT) else os.path.join(BASE, "runtime")
 LOCK = os.path.join(RUNTIME, "chrome_profile.lock")

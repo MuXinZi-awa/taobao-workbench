@@ -14,15 +14,23 @@ import subprocess
 import sys
 import time
 
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
+
 BASE = os.path.dirname(os.path.abspath(__file__))
-TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+TG = paths.TG_ROOT
 TMP = os.path.join(TG, "runtime", "_pl_tmp")
 PROG = os.path.join(TG, "runtime", "progress.json")
 LEDGER = os.path.join(TG, "runtime", "stock_edit.csv")
 LAST = os.path.join(TG, "runtime", "stock_last.json")
 RUNLOG = os.path.join(TG, "runtime", "stock_edit_run.log")
 STOCK_PY = os.path.join(TG, "stock_api.py")
-STATE = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench\plugins\pipeline\state.json"
+STATE = paths.STATE
 DEFAULT_QTY = "50000"
 
 PY = sys.executable

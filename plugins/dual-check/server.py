@@ -6,13 +6,21 @@
 import os
 import subprocess
 
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
+
 BASE = os.path.dirname(os.path.abspath(__file__))
-TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
-RT = os.path.join(TG, "runtime", "python.exe")
+TG = paths.TG_ROOT
+RT = paths.TG_PYTHON
 
 
 import datetime as _dt
-_LOG_FP = r"C:\Users\jdt-pty\Desktop\推广一键跑\runtime\dual_check.log"
+_LOG_FP = os.path.join(paths.TG_RUNTIME, "dual_check.log")
 
 
 _rot_day = None
@@ -38,7 +46,7 @@ def _maybe_rotate():
         import glob as _g3, time as _t3
         _kd = 30
         try:
-            _kd = int(open(r"C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime\\log_keep_days.json", encoding="utf-8").read().strip())
+            _kd = int(open(paths.LOG_KEEP_DAYS, encoding="utf-8").read().strip())
         except Exception:
             pass
         _base = _LOG_FP.replace(".log", "")
@@ -65,7 +73,7 @@ def _acct():
     """当前激活店铺连接（多账号：面板显示 + 数据过滤）"""
     try:
         import sys as _s
-        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        _wb = paths.ROOT
         if _wb not in _s.path:
             _s.path.insert(0, _wb)
         import conn_store

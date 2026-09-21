@@ -3,8 +3,15 @@
 只读本地 JSON，不碰浏览器（采集由 采集报表数据.bat 单独跑）。
 """
 import os, io, json, time
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
 
-TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+TG = paths.TG_ROOT
 DATA = os.path.join(TG, "runtime", "report_data.json")
 
 

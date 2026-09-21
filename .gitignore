@@ -31,3 +31,8 @@ plugins/*/scripts/.profile/
 *.pma
 *.baf
 *.baj
+
+# 本地路径覆盖（可能含机器特有的外部路径）与运行/缓存产物
+paths.local.json
+runtime/
+cache/

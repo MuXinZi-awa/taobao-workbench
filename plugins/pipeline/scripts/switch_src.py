@@ -10,8 +10,16 @@ from concurrent.futures import ThreadPoolExecutor
 BASE = os.path.dirname(os.path.abspath(__file__))
 SD = os.path.dirname(os.path.abspath(__file__))
 TG = SD
-SUCAI = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\产品素材"
-STATE = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench\plugins\pipeline\state.json"
+
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
+SUCAI = paths.MAT_ROOT
+STATE = paths.STATE
 LOG_FP = os.path.join(SD, "repair.log")   # 复用送修日志
 ST_FP = os.path.join(SD, "repair_state.json")  # 复用进度条
 TMPROOT = os.path.join(SD, "_tmp_src")

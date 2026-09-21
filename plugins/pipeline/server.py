@@ -2,14 +2,22 @@
 """流水线插件 server：状态读取（只读调用层）"""
 import json, os, io, sys, csv, subprocess
 
+import sys as _sys
+_d = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
+    _d = os.path.dirname(_d)
+if _d not in _sys.path:
+    _sys.path.insert(0, _d)
+import paths
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATE_FP = os.path.join(ROOT, "state.json")
-TG = r"C:\Users\jdt-pty\Desktop\推广一键跑"
+TG = paths.TG_ROOT
 PBASE = os.path.dirname(os.path.abspath(__file__))   # 插件目录
 SCRIPTS = os.path.join(PBASE, "scripts")             # 插件内脚本（自包含）
 PY = sys.executable                                  # 工作台 python（含依赖）
-SUCAI = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\产品素材"
-TG_REC = os.path.join(r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\数据", "推广记录.csv")
+SUCAI = paths.MAT_ROOT
+TG_REC = os.path.join(paths.DATA, "推广记录.csv")
 
 def load_state():
     try:
@@ -24,7 +32,7 @@ def _acct():
     """当前激活店铺连接（多账号：面板显示 + 数据过滤）"""
     try:
         import sys as _s
-        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
+        _wb = paths.ROOT
         if _wb not in _s.path:
             _s.path.insert(0, _wb)
         import conn_store
@@ -145,7 +153,7 @@ def scan_batch(lhs):
     return items
 
 import datetime as _dt
-_LOG_FP = r"C:\Users\jdt-pty\Desktop\推广一键跑\runtime\pipeline.log"
+_LOG_FP = os.path.join(paths.TG_RUNTIME, "pipeline.log")
 
 
 _rot_day = None
@@ -171,7 +179,7 @@ def _maybe_rotate():
         import glob as _g3, time as _t3
         _kd = 30
         try:
-            _kd = int(open(r"C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime\\log_keep_days.json", encoding="utf-8").read().strip())
+            _kd = int(open(paths.LOG_KEEP_DAYS, encoding="utf-8").read().strip())
         except Exception:
             pass
         _base = _LOG_FP.replace(".log", "")
