@@ -15,13 +15,19 @@ runtime、Chrome 安装位置」这些东西本来就不在程序目录里，靠
 """
 import json
 import os
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CFG_NAME = "paths.local.json"
 
 
 def _find_program_root(start):
-    """向上找程序根：插件脚本跑在子目录里，不能假设层级深度，认标志文件更稳。"""
+    """程序根。两种运行方式都要能走：
+      · 打包后（exe）：根 = exe 所在目录——打包后没有 workbench.py 这个文件，向上找不到
+      · 源码运行：向上找带 workbench.py 的目录（插件脚本跑在子目录里，不能假设层级深度）
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
     d = start
     while True:
         if os.path.isfile(os.path.join(d, "workbench.py")):

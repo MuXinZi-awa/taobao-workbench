@@ -37,3 +37,10 @@ paths.local.json
 paths.local.example.json
 runtime/
 cache/
+
+# 打包产物（exe 几十 MB，绝不入库；app 文件夹在仓外，这几条是防线）
+dist/
+build/
+_build_wb/
+*.spec
+*.exe
