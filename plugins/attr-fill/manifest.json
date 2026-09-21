@@ -1,0 +1,10 @@
+{
+  "id": "attr-fill",
+  "name": "补必填",
+  "version": "0.1.0",
+  "desc": "老品补必填项（品牌/接口类型）：读编辑页校验 → 补值 → 复查「错误(0)」→（可选）提交",
+  "panel": "panel.html",
+  "has_server": true,
+  "icon": "🧩",
+  "log": "reqfill_run.log"
+}

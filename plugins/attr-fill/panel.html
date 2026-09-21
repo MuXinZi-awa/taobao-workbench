@@ -1,0 +1,251 @@
+<!doctype html><meta charset="utf-8">
+<style>
+  body{font-family:inherit;margin:0;background:transparent;color:var(--text,#333);font-size:13px}
+  input,select,textarea,button{font-family:inherit;font-size:13px}
+  .wrap{display:flex;flex-direction:column;gap:10px;padding:2px}
+  .card{background:var(--card,#fffdf7);border:.5px solid var(--border,#ddd);border-radius:var(--r,8px);padding:10px 12px}
+  .card h3{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--text-l,#888);letter-spacing:.3px}
+  .ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+  .fld{display:flex;align-items:center;gap:6px}
+  .lab{font-size:12px;color:var(--text-l,#888);white-space:nowrap}
+  input[type=text],input[type=number],select{
+    border:.5px solid var(--border,#ccc);border-radius:6px;padding:6px 9px;background:#fffdf7;color:var(--text,#333)}
+  input[type=number]{width:80px;text-align:right}
+  textarea{width:100%;box-sizing:border-box;min-height:96px;border:.5px solid var(--border,#ccc);border-radius:8px;
+    padding:9px 10px;line-height:1.6;background:#fffdf7;color:var(--text,#333);resize:vertical}
+  textarea.over{border-color:var(--accent,#4a7cf7);background:rgba(74,124,247,.06)}
+  button{border:0;border-radius:7px;padding:7px 15px;cursor:pointer;background:var(--accent,#4a7cf7);color:#fff}
+  button:disabled{opacity:.45;cursor:default}
+  button.ghost{background:transparent;border:.5px solid var(--border,#ccc);color:var(--text,#333)}
+  .hint{font-size:11.5px;color:var(--text-m,#999);line-height:1.6}
+  .msg{font-size:12px;color:var(--text-l,#888);min-height:17px}
+  .prog{display:none;align-items:center;gap:8px;padding:6px 10px;border:.5px solid var(--accent,#4a7cf7);
+    border-radius:7px;color:var(--accent,#4a7cf7);background:rgba(74,124,247,.06);font-size:12px}
+  .tabs{display:flex;gap:4px;margin-bottom:8px}
+  .tab{padding:4px 11px;border:.5px solid var(--border,#ddd);border-radius:6px;font-size:12px;cursor:pointer;
+    color:var(--text-l,#888);background:transparent;border-bottom-left-radius:0;border-bottom-right-radius:0}
+  .tab.on{color:var(--accent,#4a7cf7);border-color:var(--accent,#4a7cf7);background:rgba(74,124,247,.07);font-weight:600}
+  .tblwrap{overflow:auto;max-height:46vh;border:.5px solid var(--border,#eee);border-radius:7px}
+  table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
+  th,td{border-bottom:.5px solid var(--border,#eee);padding:6px 8px;text-align:left;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  th{position:sticky;top:0;z-index:1;background:var(--bg-card,#fbf9f4);font-weight:600;color:var(--text-l,#666)}
+  td.ok{color:var(--green,#2a7a3a)}td.bad{color:var(--danger,#d33)}td.dim{color:var(--text-m,#999)}
+  .empty{padding:18px;text-align:center;color:var(--text-m,#aaa);font-size:12px}
+  .tag{display:inline-block;padding:0 5px;border-radius:4px;font-size:11px;background:rgba(74,124,247,.1);color:var(--accent,#4a7cf7)}
+  .tag.rec{background:rgba(42,122,58,.12);color:var(--green,#2a7a3a)}
+</style>
+
+<div class="wrap">
+  <div class="card">
+    <h3>操作</h3>
+    <div class="ctl">
+      <div class="fld"><span class="lab">间隔</span><input id="gap" type="number" value="2.5" step="0.5" style="width:74px"><span class="lab">秒/品</span></div>
+      <div class="fld"><span class="lab">最多</span><input id="limit" type="number" value="0" style="width:74px"><span class="lab">个（0=不限）</span></div>
+      <label class="lab" title="补到「错误(0)」后真点一次「提交宝贝信息」（写进商品）。没到错误(0)不提交。">
+        <input type="checkbox" id="submit" checked> 补完即提交</label>
+      <label class="lab" title="跳过留痕里已到「错误(0)」的品（按账号分）">
+        <input type="checkbox" id="resume" checked> 断点续跑</label>
+    </div>
+    <div class="hint" id="hint">品牌取 brand_map 的采集原始值（TE Connectivity/BOSCH…），接口类型取属性清单的采集原词；认不到就停手，不模糊硬填。改完读**编辑页自己渲染的「错误(N)」**验收，不看照镜子返回体。</div>
+    <div class="ctl" style="margin-top:8px">
+      <button id="go" onclick="start()">▶ 开始补必填</button>
+      <button class="ghost" onclick="clearAll()">清空</button>
+      <span class="msg" id="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>指定商品</h3>
+    <textarea id="rows" placeholder="粘一列料号或淘宝ID（一行一个）
+也支持 料号,淘宝ID 两列
+—— 或者直接把 csv/xlsx 拖进来"></textarea>
+    <div class="hint" style="margin-top:6px">
+      只写料号也行（先查流水线 state，查不到再按位数分流）。已到「错误(0)」的会自动跳过（想重跑勾掉「断点续跑」）。
+    </div>
+  </div>
+
+  <div class="prog" id="bar"></div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab on" id="tabNow" onclick="switchTab('now')">本次结果</div>
+      <div class="tab" id="tabHis" onclick="switchTab('his')">历史留痕</div>
+    </div>
+    <div class="tblwrap">
+      <table>
+        <colgroup>
+          <col style="width:13%"><col style="width:14%"><col style="width:11%">
+          <col style="width:37%"><col style="width:10%"><col style="width:15%">
+        </colgroup>
+        <thead><tr>
+          <th>料号</th><th>淘宝ID</th><th>原错误</th><th>补了什么</th><th>现错误</th><th>结果</th>
+        </tr></thead>
+        <tbody id="tb"><tr><td colspan="6" class="empty">还没有结果</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="../../vendor/xlsx.min.js"></script>
+<script>
+const P = "/api/plg/attr-fill/";
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+let timer = null, tab = 'now';
+
+function errTxt(n){ return (n===null||n===undefined||n==='') ? '—' : ('错误('+n+')'); }
+function fillsTxt(fills){
+  if(!fills || !fills.length) return '—';
+  return fills.map(f=>{
+    const s = f.source || '';
+    const tag = (s.indexOf('brand_map') >= 0) ? '<span class="tag rec">brand_map·采集</span>'
+              : (s.indexOf('推荐') >= 0 ? '<span class="tag rec">推荐</span>' : '<span class="tag">属性清单·原词</span>');
+    return esc(f.label)+'='+esc(f.value)+' '+tag;
+  }).join('；');
+}
+function rowHTML(lh,tid,eb,fill,ea,res,cls){
+  return '<tr><td>'+esc(lh||'—')+'</td><td>'+esc(tid||'—')+'</td>'
+    +'<td class="'+(eb==='0'?'ok':'bad')+'">'+esc(errTxt(eb))+'</td>'
+    +'<td>'+fill+'</td>'
+    +'<td class="'+(ea==='0'?'ok':'bad')+'">'+esc(errTxt(ea))+'</td>'
+    +'<td class="'+cls+'">'+res+'</td></tr>';
+}
+
+async function start(){
+  if(!$('#rows').value.trim()){ $('#msg').textContent='先粘一列料号或淘宝ID'; return; }
+  $('#go').disabled = true; $('#msg').textContent = '启动中…';
+  try{
+    const d = await fetch(P+'start', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({rows: $('#rows').value, gap: $('#gap').value, limit: $('#limit').value,
+        submit: $('#submit').checked ? 1 : '', resume: $('#resume').checked ? 1 : 0})}).then(r=>r.json());
+    if(!d.ok){ $('#msg').textContent='✗ '+(d.error||'启动失败'); $('#go').disabled=false; return; }
+    $('#msg').textContent = d.msg;
+    switchTab('now');
+    $('#tb').innerHTML = '<tr><td colspan="6" class="empty">跑起来了…（首次要起浏览器，约 10-20 秒）</td></tr>';
+    poll(true);
+  }catch(e){ $('#msg').textContent='✗ '+e; $('#go').disabled=false; }
+}
+
+async function poll(first){
+  clearTimeout(timer);
+  let alive = false;
+  try{
+    const d = await fetch(P+'progress').then(r=>r.json());
+    const p = d.progress;
+    if(p && p.total){
+      $('#bar').style.display='flex';
+      const age = p.updated ? Math.floor((Date.now()-Date.parse(String(p.updated).replace(' ','T')))/1000) : 1e9;
+      alive = !!p.running && age < 120;
+      let s = '🧩 '+(p.note||'补必填')+' '+(p.done||0)+'/'+(p.total||0);
+      if(p.current) s += ' · 当前 '+p.current;
+      s += ' · 错误(0) '+(p.ok||0)+' 跳过'+(p.skip||0)+' 停手失败'+(p.fail||0);
+      if(p.running && !alive) s += ' · 疑似中断（最后更新 '+String(p.updated||'').slice(11)+'，重跑会接着跑）';
+      else if(!p.running) s += ' · 已结束';
+      $('#bar').textContent = s;
+      if(!p.running){ alive=false; await showResult(); $('#go').disabled=false; }
+    } else if(first){
+      $('#bar').style.display='flex';
+      $('#bar').textContent='⏳ 等子进程起来…（首次要起浏览器，约 10-20 秒）';
+      alive = true;
+    }
+  }catch(e){}
+  timer = setTimeout(()=>poll(false), alive ? 2000 : 6000);
+}
+
+async function showResult(){
+  try{
+    const d = await fetch(P+'result').then(r=>r.json());
+    const rows = d.rows||[];
+    const ok = rows.filter(x=>x.ok).length, skip = rows.filter(x=>x.skip).length;
+    const bad = rows.length - ok - skip;
+    if(rows.length) $('#msg').textContent = '完成：错误(0) '+ok+' / 跳过 '+skip+' / 停手失败 '+bad;
+    if(tab==='now') renderNow(rows);
+  }catch(e){ if(tab==='now') renderNow([]); }
+}
+
+function renderNow(rows){
+  const tb = $('#tb');
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="6" class="empty">还没有结果</td></tr>'; return; }
+  tb.innerHTML = rows.map(r=>{
+    const eb = r.errBefore, ea = r.errAfter, fill = fillsTxt(r.fills);
+    let res, cls;
+    if(r.skip){ res='⏭ 跳过：'+esc((r.why||'').slice(0,40)); cls='dim'; }
+    else if(r.ok){
+      cls='ok';
+      if(r.submit && r.submit.verdict){
+        const v = r.submit.verdict;
+        res = (v.indexOf('成功')>=0) ? '✓ 错误(0)·已提交' : ('✓ 错误(0)·提交：'+esc(v.slice(0,24)));
+      } else { res = '✓ 错误(0)（未提交）'; }
+    }
+    else { res='✗ '+esc((r.why||'未到错误(0)').slice(0,40)); cls='bad'; }
+    return rowHTML(r.lh, r.tid, eb, fill, ea, res, cls);
+  }).join('');
+}
+
+async function renderHistory(){
+  const d = await fetch(P+'ledger').then(r=>r.json());
+  const rows = (d.rows||[]).slice(1).reverse();
+  const tb = $('#tb');
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="6" class="empty">还没有留痕</td></tr>'; return; }
+  tb.innerHTML = rows.map(r=>{
+    const res = String(r[7]||'');
+    const cls = res.indexOf('错误(0)')>=0 ? 'ok' : (res.indexOf('跳过')>=0 ? 'dim' : 'bad');
+    return rowHTML(r[2], r[3], r[4], esc(r[5]||'—'), r[6], esc(res.slice(0,60)), cls);
+  }).join('');
+}
+
+function switchTab(t){
+  tab=t;
+  $('#tabNow').className='tab'+(t==='now'?' on':'');
+  $('#tabHis').className='tab'+(t==='his'?' on':'');
+  if(t==='his') renderHistory(); else showResult();
+}
+
+function clearAll(){
+  $('#rows').value=''; $('#msg').textContent=''; $('#bar').style.display='none';
+  $('#tb').innerHTML='<tr><td colspan="6" class="empty">还没有结果</td></tr>';
+}
+
+/* 拖入 csv / xlsx → 读成文本塞进输入框 */
+const ta = $('#rows');
+['dragover','drop'].forEach(ev => ta.addEventListener(ev, e => {
+  e.preventDefault(); ta.classList.toggle('over', ev==='dragover');
+}));
+ta.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if(!f) return;
+  const nm = f.name.toLowerCase();
+  if(nm.endsWith('.csv')){
+    const rd = new FileReader();
+    rd.onload = () => { ta.value = rd.result; $('#msg').textContent='已读入 '+f.name; };
+    rd.readAsText(f);
+  } else if(nm.endsWith('.xls')||nm.endsWith('.xlsx')){
+    const rd = new FileReader();
+    rd.onload = () => {
+      const wb = XLSX.read(new Uint8Array(rd.result), {type:'array'});
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1});
+      const head = rows[0]||[];
+      let ci=0, hi=-1;
+      for(let i=0;i<head.length;i++){
+        const h = String(head[i]||'');
+        if(/淘宝ID|itemid|商品ID/i.test(h)) hi=i;
+        if(/料号|型号|part|mpn/i.test(h)) ci=i;
+      }
+      ta.value = rows.slice(1).map(r=>{
+        const lh = String(r[ci]||'').trim();
+        const tid = hi>=0 ? String(r[hi]||'').trim() : '';
+        return tid ? (lh+','+tid) : lh;
+      }).filter(x=>x).join('\n');
+      $('#msg').textContent='已读入 '+f.name;
+    };
+    rd.readAsArrayBuffer(f);
+  } else { $('#msg').textContent='不支持的格式：'+f.name; }
+});
+
+/* wb-theme 接收器：宿主切主题广播 CSS 变量 → 应用到自身 */
+window.addEventListener('message', function(e){ var d=e.data; if(!d||d.type!=='wb-theme'||!d.vars) return;
+  var st=document.documentElement.style; for(var k in d.vars){ if(d.vars[k]) st.setProperty(k, d.vars[k]); } });
+
+poll(false);
+</script>
