@@ -320,7 +320,7 @@ function iconFor(n,isd){ if(isd)return ICO.dir; n=n.toLowerCase();
  if(n.match(/\.(png|jpe?g|webp|gif)$/))return ICO.img; if(n.endsWith('.pdf'))return ICO.pdf;
  if(n.match(/\.(mp4|avi|mov|webm)$/))return ICO.vid; if(n.match(/\.(csv|xlsx)$/))return ICO.csv;
  if(n.match(/\.(md|txt)$/))return ICO.md; return ICO.file; }
-async function api(p){ const r=await fetch(API+p); return r.json(); }
+async function api(p){ const r=await fetch(API+p, {cache:'no-store'}); return r.json(); }
 function fmtSize(n){ if(n>=1048576)return(n/1048576).toFixed(1)+'M'; if(n>=1024)return Math.round(n/1024)+'K'; return n+'B'; }
 let curDir='', filterType='', sortMode='time';
 function ftype(n){ n=n.toLowerCase(); if(n.match(/\.(png|jpe?g|webp|gif)$/))return'img'; if(n.match(/\.(mp4|avi|mov|webm)$/))return'vid';
@@ -449,7 +449,7 @@ function switchView(v){ document.querySelectorAll('.vt').forEach(x=>x.classList.
  document.getElementById('logPane').classList.toggle('active',v==='log'); document.getElementById('wsPane').classList.toggle('active',v==='ws'); document.getElementById('prevPane').classList.toggle('active',v==='prev'); }
 function toggleDesk(){ document.getElementById('desk').classList.toggle('closed'); }
 function openFolder(){ const p=curDir||''; fetch(API+'/api/open?p='+encodeURIComponent(p)); }
-async function loadPlugins(){ try{ const d=await api('/api/plugins'); const box=document.getElementById('plugins'); box.innerHTML='';
+async function loadPlugins(){ try{ const d=await api('/api/plugins); const box=document.getElementById('plugins'); box.innerHTML='';
   (d.plugins||[]).filter(p=>p.enabled!==false).forEach(pl=>{ const el=document.createElement('div'); el.className='plugin'; el.innerHTML=(pl.icon?'<span style="font-size:15px;width:17px;text-align:center;flex:none">'+pl.icon+'</span>':ICO.plug)+'<span>'+pl.name+'</span>';
    el.onclick=()=>{ document.querySelectorAll('.plugin').forEach(x=>x.classList.remove('active')); el.classList.add('active'); showPlugin(pl); }; box.appendChild(el); });
   if(!(d.plugins||[]).length)box.innerHTML='<div class="plugin" style="color:var(--text-m)">暂无——放 manifest 即出现</div>';
@@ -548,7 +548,7 @@ async function renderPlugins(c){ c.innerHTML='<h3>插件</h3><div class="desc">�
    else { dz.textContent='✗ '+(d.error||'安装失败'); }
   }).catch(e=>{ dz.textContent='✗ '+e.message; });
  };
- const d=await api('/api/plugins'); const pls=d.plugins||[]; const list=document.getElementById('plugList');
+ const d=await api('/api/plugins); const pls=d.plugins||[]; const list=document.getElementById('plugList');
  if(!pls.length){ list.innerHTML='<div style="font-size:12px;color:var(--text-m)">暂无已装插件——拖 zip 安装</div>'; return; }
  pls.forEach(p=>{ const el=document.createElement('div'); el.className='plug-item';
   el.innerHTML='<div style="flex:1;min-width:0"><div class="pn">'+p.name+' <span class="pv">v'+(p.version||'0.0.0')+'</span></div><div class="pd">'+(p.desc||'')+'</div></div><span class="tag">'+(p.enabled===false?'已禁用':'已启用')+'</span><span style="margin-left:6px;cursor:pointer;font-size:11px;color:var(--accent-h)" onclick="event.stopPropagation();togglePlug('+p.id+',this)">切换</span>';
@@ -685,8 +685,8 @@ function logKeepSave(){
 function pathsPost(url,body,cb){
  fetch(API+url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
   .then(r=>r.json()).then(cb); }
-function pathsLoad(){
- fetch(API+'/api/paths').then(r=>r.json()).then(d=>{
+function pathsLoadOld(){
+ fetch(API+'/api/paths).then(r=>r.json()).then(d=>{
   var box=document.getElementById('pathsBox'); if(!box) return;
   if(!d.ok){ box.textContent='读取失败：'+(d.error||''); return; }
   box.innerHTML=d.keys.map(function(it){
@@ -705,7 +705,7 @@ function pathsLoad(){
 function pathsSave(k){
  var el=document.getElementById('pth_'+k); if(!el) return;
  var v=(k==='key_files')?el.value.replace(/[;\n]+/g,';'):el.value;
- pathsPost('/api/paths','key='+encodeURIComponent(k)+'&value='+encodeURIComponent(v),function(d){
+ pathsPost('/api/paths,'key='+encodeURIComponent(k)+'&value='+encodeURIComponent(v),function(d){
   if(!d.ok){ alert('保存失败：'+(d.error||'')); return; }
   alert('已保存：'+d.item.label+'\n'+d.item.value); pathsLoad(); }); }
 function pathsReset(k){
@@ -714,8 +714,67 @@ function pathsReset(k){
   alert(k?'已恢复默认':'已全部恢复默认'); pathsLoad(); }); }
 function pathsResetAll(){ pathsReset(''); }
 
+/* ===== 设置-通用 · 路径：按归属分组（谁的路径谁管）+ 相对段 + 搜索 ===== */
+var PATH_OPEN = {core: true};     /* 默认只展开「工作台自己」那组 */
+function pathsLoad(q){
+ fetch(API+'/api/paths).then(r=>r.json()).then(function(d){
+  var box=document.getElementById('pathsBox'); if(!box) return;
+  if(!d||!d.ok){ box.textContent='读取失败：'+((d&&d.error)||''); return; }
+  var keys={}; (d.keys||[]).forEach(function(k){ keys[k.key]=k; });
+  var groups=(d.groups||[]); var kw=(q||'').trim().toLowerCase();
+  var html='<div style="display:flex;gap:6px;align-items:center;margin:2px 0 8px">'
+   +'<input id="pthQ" placeholder="搜索：名字 / 路径 / 归属" value="'+esc(q||'')+'" onkeydown="if(event.key===\'Enter\')pathsLoad(this.value)" style="flex:1;min-width:0;border:.5px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">'
+   +'<button class="iconbtn" style="width:auto;padding:2px 10px;font-size:11px" onclick="pathsLoad(document.getElementById(\'pthQ\').value)">搜索</button>'
+   +'<button class="iconbtn" style="width:auto;padding:2px 10px;font-size:11px" onclick="pathsLoad(\'\')">清空</button></div>';
+  var shown=0;
+  groups.forEach(function(g){
+   var ks=g.keys.filter(function(k){
+     if(!kw) return true;
+     var it=keys[k]||{};
+     return ((it.label||'')+(it.note||'')+(it.value||'')+(it.short||'')+g.title).toLowerCase().indexOf(kw)>=0;
+   });
+   if(!ks.length) return;
+   var open = kw ? true : !!PATH_OPEN[g.id];
+   shown+=ks.length;
+   html+='<div style="border:.5px solid var(--border);border-radius:8px;margin-bottom:6px;overflow:hidden">'
+    +'<div onclick="pathsToggle(\''+g.id+'\')" style="cursor:pointer;padding:6px 10px;background:var(--bg-card);display:flex;align-items:center;gap:6px">'
+    +'<span style="font-size:11px;color:var(--text-m)">'+(open?'▾':'▸')+'</span>'
+    +'<span style="font-size:12.5px;font-weight:600">'+esc(g.title)+'</span>'
+    +'<span style="font-size:11px;color:var(--text-m)">'+ks.length+' 项</span></div>'
+    +(open?('<div style="padding:2px 10px 8px">'+ks.map(function(k){ return pathRow(keys[k]); }).join('')+'</div>'):'')
+    +'</div>';
+  });
+  box.innerHTML= shown ? html : '<div style="color:var(--text-m);font-size:12px">没有匹配的路径项</div>';
+ });
+}
+function pathsToggle(id){
+ PATH_OPEN[id]=!PATH_OPEN[id];
+ var q=document.getElementById('pthQ'); pathsLoad(q?q.value:'');
+}
+function pathsEdit(k){
+ var e=document.getElementById('pthEdit_'+k);
+ if(e) e.style.display=(e.style.display==='none'?'block':'none');
+}
+function pathRow(it){
+ var col=it.source==='默认'?'var(--text-m)':'var(--accent,#537D96)';
+ return '<div style="padding:5px 0;border-bottom:.5px solid rgba(0,0,0,.05)">'
+  +'<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12.5px">'+esc(it.label)+'</span>'
+  +'<span style="font-size:10px;color:'+col+';border:.5px solid '+col+';border-radius:3px;padding:0 4px">'+it.source+'</span>'
+  +'<span style="flex:1"></span><span style="font-size:10px;color:var(--text-m)">'+(it.kind||'')+'</span></div>'
+  +'<div style="font-size:11px;color:var(--text-m);margin:1px 0 3px">'+esc(it.note)+'</div>'
+  +'<div style="display:flex;align-items:center;gap:6px;font-size:11.5px">'
+  +'<code title="'+esc(it.value)+'" style="background:transparent;color:var(--text);cursor:help">'+esc(it.short)+'</code>'
+  +'<span style="flex:1"></span>'
+  +'<span onclick="pathsEdit(\''+it.key+'\')" style="cursor:pointer;color:var(--accent-h)">改</span>'
+  +'<span onclick="pathsReset(\''+it.key+'\')" style="cursor:pointer;color:var(--text-m)">默认</span></div>'
+  +'<div id="pthEdit_'+it.key+'" style="display:none;margin-top:5px">'
+  +'<div style="display:flex;gap:6px"><input id="pth_'+it.key+'" value="'+esc(it.value)+'" title="'+esc(it.value)+'" style="flex:1;min-width:0;border:.5px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">'
+  +'<button class="iconbtn" style="width:auto;padding:0 8px;font-size:12px" onclick="pathsSave(\''+it.key+'\')">保存</button></div>'
+  +'<div style="font-size:10px;color:var(--text-m);margin-top:2px">默认：'+esc(it.default_short||it.default)+'</div></div></div>';
+}
+
 function pluginListLoad(){
- fetch(API+'/api/plugin-registry').then(r=>r.json()).then(function(d){
+ fetch(API+'/api/plugin-registry).then(r=>r.json()).then(function(d){
   var box=document.getElementById('listBox'); if(!box) return;
   var reg=(d&&d.plugins)||[], inst=(d&&d.installed)||{};
   if(!reg.length){ box.innerHTML='<div style="color:var(--text-m)">没有插件列表（registry.json 不在或为空）</div>'; return; }
@@ -779,7 +838,7 @@ function renderAbout(c){ c.innerHTML='<h3>关于</h3><div class="desc">优化管
  +'<div class="about-row"><span class="k">设计</span><span>简单内核 + 插件丰富</span></div>'
  +'<div class="about-row"><span class="k">书桌联动</span><span>当前品素材</span></div>'
  +'<div class="about-row"><span class="k">全盘浏览</span><span>批注工作台</span></div>';
- try{ api('/api/plugins').then(function(d){ var e=document.getElementById('corever'); if(e) e.textContent='v'+((d&&d.core)||'?'); }); }catch(e){}
+ try{ api('/api/plugins).then(function(d){ var e=document.getElementById('corever'); if(e) e.textContent='v'+((d&&d.core)||'?'); }); }catch(e){}
  try{ api('/api/ping').then(function(d){ var e=document.getElementById('corePort'); if(e&&d&&d.port) e.textContent=d.port; }); }catch(e){} }
 let searchTimer=null;
 function bindUI(){ const inp=document.getElementById('searchInput'), sg=document.getElementById('suggest');

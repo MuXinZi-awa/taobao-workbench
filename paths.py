@@ -280,8 +280,11 @@ def info(key):
     else:
         src = "默认"
     dv = default_of(key)
+    ds = ";".join(dv) if isinstance(dv, list) else (dv or "")
     return {"key": key, "label": label, "note": note, "kind": kind,
-            "value": shown, "default": ";".join(dv) if isinstance(dv, list) else (dv or ""),
+            "value": shown, "default": ds,
+            "short": _short(shown), "default_short": _short(ds),
+            "group": OWNER.get(key, ("core", []))[0],
             "source": src}
 
 
@@ -316,6 +319,55 @@ def clean_cache():
     if os.path.isdir(CACHE_SESSION):
         shutil.rmtree(CACHE_SESSION, ignore_errors=True)
     return CACHE_SESSION
+
+
+# 归属分组：谁的路径谁管。内核只显示内核自己的；带外部的键要“装了用它的插件”才出现。
+GROUP_ORDER = ["core", "data", "plugin", "tg", "env"]
+GROUP_TITLE = {"core": "工作台自己", "data": "业务数据",
+               "plugin": "插件带的（不是内核设置）", "tg": "外部程序", "env": "环境"}
+_TG_PLUGINS = ["pipeline", "stock-edit", "tg-monitor", "adreport", "dual-check",
+               "scheduler", "odoo-erp", "attr-fill"]
+# 键 → (分组, 需要哪些插件（装了任一个才显示；空 = 总显示）)
+OWNER = {
+    "root": ("core", []), "runtime": ("core", []), "cache": ("core", []),
+    "state": ("core", []), "port": ("core", []),
+    "mat_root": ("data", []), "data": ("data", []), "product": ("data", []),
+    "tg_root": ("tg", _TG_PLUGINS), "tg_runtime": ("tg", _TG_PLUGINS),
+    "python": ("tg", _TG_PLUGINS),
+    "chrome": ("env", _TG_PLUGINS), "key_files": ("env", _TG_PLUGINS),
+    "open_qty": ("plugin", ["stock-edit"]),
+}
+
+
+def _short(p):
+    """相对段：能对上工作台根/工作区/桌面就缩成 {…}，否则只留最后两段。
+    面板上先看归属，精确全路径放悬停/点开里。"""
+    p = str(p or "")
+    for base, tag in ((ROOT, "{工作台根}"), (WS, "{工作区}"), (_DESKTOP, "{桌面}")):
+        b = str(base)
+        if b and p.lower().startswith(b.lower()):
+            return tag + p[len(b):]
+    parts = [x for x in p.replace("/", "\\").split("\\") if x]
+    return ("…\\" + "\\".join(parts[-2:])) if len(parts) > 2 else p
+
+
+def groups(installed=()):
+    """面板用：按归属分组，且只返回「该出现」的键。
+    插件没装 → 它带来的路径（推广一键跑/解释器/敞开卖等）根本不出现。"""
+    inst = set(installed or ())
+    out = []
+    for g in GROUP_ORDER:
+        ks = []
+        for k in _KEYS:
+            gid, req = OWNER.get(k, ("core", []))
+            if gid != g:
+                continue
+            if req and not (inst & set(req)):
+                continue
+            ks.append(k)
+        if ks:
+            out.append({"id": g, "title": GROUP_TITLE.get(g, g), "keys": ks})
+    return out
 
 
 def tg(*parts):

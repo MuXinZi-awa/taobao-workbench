@@ -596,8 +596,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                    "port": self.server.server_address[1],
                                    "core": core_version(), "root": BASE})
             if p == "/api/paths":
-                # 设置-通用：路径项列表（当前生效值 / 默认值 / 来源）
+                # 设置-通用：按归属分组（内核自己的 / 业务数据 / 装了插件才出现的那些）
+                inst = []
+                try:
+                    inst = [pl.get("id") for pl in scan_plugins()]
+                except Exception:
+                    pass
                 return self._json({"ok": True, "config_file": paths._CFG_FP,
+                                   "groups": paths.groups(inst),
                                    "keys": [paths.info(k) for k in paths.KEYS]})
             if p == "/api/logkeep":
                 # 日志保留天数（设置-通用可改；清理归档超期删除）
