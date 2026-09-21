@@ -126,8 +126,7 @@ def check(here, port=None, running=False):
         add("paths", "外部目录", "warn", "读路径配置失败：%s" % str(e)[:80],
             "打开 设置 → 通用 看一眼路径项")
 
-    # 插件用的解释器：决定「点下去能不能跑起来」（打包后壳自己不能当解释器）
-    try:
+    # 插件用的解释器：决定「点下去能不能跑起来」（打包后壳自己不能当解释器）    try:
         import sys
         sys.path.insert(0, here)
         import paths as _p
@@ -142,6 +141,32 @@ def check(here, port=None, running=False):
     except Exception as e:
         add("python", "插件用的 Python", "warn", "读解释器配置失败：%s" % str(e)[:80],
             "打开 设置 → 通用 看一眼「插件用的 Python」")
+
+    # errors.log 里的「环境级」错误：比如 exe 缺模块，会一直影响某个功能，却在没人看的文件里
+    try:
+        import sys
+        sys.path.insert(0, here)
+        import paths as _p
+        fp = os.path.join(_p.RUNTIME, "errors.log")
+        last = ""
+        if os.path.isfile(fp):
+            import importlib.util
+            import re as _re
+            for line in open(fp, encoding="utf-8", errors="replace").read().splitlines()[-400:]:
+                if ("No module named" in line) or ("DLL load failed" in line):
+                    m = _re.search(r"No module named '?([\w\.]+)'?", line)
+                    # 先核对这错现在还成不成立——不然会拿早就修好的历史记录吓人
+                    if m and importlib.util.find_spec(m.group(1)):
+                        continue
+                    last = line.strip()
+        if last:
+            add("envlog", "环境级错误", "warn",
+                "日志里有缺模块之类的错误：%s" % last[:150],
+                "这会让某个功能一直不好使（例如保存连接）——把日志 tail 发我或看 runtime\\errors.log")
+        else:
+            add("envlog", "环境级错误", "ok", "日志里没看到缺模块类错误")
+    except Exception as e:
+        add("envlog", "环境级错误", "warn", "读日志失败：%s" % str(e)[:80], "看 runtime\\errors.log")
 
     # 端口 / 已有实例（信息，不是故障）
     if port:

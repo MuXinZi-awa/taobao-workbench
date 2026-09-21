@@ -261,6 +261,39 @@ def _install_crash_hooks():
 _MARK = {"ok": "✓", "warn": "⚠", "block": "✗"}
 
 
+def _check_imports(extra=()):
+    """打包后的导入自检：把 exe 实际会用到的模块逐个 import 一遍。
+    壳是用 runpy 在运行时加载 workbench.py / conn_store.py 的，PyInstaller 静态分析
+    看不见那些导入——所以「缺件」只能在打包后自己查（否则表现为：界面能开、一点就报错）。
+    结果写 runtime/import_check.log（windowed exe 没有 stdout，构建脚本靠读文件）。"""
+    _fix_stdio()
+    import importlib
+    names = ["sqlite3", "xmlrpc.client", "fitz", "webview",
+             "json", "csv", "ctypes", "winreg", "http.server", "socketserver"]
+    names += [x for x in extra if x]
+    bad = []
+    lines = []
+    for m in names:
+        try:
+            importlib.import_module(m)
+            lines.append("OK      %s" % m)
+        except Exception as e:
+            bad.append(m)
+            lines.append("MISSING %s  (%s)" % (m, str(e)[:70]))
+    lines.append("小计：%d/%d 可用%s" % (len(names) - len(bad), len(names),
+                                      ("; 缺：%s" % ", ".join(bad)) if bad else ""))
+    try:
+        d = os.path.join(HERE, "runtime")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "import_check.log"), "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except Exception:
+        pass
+    for l in lines:
+        _log("[导入自检] " + l)
+    return 1 if bad else 0
+
+
 def main():
     _fix_stdio()
     _install_crash_hooks()
@@ -340,4 +373,7 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--check-imports" in sys.argv:
+        # 打包后自检（构建脚本会调它）：后面跟的额外模块名也一起查
+        sys.exit(_check_imports([a for a in sys.argv[1:] if not a.startswith("--")]))
     sys.exit(main() or 0)

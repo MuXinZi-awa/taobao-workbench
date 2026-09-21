@@ -33,6 +33,9 @@ SKIP_FILES = {"state.json", "paths.local.json", "conn.db"}
 SKIP_EXT = {".pyc", ".log"}
 SRC_FILES = ["app.py", "preflight.py", "workbench.py", "paths.py", "conn_store.py",
              "index.html", "CHANGELOG.md", "registry.json"]
+# 壳用 runpy 在**运行时**加载 workbench.py / conn_store.py，PyInstaller 的静态分析看不见它们
+# 里面的导入 —— 这些模块不显式带上，exe 就会「界面能开、一点就报 No module named」。
+HIDDEN_IMPORTS = ["sqlite3", "xmlrpc.client", "fitz"]
 SRC_DIRS = ["vendor", "plugins"]
 
 
@@ -74,7 +77,10 @@ def main():
     os.makedirs(TMP, exist_ok=True)
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--windowed",
            "--name", NAME, "--distpath", os.path.join(TMP, "dist"),
-           "--workpath", os.path.join(TMP, "build"), "--specpath", TMP, "app.py"]
+           "--workpath", os.path.join(TMP, "build"), "--specpath", TMP]
+    for h in HIDDEN_IMPORTS:
+        cmd += ["--hidden-import", h]
+    cmd += ["app.py"]
     print("打包中…", " ".join(cmd[:6]))
     r = subprocess.run(cmd, cwd=HERE)
     if r.returncode != 0:
@@ -129,6 +135,25 @@ def main():
         p = os.path.join(OUT, name)
         print("  %-20s %8.1f MB" % (name, size_of(p) / 1024 / 1024))
     print("  合计 %.1f MB" % (size_of(OUT) / 1024 / 1024))
+
+    # 打包后导入自检：让 exe 自己把会用到的模块逐个 import 一遍，缺什么当场列出来。
+    # 为什么不让用户撞：exe 里缺件表现为「界面能开、一点就报错」，梓帆那边没法调试。
+    check_log = os.path.join(OUT, "runtime", "import_check.log")
+    try:
+        os.remove(check_log)
+    except Exception:
+        pass
+    print("\n打包后导入自检…")
+    r2 = subprocess.run([os.path.join(OUT, NAME + ".exe"), "--check-imports"],
+                        cwd=OUT, capture_output=True, timeout=240)
+    try:
+        for line in open(check_log, encoding="utf-8").read().splitlines():
+            print("  " + line)
+    except Exception:
+        print("  （没读到 %s）" % check_log)
+    if r2.returncode != 0:
+        print("！！自检发现缺失模块 —— 把缺的加进 build_app.py 的 HIDDEN_IMPORTS 再打一次")
+        return 2
     return 0
 
 
