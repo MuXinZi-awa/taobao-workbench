@@ -857,12 +857,15 @@ def _bind_server():
 
 
 def _write_port_file(port):
-    """把实际端口写下来，供桌面壳/其它工具找到这个实例"""
+    """把实际端口写下来，供桌面壳/其它工具找到这个实例。
+    ui=False：**这个内核没有窗口**（源码方式直接跑就是这种）。
+    双击的壳只有认到 ui=true 的实例才会去复用它——否则会把窗口开完又自己关掉，
+    用户看到的是「双击没反应」。"""
     import datetime
     try:
         os.makedirs(os.path.dirname(paths.PORT_FILE), exist_ok=True)
         with open(paths.PORT_FILE, "w", encoding="utf-8") as f:
-            json.dump({"app": "workbench", "port": port, "pid": os.getpid(),
+            json.dump({"app": "workbench", "port": port, "pid": os.getpid(), "ui": False,
                        "url": "http://127.0.0.1:%d/" % port, "core": core_version(),
                        "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
                       f, ensure_ascii=False)

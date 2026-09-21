@@ -98,10 +98,24 @@ def ping(port):
     return j if (isinstance(j, dict) and j.get("app") == "workbench") else None
 
 
+def _alive(pid):
+    """进程还在吗（pid 已死 / 拿不到句柄 → False）"""
+    try:
+        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))
+        if not h:
+            return False
+        code = ctypes.c_uint()
+        ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(h)
+        return code.value == 259        # STILL_ACTIVE
+    except Exception:
+        return False
+
+
 def find_instance():
-    """已在跑的工作台：先读端口文件，再扫探测范围。
-    先用快速 TCP 预判筛掉没人监听的端口——直接对 12 个端口发 HTTP 探测，
-    每个要等 1 秒超时（开了代理更慢），启动会白白多等十几秒。"""
+    """可复用的实例——**三件套都要成立**：探针应答 ✓ + pid 还活着 ✓ + 它自称有窗口（ui=true）✓。
+    缺一件就不算：只有源码方式起的那个（无窗口）不该被双击的壳当成主人
+    ——不然壳会把窗口开完又自己关掉，用户看到的是「双击没反应」。"""
     cands = []
     try:
         with open(_port_file(), encoding="utf-8") as f:
@@ -115,9 +129,31 @@ def find_instance():
             cands.append(p)
     for p in cands:
         j = ping(p)
-        if j:
-            return j
+        if not j:
+            continue
+        pid = j.get("pid")
+        if not isinstance(pid, int) or not _alive(pid):
+            _log("端口 %s 有应答但 pid=%s 已不在 → 忽略" % (p, pid))
+            continue
+        if j.get("ui") is not True:
+            _log("端口 %s 是后台实例（无窗口）→ 不当它存在" % p)
+            continue
+        return j
     return None
+
+
+def _mark_ui(port):
+    """把自己标成「有窗口的实例」：不标的话，下一次双击会以为这是个后台实例。"""
+    try:
+        fp = _port_file()
+        with open(fp, encoding="utf-8") as f:
+            d = json.load(f)
+        d["ui"] = True
+        d["ui_pid"] = os.getpid()
+        with open(fp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+    except Exception as e:
+        _log("标记 ui 失败：%s" % str(e)[:80])
 
 
 def focus_window(pid):
@@ -178,13 +214,18 @@ def start_core():
 
 
 def wait_core(seconds=30):
-    """等内核把端口文件写出来并答探针；返回端口或 None"""
+    """等【自己这个内核】把端口写出来并答探针。
+    必须核对 pid == 自己：port.json 是整个程序共用的一个文件，
+    要是另一个实例（比如源码方式起的后台实例）已经写了记录，只读文件就会以为
+    「内核已起」而把窗口开到别人身上，然后自己关掉——用户看到的就是「双击没反应」。"""
+    me = os.getpid()
     t0 = time.time()
     while time.time() - t0 < seconds:
         try:
             with open(_port_file(), encoding="utf-8") as f:
-                p = json.load(f).get("port")
-            if isinstance(p, int) and ping(p):
+                rec = json.load(f)
+            p = rec.get("port")
+            if rec.get("pid") == me and isinstance(p, int) and ping(p):
                 return p
         except Exception:
             pass
@@ -238,28 +279,28 @@ def main():
     run = find_instance()
     if run:
         pid, port = run.get("pid"), run.get("port")
-        # 刚双击完第一下时，对方的窗口可能还没建好（内核先答探针，窗口后出来）——
-        # 等一会儿再认，别急着自己开窗（否则快速双击两次就变两个窗口）
+        # 刚双击完第一下时对方的窗口可能还没建好——等一会儿再认，别急着自己开窗
         t0 = time.time()
         while time.time() - t0 < 12:
             if pid and focus_window(pid):
                 _log("已有实例在 %s 端口，已把它提到前台，不再起第二个" % port)
                 return 0
             time.sleep(0.5)
-        _log("已有实例在 %s 端口（等了 12 秒仍没找到它的窗口），本窗口直接连上去" % port)
-        url = "http://127.0.0.1:%d/" % port
-    else:
-        threading.Thread(target=start_core, daemon=True).start()
-        port = wait_core()
-        if not port:
-            say("启动失败",
-                "内核没起来，所以窗口没开。\n\n可以试这几步：\n"
-                "1. 看看是不是有安全软件拦了（放行本程序）\n"
-                "2. 单独跑一下同目录的 workbench.py 看报什么错\n"
-                "3. 详情见同目录 runtime\\startup.log\n\n目录：\n" + HERE)
-            return 3
-        url = "http://127.0.0.1:%d/" % port
-        _log("内核已起：%s" % url)
+        # 找不到窗口 = 那个实例用不了（半死/无窗口）→ 当作没有实例，起自己的
+        _log("端口 %s 上的实例找不到窗口 → 当作没有实例，起自己的窗口" % port)
+
+    threading.Thread(target=start_core, daemon=True).start()
+    port = wait_core()
+    if not port:
+        say("启动失败",
+            "内核没起来，所以窗口没开。\n\n可以试这几步：\n"
+            "1. 看看是不是有安全软件拦了（放行本程序）\n"
+            "2. 单独跑一下同目录的 workbench.py 看报什么错\n"
+            "3. 详情见同目录 runtime\\startup.log\n\n目录：\n" + HERE)
+        return 3
+    url = "http://127.0.0.1:%d/" % port
+    _mark_ui(port)
+    _log("内核已起：%s" % url)
 
     try:
         import webview
