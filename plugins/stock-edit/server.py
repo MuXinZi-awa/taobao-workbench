@@ -33,10 +33,8 @@ STOCK_PY = os.path.join(TG, "stock_api.py")
 STATE = paths.STATE
 DEFAULT_QTY = "open"        # 默认敞开卖（50000）；手填时才传数字
 
-PY = paths.PYTHON          # 插件脚本用的解释器（设置-通用可改；打包后壳自己不能当解释器）
-RT = os.path.join(TG, "runtime", "python.exe")
-if not os.path.isfile(RT):
-    RT = PY
+PY = paths.PYTHON          # 插件脚本用的解释器（设置-通用可改；包里有 runtime 就优先用它）
+RT = PY                    # 同上：解释器只由 paths 层决定，插件不自作主张
 
 
 def _known_lhs():

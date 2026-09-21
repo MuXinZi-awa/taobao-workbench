@@ -534,14 +534,15 @@ async function connEdit(id){
  const d=await api('/api/conn/list'); const x=(d.items||[]).find(v=>v.id===id);
  if(x){ CONN_EDIT=x; renderConnForm(); }
 }
-async function renderPlugins(c){ c.innerHTML='<h3>插件</h3><div class="desc">拖入 .zip 安装（含 manifest.json + README.md）· 点击查看详情</div><div class="dropzone" id="dz">拖入插件 zip 到此处安装</div><div id="plugList"></div>';
+async function renderPlugins(c){ c.innerHTML='<h3>插件</h3><div class="desc">拖入 .zip 安装（含 manifest.json + README.md）· 或从下面列表点装 · 点击查看详情</div><div class="dropzone" id="dz">拖入插件 zip 到此处安装</div><div id="listBox" style="font-size:12px;color:var(--text-m);margin-top:10px">插件列表加载中…</div><div id="plugList"></div>';
+ pluginListLoad();
  const dz=document.getElementById('dz');
  dz.ondragover=e=>{ e.preventDefault(); dz.style.borderColor='var(--accent)'; };
  dz.ondragleave=()=>{ dz.style.borderColor=''; };
  dz.ondrop=e=>{ e.preventDefault(); const f=e.dataTransfer.files[0];
   if(!f||!f.name.toLowerCase().endsWith('.zip')){ alert('请拖入 .zip 插件包'); return; }
   dz.textContent='安装中 '+f.name+'…';
-  const fd=new FormData(); fd.append('file', f);
+  const fd=f;   /* 直接发 zip 字节（不要用 FormData：内核那边收的就是原始 zip）*/
   fetch(API+'/api/install-plugin',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
    if(d.ok){ dz.textContent='✓ 已安装「'+d.name+'」——刷新生效（热插拔）'; renderPlugins(c); loadPlugins(); setTimeout(broadcastTheme,400); }
    else { dz.textContent='✗ '+(d.error||'安装失败'); }
@@ -712,6 +713,32 @@ function pathsReset(k){
   if(!d.ok){ alert('恢复失败：'+(d.error||'')); return; }
   alert(k?'已恢复默认':'已全部恢复默认'); pathsLoad(); }); }
 function pathsResetAll(){ pathsReset(''); }
+
+function pluginListLoad(){
+ fetch(API+'/api/plugin-registry').then(r=>r.json()).then(function(d){
+  var box=document.getElementById('listBox'); if(!box) return;
+  var reg=(d&&d.plugins)||[], inst=(d&&d.installed)||{};
+  if(!reg.length){ box.innerHTML='<div style="color:var(--text-m)">没有插件列表（registry.json 不在或为空）</div>'; return; }
+  box.innerHTML='<div style="font-size:12px;font-weight:600;margin:6px 0 4px">插件列表 <span style="font-weight:400;color:var(--text-m)">——点「安装」即从列表下载并装好（热插拔）</span></div>'
+   + reg.map(function(p){
+      var cur=inst[p.id]||'';
+      var state=!cur?'未装':(cur===p.version?'已装 v'+cur:'可更新 v'+cur+' → v'+p.version);
+      var col=!cur?'var(--text-m)':(cur===p.version?'var(--green)':'var(--accent-h)');
+      var btn=(cur===p.version)?'':'<button class="iconbtn" style="width:auto;padding:2px 10px;font-size:12px" onclick="pluginInstall(\''+p.id+'\')">'+(cur?'更新':'安装')+'</button>';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:.5px solid rgba(0,0,0,.05)">'
+       +'<div style="flex:1"><div style="font-size:13px;color:var(--text)">'+esc(p.name||p.id)+' <span style="font-size:11px;color:var(--text-m)">v'+esc(p.version||'?')+'</span></div>'
+       +'<div style="font-size:11px;color:var(--text-m)">'+esc(p.desc||'')+'</div></div>'
+       +'<span style="font-size:11px;color:'+col+'">'+state+'</span>'+btn+'</div>';
+    }).join('');
+ }); }
+function pluginInstall(id){
+ var box=document.getElementById('listBox'); if(box) box.textContent='正在安装 '+id+'…';
+ fetch(API+'/api/plugin-install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+  .then(r=>r.json()).then(function(d){
+    if(d.ok){ alert('已安装「'+(d.name||id)+'」'+(d.version?(' v'+d.version):'')+'——刷新生效（热插拔）'); pluginListLoad(); loadPlugins(); }
+    else { alert('装不上：'+(d.error||'未知')); pluginListLoad(); }
+  }).catch(function(e){ alert('装不上：'+e.message); pluginListLoad(); });
+}
 
 /* ===== 启动自检提示：缺什么说一句，不拦人（起不来的事在窗体外已经说过了）===== */
 function preflightToast(){

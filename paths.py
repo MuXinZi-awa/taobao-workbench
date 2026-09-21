@@ -49,6 +49,16 @@ _HOME = os.path.expanduser("~")
 
 _CFG_FP = os.path.join(ROOT, CFG_NAME)
 
+def _default_python():
+    """插件脚本用的解释器默认值：**包里的运行时优先**（跟 plugins 一样放 exe/程序旁边，
+    加依赖只更新那个目录，不用重打 exe）；没有就回退到推广一键跑自带的那个（本机情形）。
+    两套默认值的原因：分发给别人时没有工作区，但有包里的运行时。"""
+    pkg = os.path.join(ROOT, "runtime", "python.exe")
+    if os.path.isfile(pkg):
+        return pkg
+    return os.path.join(_DESKTOP, "推广一键跑", "runtime", "python.exe")
+
+
 _DEFAULTS = {
     "root": ROOT,
     "runtime": os.path.join(ROOT, "runtime"),
@@ -60,7 +70,7 @@ _DEFAULTS = {
     "product": os.path.join(WS, "产品"),
     "tg_root": os.path.join(_DESKTOP, "推广一键跑"),
     "tg_runtime": os.path.join(_DESKTOP, "推广一键跑", "runtime"),
-    "python": os.path.join(_DESKTOP, "推广一键跑", "runtime", "python.exe"),
+    "python": _default_python(),
     "chrome": os.path.join(_HOME, "AppData", "Local", "Google", "Chrome",
                            "Application", "chrome.exe"),
     "key_files": [os.path.join(WS, "xyq_key.txt"),
@@ -191,7 +201,7 @@ NOTES = {
     "product": ("产品目录", "按料号落盘的工作目录", "目录"),
     "tg_root": ("推广一键跑目录", "外部脚本本体（上品/推广/采集）", "目录"),
     "tg_runtime": ("推广一键跑·运行目录", "它的进度、日志都在这里", "目录"),
-    "python": ("插件用的 Python", "面板里点下去跑的批处理脚本用这个解释器；打包后壳自己不能当解释器（壳里没有 playwright / openpyxl）", "文件"),
+    "python": ("插件用的 Python", "面板里点下去跑的批处理脚本用这个解释器；打包后壳自己不能当解释器（壳里没有 playwright / openpyxl）。默认优先用包里的 runtime（跟 plugins 一样可以单独换），没装则用推广一键跑自带的那个", "文件"),
     "chrome": ("Chrome 程序", "自动登录与采集用的浏览器", "文件"),
     "key_files": ("密钥查找顺序", "多个候选路径，按先后顺序找 xyq_key.txt", "列表，用 ; 分隔"),
 }

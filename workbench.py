@@ -116,6 +116,99 @@ def manifest_full(pid):
     return None
 
 
+def _registry_fp():
+    return os.path.join(BASE, "registry.json")
+
+
+def _registry():
+    """插件列表（公开的 registry.json：插件名/版本/下载地址/一句话说明）。
+    读不到就当空列表——没列表不影响已装插件。"""
+    try:
+        with open(_registry_fp(), encoding="utf-8") as f:
+            d = json.load(f)
+        return d.get("plugins") or []
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        _log_err("registry", e, fp=_registry_fp())
+        return []
+
+
+def _registry_entry(pid):
+    for it in _registry():
+        if str(it.get("id")) == pid:
+            return it
+    return None
+
+
+def _fetch_plugin_zip(ent):
+    """取插件包：registry 里给 path（本地文件，测试用）或 url（公开直链，不需凭据）"""
+    import urllib.request
+    p = str(ent.get("path") or "").strip()
+    if p and os.path.isfile(p):
+        with open(p, "rb") as f:
+            return f.read()
+    u = str(ent.get("url") or "").strip()
+    if not u:
+        raise RuntimeError("列表里这一项既没有 url 也没有 path")
+    req = urllib.request.Request(u, headers={"User-Agent": "workbench"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read()
+
+
+def install_plugin_zip(data):
+    """装插件：zip bytes → 校验 manifest → 解压到 plugins/<id>。
+    「插件列表点装」走这里；与拖入安装同一套校验与落盘规则。"""
+    import io
+    import shutil
+    import zipfile
+    if len(data) <= 0 or len(data) > 50 * 1024 * 1024:
+        return {"ok": False, "error": "空或过大文件"}
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except Exception as e:
+        return {"ok": False, "error": "不是有效 zip：%s" % str(e)[:60]}
+    names = zf.namelist()
+    mf_name = None
+    for n in names:
+        if n.endswith("manifest.json") and n.count("/") <= 1:
+            mf_name = n
+            break
+    if not mf_name:
+        return {"ok": False, "error": "zip 内无 manifest.json（需插件根/单层目录）"}
+    try:
+        m = json.loads(zf.read(mf_name).decode("utf-8"))
+    except Exception as e:
+        return {"ok": False, "error": "manifest 解析失败：%s" % str(e)[:60]}
+    pid = m.get("id", "")
+    if not pid:
+        return {"ok": False, "error": "manifest 缺 id"}
+    if not re.match(r"^[a-zA-Z0-9_-]{1,40}$", pid):
+        return {"ok": False, "error": "id 含非法字符"}
+    base = os.path.join(PLUGINS_DIR, pid)
+    prefix = os.path.dirname(mf_name)
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+    if os.path.isdir(base):        # 装新的先清旧的（更新就是这条路）
+        shutil.rmtree(base, ignore_errors=True)
+    os.makedirs(base, exist_ok=True)
+    for n in names:
+        if not n.startswith(prefix):
+            continue
+        rel = n[len(prefix):]
+        if not rel or rel.endswith("/"):
+            continue
+        dest = os.path.normpath(os.path.join(base, rel))   # 防路径穿越
+        if not dest.startswith(base):
+            continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(zf.read(n))
+    return {"ok": True, "id": pid, "name": m.get("name", pid), "version": m.get("version", ""),
+            "desc": m.get("desc", ""),
+            "readme": os.path.isfile(os.path.join(base, "README.md"))}
+
+
 def call_plugin(pid, action, params):
     """动态加载插件 server.py → handle(action, params)——每次重新加载（热插拔：改代码刷新生效）"""
     srv = os.path.join(PLUGINS_DIR, pid, "server.py")
@@ -274,6 +367,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         f.write(zf.read(n))
                 return self._json({"ok": True, "id": pid, "name": m.get("name", pid),
                                    "desc": m.get("desc", ""), "readme": os.path.isfile(os.path.join(base, "README.md"))})
+            if p == "/api/plugin-install":
+                # 插件列表点装：registry 里找到 id → 取 zip（本地文件 / 公开直链）→ 同一条安装路
+                pid = ""
+                try:
+                    ln = int(self.headers.get("Content-Length", 0) or 0)
+                    q = json.loads(self.rfile.read(ln).decode("utf-8", "replace") or "{}")
+                    pid = str(q.get("id") or "").strip()
+                    ent = _registry_entry(pid)
+                    if not ent:
+                        return self._json({"ok": False,
+                                           "error": "插件列表里没有「%s」——列表文件：%s" % (pid, _registry_fp())}, 404)
+                    r = install_plugin_zip(_fetch_plugin_zip(ent))
+                    if r.get("ok"):
+                        r["version"] = ent.get("version", r.get("version", ""))
+                    return self._json(r, 200 if r.get("ok") else 400)
+                except Exception as e:
+                    _log_err("plugin-install", e, pid=pid[:40])   # 装不上要留现场
+                    return self._json({"ok": False,
+                                       "error": "装不上「%s」：%s" % (pid or "?", str(e)[:160])}, 500)
             if p == "/api/conn/save":
                 try:
                     length = int(self.headers.get("Content-Length") or 0)
@@ -468,6 +580,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # 启动自检给面板看：缺什么、怎么办（起不来 vs 还没填，分开说）
                 return self._json({"ok": True, "items": preflight.check(BASE,
                                                                        port=self.server.server_address[1])})
+            if p == "/api/plugin-registry":
+                # 插件列表：公开的 registry.json + 本机已装版本（面板据此算「未装 / 可更新」）
+                inst = {}
+                try:
+                    for pl in scan_plugins():
+                        inst[str(pl.get("id"))] = pl.get("version", "")
+                except Exception:
+                    pass
+                return self._json({"ok": True, "file": _registry_fp(), "installed": inst,
+                                   "plugins": _registry()})
             if p == "/api/ping":
                 # 固定探针：壳/其它工具靠它确认「这个端口上跑的是工作台」（端口可变，所以不能靠端口号认）
                 return self._json({"app": "workbench", "pid": os.getpid(),

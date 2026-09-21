@@ -17,14 +17,22 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(os.path.dirname(HERE), "workbench-app")   # 与源码同层（推导才继续成立）
+OUT = os.path.join(os.path.dirname(HERE), "workbench-app")     # 默认：本机自用（带插件）
+# 分发包：\u201c只带内核\u201d——插件额外下（--no-plugins），运行时放独立目录（--runtime-link）
+if "--dist" in sys.argv:
+    OUT = sys.argv[sys.argv.index("--dist") + 1]
+NO_PLUGINS = "--no-plugins" in sys.argv
+RUNTIME_LINK = "--runtime-link" in sys.argv
+sys.path.insert(0, HERE)          # 运行时源路径直接从 paths 取（别自己拼目录）
+import paths                       # noqa: E402
+TG_RUNTIME_SRC = paths.TG_RUNTIME
 TMP = os.path.join(os.path.dirname(HERE), "_build_wb")       # 构建中间产物（不属于交付物）
 NAME = "OHWorkbench"
 SKIP_DIRS = {"__pycache__", ".profile", "runtime", "cache"}
 SKIP_FILES = {"state.json", "paths.local.json", "conn.db"}
 SKIP_EXT = {".pyc", ".log"}
 SRC_FILES = ["app.py", "preflight.py", "workbench.py", "paths.py", "conn_store.py",
-             "index.html", "CHANGELOG.md"]
+             "index.html", "CHANGELOG.md", "registry.json"]
 SRC_DIRS = ["vendor", "plugins"]
 
 
@@ -79,7 +87,16 @@ def main():
         return 1
 
     if os.path.isdir(OUT):
-        shutil.rmtree(OUT)
+        # 包里 runtime/ 是目录链接时，必须只拆链接——直接 rmtree 会顺着链接把他真实的 runtime 删了
+        rt0 = os.path.join(OUT, "runtime")
+        try:
+            is_j = getattr(os.path, "isjunction", lambda p: False)(rt0) or os.path.islink(rt0)
+            if os.path.isdir(rt0) and is_j:
+                subprocess.run(["cmd", "/c", "rmdir", rt0], capture_output=True)
+                print("  拆掉旧的 runtime 链接（不碰源目录）")
+        except Exception:
+            pass
+        shutil.rmtree(OUT, ignore_errors=True)
     shutil.copytree(built, OUT)
 
     for f in SRC_FILES:
@@ -87,9 +104,25 @@ def main():
         if os.path.isfile(src):
             shutil.copy2(src, os.path.join(OUT, f))
     for d in SRC_DIRS:
+        if NO_PLUGINS and d == "plugins":
+            continue
         src = os.path.join(HERE, d)
         if os.path.isdir(src):
             copy_tree(src, os.path.join(OUT, d))
+    if NO_PLUGINS:
+        shutil.rmtree(os.path.join(OUT, "plugins"), ignore_errors=True)
+        os.makedirs(os.path.join(OUT, "plugins"), exist_ok=True)   # 空目录：装插件时往里放
+        print("\n（--no-plugins：包里不带插件，插件由【插件列表】下载安装）")
+    if RUNTIME_LINK:
+        # 运行时放独立目录（跟 plugins 一样在程序旁边）：加依赖只更新它，不用重打 exe。
+        # 本机测试直接链接到现有那份；正式分发放精简运行时。
+        rt = os.path.join(OUT, "runtime")
+        if os.path.isdir(TG_RUNTIME_SRC) and not os.path.exists(rt):
+            r = subprocess.run(["cmd", "/c", "mklink", "/J", rt, TG_RUNTIME_SRC],
+                               capture_output=True)
+            print("  runtime/ → %s（%s）" % (TG_RUNTIME_SRC, "OK" if r.returncode == 0 else "失败"))
+        elif os.path.exists(rt):
+            print("  runtime/ 已存在，跳过")
 
     print("\n产物：%s" % OUT)
     for name in sorted(os.listdir(OUT)):

@@ -19,12 +19,9 @@ PY = paths.PYTHON                                   # 插件脚本用的解释�
 
 
 def _py():
-    """插件脚本要用的解释器：优先推广一键跑自带的（含 playwright/openpyxl），
-    再退到 设置-通用 里指定的。两个都不行就在这里说人话
-    ——否则现象是「点了跑批没反应」，最难查。"""
-    cand = os.path.join(TG, "runtime", "python.exe")
-    if os.path.isfile(cand):
-        return cand
+    """插件脚本要用的解释器：**包里的 runtime 优先**（没装才用推广一键跑自带的）——
+    就是 设置-通用 →「插件用的 Python」那一项（paths 层决定，插件不自作主张）。
+    两个都不行就在这里说人话——否则现象是「点了跑批没反应」，最难查。"""
     return paths.python_exe()
 SUCAI = paths.MAT_ROOT
 TG_REC = os.path.join(paths.DATA, "推广记录.csv")
