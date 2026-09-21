@@ -877,6 +877,10 @@ def serve():
     """起服务并返回 (srv, 实际端口)；桌面壳也用这个入口"""
     srv, port = _bind_server()
     _write_port_file(port)
+    if port != PORT:
+        # 换端口要说话：不然用户会以为「怎么打不开」，也不知道到哪里改
+        print("提示：%d 被占（可能是另一个工作台实例），本次用 %d —— 可在 设置→通用→「内核端口」改"
+              % (PORT, port))
     print("优化管理工作台: http://127.0.0.1:%d/" % port)
     return srv, port
 
