@@ -15,7 +15,9 @@ runtime、Chrome 安装位置」这些东西本来就不在程序目录里，靠
 """
 import json
 import os
+import re
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CFG_NAME = "paths.local.json"
@@ -137,6 +139,20 @@ def _as_list(key):
 
 
 # ---- 对外名字（业务代码只引用这些；改配置后由 reload() 刷新）----
+def _session_id():
+    """会话标识。为什么缓存要按会话分：CACHE 是全台共用一个目录，两个会话同时跑时，
+    清缓存的人分不清哪份是自己的，就把别人手上的临时文件删了。分目录后这件事结构上做不到。
+    优先 WB_SESSION（同一会话的各条命令靠它归到同一个目录）；没有就用「进程号+启动时刻」
+    ——隔离够（不同进程一定不同），但每条命令一份。"""
+    v = (os.environ.get("WB_SESSION") or "").strip()
+    if v:
+        return re.sub(r"[^\w.\-]+", "_", v)[:40]
+    return "p%d_%s" % (os.getpid(), time.strftime("%H%M%S"))
+
+
+_SESSION_ID = _session_id()
+
+
 def _refresh():
     """把配置解析结果写回本模块的对外名字"""
     g = globals()
@@ -147,6 +163,9 @@ def _refresh():
     except Exception:
         g["PORT"] = 8900
     g["PORT_FILE"] = os.path.join(g["RUNTIME"], "port.json")   # 实际端口写这里，壳靠它找已跑的实例
+    # 本会话自己的缓存目录：与其它会话严格分开（别人的目录只读不删）
+    g["SESSION"] = _SESSION_ID
+    g["CACHE_SESSION"] = os.path.join(g["CACHE"], _SESSION_ID)
     g["LOG_KEEP_DAYS"] = os.path.join(g["TG_RUNTIME"], "log_keep_days.json")
     g["TG_PYTHON"] = os.path.join(g["TG_RUNTIME"], "python.exe")   # 推广一键跑自带的解释器
     # Chrome 候选：配置值优先，其后是系统常见安装位（同一个 Chrome，只是路径不同）
@@ -264,9 +283,25 @@ def runtime(*parts):
 
 
 def cache(*parts):
-    """缓存/临时目录下的文件；临时文件都应该走这里"""
-    os.makedirs(CACHE, exist_ok=True)
-    return os.path.join(CACHE, *parts)
+    """本会话的缓存/临时文件路径（自动建目录）。
+    约定：CACHE 下按会话分目录，跨会话只读不删——要清只清自己这一份（clean_cache）。"""
+    os.makedirs(CACHE_SESSION, exist_ok=True)
+    return os.path.join(CACHE_SESSION, *parts)
+
+
+def own_cache_dir():
+    """本会话的缓存目录（给别人看的：这个目录属于我）"""
+    return CACHE_SESSION
+
+
+def clean_cache():
+    """清本会话自己的缓存目录。别人的目录一个都不碰（哪怕对方已经不在跑了）。"""
+    import shutil
+    if os.path.basename(CACHE_SESSION.rstrip("\\/")) != SESSION:   # 兜底：路径被改坏时宁可不删
+        raise RuntimeError("拒绝清理：目标不是本会话目录（%s）" % CACHE_SESSION)
+    if os.path.isdir(CACHE_SESSION):
+        shutil.rmtree(CACHE_SESSION, ignore_errors=True)
+    return CACHE_SESSION
 
 
 def tg(*parts):
