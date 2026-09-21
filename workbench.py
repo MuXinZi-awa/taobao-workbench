@@ -12,6 +12,7 @@ import glob
 import re
 
 import paths            # 机器特有路径的唯一出处（换机/换目录只改 paths.local.json）
+import preflight        # 启动自检：缺什么、怎么办（壳与面板共用）
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 PLUGINS_DIR = os.path.join(BASE, "plugins")
@@ -30,6 +31,23 @@ def _refresh_path_consts():
     global MAT_ROOT, DATA_DIR
     MAT_ROOT = paths.MAT_ROOT
     DATA_DIR = paths.DATA
+
+
+def _log_err(where, exc=None, **ctx):
+    """错误现场落盘：写程序自己的日志目录（不写业务数据目录）。
+    在别人机器上没法现场调试——日志是唯一的眼睛，所以带上时间/位置/上下文/堆栈。"""
+    import datetime
+    import traceback
+    try:
+        os.makedirs(paths.RUNTIME, exist_ok=True)
+        with open(os.path.join(paths.RUNTIME, "errors.log"), "a", encoding="utf-8") as f:
+            f.write("\n%s  [%s] %s\n" % (
+                datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), where,
+                "  ".join("%s=%s" % (k, str(v)[:140]) for k, v in ctx.items())))
+            if exc is not None:
+                f.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-1500:])
+    except Exception:
+        pass
 
 
 def core_version():
@@ -112,6 +130,7 @@ def call_plugin(pid, action, params):
             return mod.handle(action, params)
         return {"error": "server.py 未定义 handle(action, params)"}
     except Exception as e:
+        _log_err("plugin", e, pid=pid, action=action)
         return {"error": "插件执行异常: %s" % str(e)[:100]}
 
 
@@ -156,6 +175,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def _json(self, obj, code=200):
+        # 失败也要留现场：所有响应的唯一出口，凡是 4xx/5xx 或 ok=false / 带 error 的，都记一行
+        try:
+            if code >= 400 or (isinstance(obj, dict) and (obj.get("ok") is False or obj.get("error"))):
+                _log_err("resp%d" % code, None, path=str(self.path)[:160], detail=str(obj)[:300])
+        except Exception:
+            pass
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -296,6 +321,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return self._json({"ok": False, "error": str(e)[:120]})
             return self._json({"ok": False, "error": "未知 POST"}, 404)
         except Exception as e:
+            _log_err("POST", e, path=p[:160])
             return self._json({"error": str(e)[:100]}, 500)
 
     def do_GET(self):
@@ -438,6 +464,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             if p == "/api/plugins":
                 return self._json({"plugins": scan_plugins(), "core": core_version()})
+            if p == "/api/preflight":
+                # 启动自检给面板看：缺什么、怎么办（起不来 vs 还没填，分开说）
+                return self._json({"ok": True, "items": preflight.check(BASE,
+                                                                       port=self.server.server_address[1])})
             if p == "/api/ping":
                 # 固定探针：壳/其它工具靠它确认「这个端口上跑的是工作台」（端口可变，所以不能靠端口号认）
                 return self._json({"app": "workbench", "pid": os.getpid(),
@@ -525,6 +555,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     self.wfile.write(data)
                     return
                 except Exception as e:
+                    _log_err("GET", e, path=p[:160])
                     return self._json({"error": str(e)[:80]}, 500)
             if p == "/api/browser-status":
                 # 浏览器登录态检测（chrome_profile cookie 有效性——跑一次查询探测）
@@ -675,6 +706,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     txt = ""
                 return self._json({"content": txt[:200000], "name": os.path.basename(fp)})
         except Exception as e:
+            _log_err("serve_file", e, fp=str(fp)[:160])
             return self._json({"error": str(e)}, 500)
         return super().do_GET()
 

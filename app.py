@@ -21,6 +21,10 @@ import urllib.request
 
 FROZEN = getattr(sys, "frozen", False)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)          # 打包后自己的目录不在默认搜索路径里
+import preflight                       # noqa: E402
+
 TITLE = "优化管理工作台"
 PROBE_RANGE = [8900 + i for i in range(0, 12)]     # 认实例时的探测范围（端口可变，到这里找）
 WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
@@ -95,7 +99,9 @@ def ping(port):
 
 
 def find_instance():
-    """已在跑的工作台：先读端口文件，再扫探测范围"""
+    """已在跑的工作台：先读端口文件，再扫探测范围。
+    先用快速 TCP 预判筛掉没人监听的端口——直接对 12 个端口发 HTTP 探测，
+    每个要等 1 秒超时（开了代理更慢），启动会白白多等十几秒。"""
     cands = []
     try:
         with open(_port_file(), encoding="utf-8") as f:
@@ -105,7 +111,7 @@ def find_instance():
     except Exception:
         pass
     for p in PROBE_RANGE:
-        if p not in cands:
+        if p not in cands and port_open(p):
             cands.append(p)
     for p in cands:
         j = ping(p)
@@ -148,11 +154,16 @@ def focus_window(pid):
         return False
 
 
-def port_open(port):
+def port_open(p, timeout=0.12):
+    """端口上有人监听吗（阻塞式短超时：关闭的端口会立刻 refused，1 毫秒级）
+    注意不能用 settimeout + connect_ex：那会让 socket 变非阻塞，返回的 10035 是「还在连」而不是「没开」。"""
     s = socket.socket()
-    s.settimeout(0.4)
+    s.settimeout(timeout)
     try:
-        return s.connect_ex(("127.0.0.1", port)) == 0
+        s.connect(("127.0.0.1", p))
+        return True
+    except Exception:
+        return False
     finally:
         s.close()
 
@@ -181,13 +192,48 @@ def wait_core(seconds=30):
     return None
 
 
+def _install_crash_hooks():
+    """崩了也要留现场：在别人机器上没人能现场调试，日志是唯一的眼睛。"""
+    import traceback
+
+    def hook(et, e, tb):
+        _log("崩溃：%s\n%s" % (getattr(et, "__name__", "?"),
+                              "".join(traceback.format_exception(et, e, tb))[-1500:]))
+    try:
+        sys.excepthook = hook
+    except Exception:
+        pass
+    try:
+        import threading as _th
+
+        def thook(a):
+            try:
+                tb = "".join(traceback.format_exception(a.exc_type, a.exc_value, a.exc_traceback))
+            except Exception:
+                tb = str(a.exc_value)
+            _log("线程崩溃：%s\n%s" % (getattr(a.exc_type, "__name__", "?"), tb[-1500:]))
+        _th.excepthook = thook
+    except Exception:
+        pass
+
+
+_MARK = {"ok": "✓", "warn": "⚠", "block": "✗"}
+
+
 def main():
     _fix_stdio()
-    if not os.path.isfile(os.path.join(HERE, "workbench.py")):
-        say("无法启动",
-            "找不到 workbench.py。\n\n它会和本程序放在同一个文件夹里——"
-            "是不是只拷了 exe，没拷整个文件夹？\n\n当前目录：\n" + HERE)
-        return 2
+    _install_crash_hooks()
+
+    # 首次运行自检：缺什么、怎么办（一项一句中文，同时落盘一份）
+    checks = preflight.check(HERE)
+    for it in checks:
+        _log("[自检] %s %s — %s%s" % (_MARK.get(it["level"], "?"), it["label"], it["detail"],
+                                      ("；" + it["advice"]) if it.get("advice") else ""))
+    hard = [it for it in preflight.blocks(checks) if it["key"] != "webview2"]
+    if hard:
+        say("开不起来", "\n\n".join("%s\n→ %s" % (it["detail"], it["advice"]) for it in hard))
+        return 5
+    no_wv = [it for it in preflight.blocks(checks) if it["key"] == "webview2"]
 
     run = find_instance()
     if run:
@@ -223,6 +269,15 @@ def main():
         say("已用浏览器打开",
             "没装 pywebview，改用系统浏览器打开：\n%s\n\n（功能不缺，只是没有独立窗口）\n\n%s"
             % (url, str(e)[:90]))
+        return 0
+
+    if no_wv:
+        # 缺 WebView2 不硬撑：先把话说清楚，再用浏览器把功能交到手
+        import webbrowser
+        webbrowser.open(url)
+        say("已用浏览器打开（缺 WebView2）",
+            "%s\n\n装完再双击本程序，就会回到独立窗口。\n\n本次已打开：%s"
+            % (no_wv[0]["advice"], url))
         return 0
 
     try:

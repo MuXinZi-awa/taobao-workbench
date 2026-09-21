@@ -712,6 +712,26 @@ function pathsReset(k){
   if(!d.ok){ alert('恢复失败：'+(d.error||'')); return; }
   alert(k?'已恢复默认':'已全部恢复默认'); pathsLoad(); }); }
 function pathsResetAll(){ pathsReset(''); }
+
+/* ===== 启动自检提示：缺什么说一句，不拦人（起不来的事在窗体外已经说过了）===== */
+function preflightToast(){
+ fetch(API+'/api/preflight').then(r=>r.json()).then(function(d){
+  if(!d||!d.ok) return;
+  var w=(d.items||[]).filter(function(x){return x.level!=='ok';});
+  if(!w.length) return;
+  var show=w.slice(0,3), more=w.length-show.length;
+  var box=document.createElement('div');
+  box.style.cssText='position:fixed;left:50%;transform:translateX(-50%);top:10px;z-index:9999;background:var(--bg-card,#fff);border:.5px solid var(--border,#ddd);border-left:3px solid #d9a441;color:var(--text,#222);padding:9px 26px 9px 14px;border-radius:8px;font-size:12.5px;line-height:1.7;box-shadow:0 2px 14px rgba(0,0,0,.14);max-width:72%';
+  box.innerHTML='<b>自检提示</b>'
+   +show.map(function(x){return '<div>· '+esc(x.detail)+'<span style="color:var(--text-m,#888)">（'+esc(x.advice)+'）</span></div>';}).join('')
+   +(more?('<div style="color:var(--text-m,#888)">还有 '+more+' 项</div>'):'')
+   +'<div style="font-size:11px;color:var(--text-m,#888);margin-top:2px">不影响已有功能，点右上 ✕ 收起</div>';
+  var x=document.createElement('span'); x.textContent='✕';
+  x.style.cssText='position:absolute;right:8px;top:6px;cursor:pointer;color:var(--text-m,#888)';
+  x.onclick=function(){ box.remove(); };
+  box.appendChild(x); document.body.appendChild(box);
+ });
+}
 function renderGeneral(c){
  c.innerHTML='<h3>通用</h3><div class="desc">启动与后台</div>'
  +'<div style="background:var(--bg-card);border:.5px solid var(--border);border-radius:var(--r);padding:8px 12px">'
@@ -750,7 +770,7 @@ function bindUI(){ const inp=document.getElementById('searchInput'), sg=document
  dd(document.getElementById('ftBtn'),document.getElementById('ftMenu'),v=>{ filterType=v; loadDesk(); });
  dd(document.getElementById('sortBtn'),document.getElementById('sortMenu'),v=>{ sortMode=v; document.getElementById('sortBtn').innerHTML=(v==='time'?'时间':SORT_LABEL[v])+'<span style="font-size:9px">▾</span>'; loadDesk(); });
  document.addEventListener('click',()=>document.querySelectorAll('.dropdown.open').forEach(x=>x.classList.remove('open'))); }
-bindUI(); loadPlugins(); loadDesk();
+bindUI(); loadPlugins(); loadDesk(); preflightToast();
 
 /* ===== 账号切换自动跟随（内核指纹轮询；变了 → 重载插件 iframe + 提示）===== */
 var _acctTok = null;
