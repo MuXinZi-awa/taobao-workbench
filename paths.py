@@ -60,6 +60,7 @@ _DEFAULTS = {
     "product": os.path.join(WS, "产品"),
     "tg_root": os.path.join(_DESKTOP, "推广一键跑"),
     "tg_runtime": os.path.join(_DESKTOP, "推广一键跑", "runtime"),
+    "python": os.path.join(_DESKTOP, "推广一键跑", "runtime", "python.exe"),
     "chrome": os.path.join(_HOME, "AppData", "Local", "Google", "Chrome",
                            "Application", "chrome.exe"),
     "key_files": [os.path.join(WS, "xyq_key.txt"),
@@ -68,7 +69,7 @@ _DEFAULTS = {
 }
 
 _KEYS = ["root", "runtime", "cache", "port", "state", "mat_root", "data", "product",
-         "tg_root", "tg_runtime", "chrome", "key_files"]
+         "tg_root", "tg_runtime", "python", "chrome", "key_files"]
 
 
 def _write_template(path, values):
@@ -190,6 +191,7 @@ NOTES = {
     "product": ("产品目录", "按料号落盘的工作目录", "目录"),
     "tg_root": ("推广一键跑目录", "外部脚本本体（上品/推广/采集）", "目录"),
     "tg_runtime": ("推广一键跑·运行目录", "它的进度、日志都在这里", "目录"),
+    "python": ("插件用的 Python", "面板里点下去跑的批处理脚本用这个解释器；打包后壳自己不能当解释器（壳里没有 playwright / openpyxl）", "文件"),
     "chrome": ("Chrome 程序", "自动登录与采集用的浏览器", "文件"),
     "key_files": ("密钥查找顺序", "多个候选路径，按先后顺序找 xyq_key.txt", "列表，用 ; 分隔"),
 }
@@ -307,6 +309,18 @@ def clean_cache():
 def tg(*parts):
     """推广一键跑目录下的文件"""
     return os.path.join(TG_ROOT, *parts)
+
+
+def python_exe():
+    """插件/脚本要用的解释器。
+    指错了要**说人话**——否则现象是「点了跑批没反应」，最难查。"""
+    p = str(PYTHON or "").strip()
+    if p and os.path.isfile(p):
+        return p
+    raise RuntimeError(
+        "找不到可用的 Python 解释器：%s\n"
+        "去 设置 → 通用 →「插件用的 Python」改成本机真实 Python 的路径（本机可用：%s）"
+        % (p or "（空）", TG_PYTHON))
 
 
 def summary():

@@ -15,7 +15,17 @@ STATE_FP = os.path.join(ROOT, "state.json")
 TG = paths.TG_ROOT
 PBASE = os.path.dirname(os.path.abspath(__file__))   # 插件目录
 SCRIPTS = os.path.join(PBASE, "scripts")             # 插件内脚本（自包含）
-PY = sys.executable                                  # 工作台 python（含依赖）
+PY = paths.PYTHON                                   # 插件脚本用的解释器（设置-通用可改）
+
+
+def _py():
+    """插件脚本要用的解释器：优先推广一键跑自带的（含 playwright/openpyxl），
+    再退到 设置-通用 里指定的。两个都不行就在这里说人话
+    ——否则现象是「点了跑批没反应」，最难查。"""
+    cand = os.path.join(TG, "runtime", "python.exe")
+    if os.path.isfile(cand):
+        return cand
+    return paths.python_exe()
 SUCAI = paths.MAT_ROOT
 TG_REC = os.path.join(paths.DATA, "推广记录.csv")
 
@@ -257,7 +267,7 @@ def classify_batch(lhs):
     if not ls:
         return [], "无料号"
     try:
-        r = subprocess.run([PY, "-X", "utf8", "-u", fp, ",".join(ls)],
+        r = subprocess.run([_py(), "-X", "utf8", "-u", fp, ",".join(ls)],
                            cwd=SCRIPTS, capture_output=True, timeout=600)
         out = (r.stdout or b"").decode("utf-8", "replace")
         err = (r.stderr or b"").decode("utf-8", "replace")
@@ -333,7 +343,7 @@ def _run_script(script, args, timeout=3600):
     if not os.path.isfile(script):
         return False, "缺少脚本: %s" % os.path.basename(script)
     try:
-        r = subprocess.run([RT, "-X", "utf8", "-u", script] + [str(a) for a in args],
+        r = subprocess.run([RT if os.path.isfile(RT) else _py(), "-X", "utf8", "-u", script] + [str(a) for a in args],
                            cwd=os.path.dirname(script), capture_output=True, timeout=timeout)
         out = (r.stdout or b"").decode("utf-8", "replace")
         err = (r.stderr or b"").decode("utf-8", "replace")
@@ -513,7 +523,7 @@ def handle(action, qs):
         _bs = _batch_busy()
         if _bs:
             return {"ok": False, "error": "已有批在跑（%s）——先等完成或停掉" % _bs}
-        rt = PY
+        rt = _py()
         rb = os.path.join(SCRIPTS, "repair_batch.py")
         logf = os.path.join(SCRIPTS, "repair.log")
         try:
@@ -535,7 +545,7 @@ def handle(action, qs):
         _bs = _batch_busy()
         if _bs:
             return {"ok": False, "error": "已有批在跑（%s）——先等完成或停掉" % _bs}
-        rt = PY
+        rt = _py()
         sb = os.path.join(SCRIPTS, "switch_src.py")
         logf = os.path.join(SCRIPTS, "repair.log")
         try:

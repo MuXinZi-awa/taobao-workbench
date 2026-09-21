@@ -23,7 +23,8 @@ NAME = "OHWorkbench"
 SKIP_DIRS = {"__pycache__", ".profile", "runtime", "cache"}
 SKIP_FILES = {"state.json", "paths.local.json", "conn.db"}
 SKIP_EXT = {".pyc", ".log"}
-SRC_FILES = ["app.py", "workbench.py", "paths.py", "conn_store.py", "index.html", "CHANGELOG.md"]
+SRC_FILES = ["app.py", "preflight.py", "workbench.py", "paths.py", "conn_store.py",
+             "index.html", "CHANGELOG.md"]
 SRC_DIRS = ["vendor", "plugins"]
 
 

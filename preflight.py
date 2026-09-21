@@ -126,6 +126,23 @@ def check(here, port=None, running=False):
         add("paths", "外部目录", "warn", "读路径配置失败：%s" % str(e)[:80],
             "打开 设置 → 通用 看一眼路径项")
 
+    # 插件用的解释器：决定「点下去能不能跑起来」（打包后壳自己不能当解释器）
+    try:
+        import sys
+        sys.path.insert(0, here)
+        import paths as _p
+        py = str(getattr(_p, "PYTHON", "") or "")
+        if py and os.path.isfile(py):
+            add("python", "插件用的 Python", "ok", py)
+        else:
+            add("python", "插件用的 Python", "warn",
+                "没找到插件要用的 Python：%s" % (py or "（空）"),
+                "面板能开、能看，但点「跑批」起不来——去 设置 → 通用 →「插件用的 Python」"
+                "改成本机真实 Python 的路径（本机可用：%s）" % getattr(_p, "TG_PYTHON", ""))
+    except Exception as e:
+        add("python", "插件用的 Python", "warn", "读解释器配置失败：%s" % str(e)[:80],
+            "打开 设置 → 通用 看一眼「插件用的 Python」")
+
     # 端口 / 已有实例（信息，不是故障）
     if port:
         add("port", "内核端口", "ok",

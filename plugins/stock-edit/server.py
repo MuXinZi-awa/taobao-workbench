@@ -31,9 +31,9 @@ LAST = os.path.join(TG, "runtime", "stock_last.json")
 RUNLOG = os.path.join(TG, "runtime", "stock_edit_run.log")
 STOCK_PY = os.path.join(TG, "stock_api.py")
 STATE = paths.STATE
-DEFAULT_QTY = "50000"
+DEFAULT_QTY = "open"        # 默认敞开卖（50000）；手填时才传数字
 
-PY = sys.executable
+PY = paths.PYTHON          # 插件脚本用的解释器（设置-通用可改；打包后壳自己不能当解释器）
 RT = os.path.join(TG, "runtime", "python.exe")
 if not os.path.isfile(RT):
     RT = PY
@@ -110,10 +110,11 @@ def handle(action, qs):
         gap = str(qs.get("gap") or "2.5").strip() or "2.5"
         limit = str(qs.get("limit") or "0").strip() or "0"
         mirror = str(qs.get("mirror") or "").strip() in ("1", "true", "yes")
-        try:
-            int(qty)
-        except Exception:
-            return {"ok": False, "error": "库存要是数字：%s" % qty}
+        if qty != "open":
+            try:
+                int(qty)
+            except Exception:
+                return {"ok": False, "error": "库存值要么是数字，要么走「敞开卖」：%s" % qty}
         rows = parse_rows(qs.get("rows") or "")
         if mode == "rows" and not rows:
             return {"ok": False, "error": "没解析到任何料号/淘宝ID——一行一个，或直接拖 csv 进来"}
@@ -138,6 +139,10 @@ def handle(action, qs):
         except Exception:
             pass
         try:
+            if not os.path.isfile(RT):
+                # 指错了要说人话：不这样的话现象是「点了没反应」
+                return {"ok": False, "error": "找不到插件要用的 Python：%s\n去 设置 → 通用 →「插件用的 Python」改成真实路径（本机可用：%s）"
+                                                % (RT, paths.TG_PYTHON)}
             with io.open(RUNLOG, "a", encoding="utf-8") as lg:
                 lg.write("\n=== %s %s %s 品 qty=%s what=%s gap=%s limit=%s mirror=%s ===\n"
                          % (time.strftime("%Y-%m-%d %H:%M:%S"),
