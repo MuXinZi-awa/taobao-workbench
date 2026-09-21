@@ -47,7 +47,12 @@
           <option value="price">售价（ERP 成本 × 倍数）</option>
           <option value="both">库存 + 售价</option>
         </select></div>
-      <div class="fld"><span class="lab" id="qtyLab">库存</span><input id="qty" type="number" value="50000"><span class="lab" id="qtyUnit">件</span></div>
+      <div class="fld"><span class="lab" id="qtyLab">库存</span>
+        <select id="qtyMode" onchange="applyWhat()">
+          <option value="open">敞开卖（3000000）</option>
+          <option value="fixed">手填</option>
+        </select>
+        <input id="qty" type="number" value="3000000" style="width:88px" disabled><span class="lab" id="qtyUnit">件</span></div>
       <div class="fld"><span class="lab">间隔</span><input id="gap" type="number" value="2.5" step="0.5" style="width:74px"><span class="lab">秒/品</span></div>
       <div class="fld"><span class="lab">最多</span><input id="limit" type="number" value="0" style="width:74px"><span class="lab">个（0=不限）</span></div>
       <label class="lab" id="mirrorLab" title="把改后的表单发给 previewDraftSubmit 照一次镜子（非提交，不改商品）">
@@ -113,16 +118,22 @@ function fmt(v){
 function applyWhat(){
   const w = $('#what').value, qty = $('#qty');
   if(w === 'stock'){
-    $('#qtyLab').textContent='库存'; $('#qtyUnit').textContent='件'; qty.disabled=false;
-    if(!qty.value) qty.value='50000';
-    $('#whatHint').textContent='把每个品的库存改成这个数（多 SKU 的每个 SKU 都写这个数）。';
+    $('#qtyLab').textContent='库存'; $('#qtyUnit').textContent='件';
+    $('#qty').disabled = ($('#qtyMode').value==='open');
+    if(!$('#qty').value) $('#qty').value='3000000';
+    $('#whatHint').textContent = ($('#qtyMode').value==='open')
+      ? '敞开卖：库存统一按同行量级（默认 3000000，可在 设置→通用→「敞开卖库存」改）。ERP 不是实时更新的，连接器流通又快，在手 0 很常见——不拿它在手数当库存（ERP 只用于成本）。'
+      : '把每个品的库存都改成这个手填数（多 SKU 的每个 SKU 都写这个数）。';
   } else if(w === 'price'){
-    $('#qtyLab').textContent='库存（本次不动）'; $('#qtyUnit').textContent='—'; qty.disabled=true;
+    $('#qtyLab').textContent='库存（本次不动）'; $('#qtyUnit').textContent='—'; $('#qty').disabled=true;
     $('#whatHint').textContent='售价 = ERP 成本 × 倍数（<1 → 1.8，1~20 → 1.5，>20 → 1.7）。老品不许低于原价，低于就跳过并写明原因。';
   } else {
-    $('#qtyLab').textContent='库存'; $('#qtyUnit').textContent='件'; qty.disabled=false;
-    if(!qty.value) qty.value='50000';
-    $('#whatHint').textContent='库存 + 售价 一起改。售价 = ERP 成本 × 倍数；老品不许低于原价，低于就跳过并写明原因。';
+    $('#qtyLab').textContent='库存'; $('#qtyUnit').textContent='件';
+    $('#qty').disabled = ($('#qtyMode').value==='open');
+    if(!$('#qty').value) $('#qty').value='3000000';
+    $('#whatHint').textContent = ($('#qtyMode').value==='open')
+      ? '库存敞开卖（默认 3000000）；售价 = ERP 成本 × 倍数。老品不许低于原价，低于就跳过。'
+      : '库存 + 售价 一起改（库存为手填值）。售价 = ERP 成本 × 倍数；老品不许低于原价，低于就跳过并写明原因。';
   }
   const m = $('#mirrorLab');
   if(m) m.title = '把改后的表单发给 previewDraftSubmit 照一次镜子（非提交，不改商品）——本次改的是：' + $('#what').selectedOptions[0].textContent;
@@ -144,7 +155,9 @@ function modeText(r){
 }
 
 async function start(mode){
-  const qty = $('#qty').value, what = $('#what').value;
+  const qtyMode = $('#qtyMode').value;
+  const qty = (qtyMode === 'open') ? 'open' : $('#qty').value;
+  const what = $('#what').value;
   const rows = $('#rows').value.trim();
   if(mode === 'rows' && !rows){ $('#msg').textContent = '先粘一列料号或淘宝ID'; return; }
   $('#goShop').disabled = $('#goRows').disabled = true;
@@ -215,7 +228,15 @@ function renderNow(rows){
       const w = String(r.why||'').replace(/^跳过：/,'') || '无事可做';
       res = '⏭ 跳过：' + esc(w); cls = 'dim';
     }
-    else if(r.ok){ res = '✓ 照镜子通过'; cls = 'ok'; }
+    else if(r.ok){
+      cls='ok'; res='✓ 照镜子通过';
+      if(r.submit && r.submit.verdict){
+        const v = r.submit.verdict;
+        res += (v.indexOf('成功')>=0) ? ' · ★已提交' : (' · 提交：'+esc(v.slice(0,20)));
+        if(r.readback && r.readback.quantity != null) res += '（读回 quantity='+esc(r.readback.quantity)+'）';
+      }
+      if(r.qtySrc) res += ' ｜ 库存来源：'+esc(r.qtySrc);
+    }
     else { res = '✗ 失败：' + esc(r.why||'未知原因'); cls = 'bad'; }
     if(r.ok && !r.skip && r.costUsed){ res += '（成本 ' + esc(r.costUsed) + ' · 来源 ' + esc(r.costSrc||'—') + '）'; }
     return rowHTML(r.lh, r.tid, modeText(r), item, oldV, newV, res, cls);

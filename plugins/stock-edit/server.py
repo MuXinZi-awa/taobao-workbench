@@ -104,6 +104,9 @@ def handle(action, qs):
     if action == "start":
         mode = (qs.get("mode") or "shop").strip()          # shop=全店（主） / rows=只跑粘进来的
         qty = str(qs.get("qty") or DEFAULT_QTY).strip() or DEFAULT_QTY
+        if qty == "open":
+            # 敞开卖的值可配置：走 设置→通用→「敞开卖库存」（默认 3000000，按同行量级）
+            qty = str(getattr(paths, "OPEN_QTY", "") or "3000000")
         what = (qs.get("what") or "stock").strip()
         gap = str(qs.get("gap") or "2.5").strip() or "2.5"
         limit = str(qs.get("limit") or "0").strip() or "0"

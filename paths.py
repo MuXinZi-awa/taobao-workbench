@@ -64,6 +64,7 @@ _DEFAULTS = {
     "runtime": os.path.join(ROOT, "runtime"),
     "cache": os.path.join(ROOT, "cache"),
     "port": 8900,
+    "open_qty": "3000000",        # 敞开卖的库存值：按同行在用的量级（比谁拍一个数可靠）
     "state": os.path.join(ROOT, "plugins", "pipeline", "state.json"),
     "mat_root": os.path.join(WS, "办公室工作", "素材", "产品素材"),
     "data": os.path.join(WS, "办公室工作", "数据"),
@@ -78,7 +79,7 @@ _DEFAULTS = {
                   os.path.join(_DESKTOP, "推广一键跑", "xyq_key.txt")],
 }
 
-_KEYS = ["root", "runtime", "cache", "port", "state", "mat_root", "data", "product",
+_KEYS = ["root", "runtime", "cache", "port", "open_qty", "state", "mat_root", "data", "product",
          "tg_root", "tg_runtime", "python", "chrome", "key_files"]
 
 
@@ -202,6 +203,7 @@ NOTES = {
     "tg_root": ("推广一键跑目录", "外部脚本本体（上品/推广/采集）", "目录"),
     "tg_runtime": ("推广一键跑·运行目录", "它的进度、日志都在这里", "目录"),
     "python": ("插件用的 Python", "面板里点下去跑的批处理脚本用这个解释器；打包后壳自己不能当解释器（壳里没有 playwright / openpyxl）。默认优先用包里的 runtime（跟 plugins 一样可以单独换），没装则用推广一键跑自带的那个", "文件"),
+    "open_qty": ("敞开卖库存", "「改库存」面板选「敞开卖」时统一写的值；默认按同行在用的量级", "数字"),
     "chrome": ("Chrome 程序", "自动登录与采集用的浏览器", "文件"),
     "key_files": ("密钥查找顺序", "多个候选路径，按先后顺序找 xyq_key.txt", "列表，用 ; 分隔"),
 }
