@@ -125,6 +125,34 @@ def _categ_chain(cid):
     return out
 
 
+def _est_price(cost, qty):
+    """单价估算：**成本 × 数量系数**（不再去解 Odoo 的价表规则——不值当）。
+    系数从 428 条成交单归纳（2026-09-21，只读）：比值中位 1.47，且随数量递减——
+      数量 <100       → 1.55
+      100 ~ 1000      → 1.50
+      1000 ~ 10000    → 1.31
+      ≥10000          → 1.25
+    算不出时返回 (None, 原因)。
+      ★ 这是**估算**，不是 ERP 里的真实报价；结果表/导出里都标注。
+      ★ 梓帆口径：主菜是清单，单价能估就估、估不出留空。"""
+    try:
+        c = float(cost or 0)
+        q = float(qty or 0)
+    except Exception:
+        return None, "成本或数量读不出"
+    if c <= 0:
+        return None, "这个品没有成本，估不出"
+    if q < 100:
+        k = 1.55
+    elif q < 1000:
+        k = 1.50
+    elif q < 10000:
+        k = 1.31
+    else:
+        k = 1.25
+    return round(c * k, 6), "估算：成本×%.2f（按数量档）" % k
+
+
 def _pricelist_price(plid, prod, qty):
     """按 Odoo 的优先级算价表价：具体产品 > 产品 > 类别(含父类) > 全局；同级取 min_quantity 最大且 ≤ qty。
     只实现 fixed / percentage，以及不带取整与上下限的 formula；其余**留空并说明原因**（不是瞎填）。
@@ -209,22 +237,19 @@ def inbound_query(qs):
                      "categ": (p.get("categ_id") or [None, ""])[1],
                      "qty": qty, "picking": pkname, "pid": pid})
     rows.sort(key=lambda r: r["date"], reverse=True)
-    note = ""
-    if plid:
-        plname = ""
-        for r in _call("product.pricelist", "read", [[int(plid)], ["name"]]):
-            plname = r["name"]
-        for r in rows:
-            p = pmap.get(r["pid"])
-            price, why = _pricelist_price(int(plid), p, r["qty"] or 1)
-            r["price"] = price
-            r["price_note"] = why
-        note = "单价按价格表「%s」算（按该品本次入库数量定阶梯）；算不出的留空并注明原因" % plname
-    else:
-        for r in rows:
-            r["price"] = None
-            r["price_note"] = ""
-        note = "没选价格表 → 不填单价"
+    # 单价：**成本×数量系数的估算**（不再查价格表——梓帆定：不陪价表玩）
+    n_est, n_blank = 0, 0
+    for r in rows:
+        p = pmap.get(r["pid"])
+        price, why = _est_price((p or {}).get("standard_price"), r["qty"])
+        r["price"] = price
+        r["price_note"] = why
+        r["cost"] = (p or {}).get("standard_price")
+        if price is None:
+            n_blank += 1
+        else:
+            n_est += 1
+    note = "单价＝成本×数量系数的**估算**（估出 %d / 留空 %d）——不是 ERP 里的真实报价" % (n_est, n_blank)
     return {"ok": True, "rows": rows, "n": len(rows), "from": d1, "to": d2,
             "ms": int((time.time() - t0) * 1000), "note": note, "scope": "只算 incoming（收货单）"}
 
@@ -296,8 +321,8 @@ def inbound_export(qs):
     rows = r["rows"]
     if not rows:
         return {"ok": False, "error": "这个区间没有数据，不用导"}
-    header = ["首次入库日期", "型号", "名称", "编码", "类别", "数量", "单价", "单价备注", "收货单"]
-    data = [[(x["date"] or "")[:19], x["name"], x["name"], x["code"], x["categ"], x["qty"],
+    header = ["首次入库日期", "型号", "名称", "编码", "类别", "数量", "单价(估算)", "单价备注", "收货单"]
+    data = [[(x["date"] or "")[:19], x["name"], x["disp"] or x["name"], x["code"], x["categ"], x["qty"],
              ("" if x.get("price") is None else x["price"]), x.get("price_note") or "", x["picking"]]
             for x in rows]
     try:
