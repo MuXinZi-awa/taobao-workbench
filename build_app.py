@@ -177,6 +177,18 @@ def main():
         print("没找到产物 exe：%s" % built)
         return 1
 
+    # 先把「便携数据」抱出来：webview_data 默认在程序目录的 data\ 下（存主题/偏好、面板偏好），
+    # 重建会整个删掉程序目录——不先移出来，用户在设置里改的东西每次构建都被清掉。
+    keep = os.path.join(OUT, "data")
+    stash = OUT + "__data_keep"
+    if os.path.isdir(keep):
+        try:
+            shutil.rmtree(stash, ignore_errors=True)
+            shutil.move(keep, stash)
+            print("  已把 data\\ 暂时移出（重建后放回）")
+        except Exception as e:
+            print("  ！！data\\ 移不出来（%s）——这次重建会丢掉里面的主题/偏好设置" % str(e)[:60])
+
     if os.path.isdir(OUT):
         # 包里 runtime/ 是目录链接时，必须只拆链接——直接 rmtree 会顺着链接把他真实的 runtime 删了
         rt0 = os.path.join(OUT, "runtime")
@@ -203,6 +215,9 @@ def main():
         print("   先关掉所有工作台窗口/msedgewebview2 进程，再重建；或手工删掉这个目录")
         return 4
     shutil.copytree(built, OUT)
+    if os.path.isdir(stash) and not os.path.isdir(keep):
+        shutil.move(stash, keep)
+        print("  data\\ 已放回 ✓")
 
     for f in SRC_FILES:
         src = os.path.join(HERE, f)
