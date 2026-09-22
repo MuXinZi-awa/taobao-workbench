@@ -17,8 +17,9 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(os.path.dirname(HERE), "workbench-app")     # 默认：本机自用（带插件）
-# 分发包：\u201c只带内核\u201d——插件额外下（--no-plugins），运行时放独立目录（--runtime-link）
+# 正式入口（构建的默认目标）：构建时拷过去的那份副本就在它里面
+ENTRY = os.path.join(os.path.dirname(HERE), "工作台（双击启动）")
+OUT = ENTRY                                                     # 默认重建正式入口
 if "--dist" in sys.argv:
     OUT = sys.argv[sys.argv.index("--dist") + 1]
 NO_PLUGINS = "--no-plugins" in sys.argv
@@ -28,8 +29,81 @@ import paths                       # noqa: E402
 TG_RUNTIME_SRC = paths.TG_RUNTIME
 TMP = os.path.join(os.path.dirname(HERE), "_build_wb")       # 构建中间产物（不属于交付物）
 NAME = "OHWorkbench"
+
+# ── 副本同步闸 ────────────────────────────────
+# 为什么要有：源码改了、构建时拷到入口目录的那份副本没跟 → 用户看到旧行为。
+# 今天栽过两次：preflight.py（改源码没生效）、index.html（源码修了 exe 那份还是坏的）。
+import hashlib                       # noqa: E402
+
+
+def _digest_file(p):
+    """内容摘要（比时间戳可靠：时间戳会因为“碰一下”而撒谎）"""
+    try:
+        h = hashlib.sha1()
+        with open(p, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return "%s/%dB" % (h.hexdigest()[:10], os.path.getsize(p))
+    except Exception:
+        return "缺失"
+
+
+def _digest_dir(d):
+    items = []
+    for r, ds, fs in os.walk(d):
+        ds[:] = [x for x in ds if x not in SKIP_DIRS]
+        for f in fs:
+            if f in SKIP_FILES or os.path.splitext(f)[1].lower() in SKIP_EXT:
+                continue
+            p = os.path.join(r, f)
+            try:
+                items.append((os.path.relpath(p, d), os.path.getsize(p)))
+            except Exception:
+                pass
+    return "%d个/%dB/%s" % (len(items), sum(s for _, s in items),
+                            hashlib.sha1(repr(sorted(items)).encode()).hexdigest()[:8])
+
+
+def check_sync(target, verbose=True):
+    """比「源码」与「目标目录里的副本」。返回不同步的清单（空 = 全一致）。"""
+    bad = []
+    if not os.path.isdir(target):
+        return ["（目标目录不存在：%s）" % target]
+    for f in SYNC_FILES:
+        da = _digest_file(os.path.join(HERE, f))
+        db = _digest_file(os.path.join(target, f))
+        ok = (da == db)
+        if verbose:
+            print("  %-22s %s  源码=%s  副本=%s" % (f, "一致 ✓" if ok else "不一致 ✗", da, db))
+        if not ok:
+            bad.append(f)
+    for d in SYNC_DIRS:
+        da = _digest_dir(os.path.join(HERE, d))
+        db = _digest_dir(os.path.join(target, d))
+        ok = (da == db)
+        if verbose:
+            print("  %-22s %s  %s / %s" % (d + "/", "一致 ✓" if ok else "不一致 ✗", da, db))
+        if not ok:
+            bad.append(d + "/")
+    return bad
+
+
+def sync_copies(target):
+    """把源码拷到目标目录对齐（轻量，不用重打 exe）"""
+    done = []
+    for f in SYNC_FILES:
+        src = os.path.join(HERE, f)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(target, f))
+            done.append(f)
+    for d in SYNC_DIRS:
+        src = os.path.join(HERE, d)
+        if os.path.isdir(src):
+            copy_tree(src, os.path.join(target, d))
+            done.append(d + "/")
+    return done
 SKIP_DIRS = {"__pycache__", ".profile", "runtime", "cache"}
-SKIP_FILES = {"state.json", "paths.local.json", "conn.db"}
+SKIP_FILES = {"state.json", "paths.local.json", "conn.db", ".disabled"}
 SKIP_EXT = {".pyc", ".log"}
 SRC_FILES = ["app.py", "preflight.py", "workbench.py", "paths.py", "conn_store.py",
              "index.html", "CHANGELOG.md", "registry.json"]
@@ -37,6 +111,8 @@ SRC_FILES = ["app.py", "preflight.py", "workbench.py", "paths.py", "conn_store.p
 # 里面的导入 —— 这些模块不显式带上，exe 就会「界面能开、一点就报 No module named」。
 HIDDEN_IMPORTS = ["sqlite3", "xmlrpc.client", "fitz"]
 SRC_DIRS = ["vendor", "plugins"]
+SYNC_FILES = list(SRC_FILES)     # 同步闸要查的清单（构建时拷过去的那些）
+SYNC_DIRS = list(SRC_DIRS)
 
 
 def size_of(path):
@@ -75,6 +151,14 @@ def main():
         pass
 
     os.makedirs(TMP, exist_ok=True)
+    # 构建前先看一眼现状：有不同步就说明上一次改完源码没重建
+    if os.path.isdir(OUT):
+        _pre = check_sync(OUT, verbose=False)
+        _pre = [x for x in _pre if not x.startswith("（")]
+        if _pre:
+            print("构建前发现 %d 项副本与源码不一致（重建后会拷齐）：%s" % (len(_pre), ", ".join(_pre)))
+        else:
+            print("构建前：副本与源码一致 ✓")
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--windowed",
            "--name", NAME, "--distpath", os.path.join(TMP, "dist"),
            "--workpath", os.path.join(TMP, "build"), "--specpath", TMP]
@@ -154,8 +238,33 @@ def main():
     if r2.returncode != 0:
         print("！！自检发现缺失模块 —— 把缺的加进 build_app.py 的 HIDDEN_IMPORTS 再打一次")
         return 2
+
+    # 构建后**副本同步**闸：源码改了但副本没跟 → 用户看到旧行为（今天栽过两次）
+    print("\n源码 vs 副本 比对：")
+    bad = check_sync(OUT, verbose=False)
+    bad = [x for x in bad if not x.startswith("（")]
+    if bad:
+        print("  ！！不同步 %d 项：%s" % (len(bad), ", ".join(bad)))
+        print("  （重建应自动拷齐；若仍不同步，说明这批文件不在 SRC_FILES / SRC_DIRS 里）")
+        return 3
+    print("  全部一致 ✓（%d 个文件 + %d 个目录）" % (len(SYNC_FILES), len(SYNC_DIRS)))
     return 0
 
 
 if __name__ == "__main__":
+    if "--check-sync" in sys.argv:
+        # 随时能跑：列出「源码 vs 入口目录里的副本」的差异（改了源码没重建，当场可见）
+        print("比对：\n  源码  %s\n  副本  %s" % (HERE, OUT))
+        bad = check_sync(OUT, verbose=True)
+        print("\n结论：%s" % ("全部一致 ✓" if not bad else "不同步 %d 项 → %s" % (len(bad), ", ".join(bad))))
+        if bad:
+            print("对齐办法：python build_app.py --sync（只拷源码，不重打 exe）或直接重建")
+        sys.exit(1 if bad else 0)
+    if "--sync" in sys.argv:
+        print("把源码同步到：%s" % OUT)
+        for x in sync_copies(OUT):
+            print("  拷 " + x)
+        bad = check_sync(OUT, verbose=False)
+        print("同步后：%s" % ("全部一致 ✓" if not bad else "还有 %s" % bad))
+        sys.exit(1 if bad else 0)
     sys.exit(main())
