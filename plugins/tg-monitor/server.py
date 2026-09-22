@@ -137,10 +137,17 @@ LG_FP = os.path.join(BASE, "login_state.json")   # 登录态持久化（模块�
 
 
 def _bslog(line):
-    """登录态检测留痕：与内核写同一个文件（runtime/browser_status.log），便于比对两条路的差异。"""
+    """登录态检测留痕：与内核写同一个文件（paths.RUNTIME/browser_status.log），便于比对两条路的差异。
+    注意别写 TG\runtime——那是推广一键跑的目录，写了就和内核的不在一个文件里，白留。
+    换行在这里压平——留痕是一行一条，被拆行了 grep 和肉眼比对都难。"""
     try:
         import datetime as _dt
-        d = os.path.join(TG, "runtime")
+        line = str(line).replace("\r", " ").replace("\n", " / ")
+        try:
+            import paths as _p
+            d = _p.RUNTIME
+        except Exception:
+            d = os.path.join(TG, "runtime")
         os.makedirs(d, exist_ok=True)
         with io.open(os.path.join(d, "browser_status.log"), "a", encoding="utf-8") as f:
             f.write("[%s] %s\n" % (_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), line))
@@ -155,35 +162,51 @@ def _lg_read():
         return {}
 
 
-def _lg_write(v):
+def _lg_write(v, msg=""):
     try:
-        io.open(LG_FP, "w", encoding="utf-8").write(json.dumps({"v": v, "t": __import__("time").time()}))
+        io.open(LG_FP, "w", encoding="utf-8").write(
+            json.dumps({"v": v, "t": __import__("time").time(), "msg": msg}))
     except Exception:
         pass
 
 
 def _login(force=False):
-    """登录态探测：probe_status.py 一次 headless 启动——登录判定（万相台域）+ 顺手拉 11 计划容量
-    （拉登录态时连带容量一起拉——一次浏览器启动干两件事）+ 90s 缓存"""
+    """登录态探测：跑 _dual_one.py 一次（**不带 --headless**）+ 90s 缓存。
+
+    为什么不带 --headless：无头起浏览器没有登录态（cookie 不在那个会话里），判定必然失败；
+    内核那条 /api/browser-status 就是不带无头跑的，两条路要一样的参数才可能给一样的结论。
+    失败不吞：把原因写进 login_state.json 的 msg，"检测"按钮会弹出来。
+    """
     import time as _t
     _d = _lg_read()
     if not force and _d.get("v") is not None and _t.time() - _d.get("t", 0) < 90:
         return _d.get("v")
+    _py = os.path.join(TG, "runtime", "python.exe")
+    _script = os.path.join(TG, "_dual_one.py")
     try:
-        # 万相台 headless probe 拿不到 csrf（新 profile 无头不授）——用 _dual_one（淘宝 mtop API headless 可用）
-        _py = os.path.join(TG, "runtime", "python.exe")
-        r = subprocess.run([_py, "-X", "utf8", "-u",
-                            os.path.join(TG, "_dual_one.py"), "1379668", "", "--headless"],
+        r = subprocess.run([_py, "-X", "utf8", "-u", _script, "1379668", ""],
                            capture_output=True, timeout=90)
-        out = (r.stdout or b"").decode("utf-8", "replace")
-        ok = any(k in out for k in ("已双百", "未双百", "流量加速中", "未搜到"))
-        _bslog("来源=插件 脚本=_dual_one.py 参数='1379668 \"\" --headless' headless=是 python=%s cwd=%s rc=%s 判定=%s 输出尾=%s"
-               % (_py, os.getcwd(), r.returncode, "有效" if ok else "失效",
-                  out.strip().replace("\n", " / ")[-160:]))
-        _lg_write(ok)
-        return ok
-    except Exception:
-        return False
+    except Exception as e:
+        _bslog("来源=插件 结果=探测失败 python=%s 原因=%s" % (_py, str(e)[:120]))
+        _lg_write(None, "探测失败：%s" % str(e)[:120])
+        return None
+    out = (r.stdout or b"").decode("utf-8", "replace")
+    err = (r.stderr or b"").decode("utf-8", "replace")
+    # 判据与内核一致：只认这三个词算"有登录态"；"未搜到"不算（那是没导到数据，不是登录成功）
+    ok = any(k in out for k in ("已双百", "未双百", "流量加速中"))
+    if ok:
+        msg = "登录态有效（cookie 在 chrome_profile）"
+    elif "未搜到" in out:
+        msg = "未检测到登录态：查询没搜到数据（多半是登录态失效）"
+    elif r.returncode != 0:
+        msg = "探测失败：脚本退出码 %s；%s" % (r.returncode,
+                                              (err or out).strip().replace("\n", " / ")[-140:])
+    else:
+        msg = "登录态失效（输出里没看到有效的登录态标志）"
+    _bslog("来源=插件 脚本=_dual_one.py 参数='1379668 \"\"' headless=否 python=%s cwd=%s rc=%s 判定=%s 结论=%s"
+           % (_py, os.getcwd(), r.returncode, "有效" if ok else "失效", msg))
+    _lg_write(ok, msg)
+    return ok
 
 def progress():
     """跑批进度：脚本侧写的单份 runtime/progress.json 原样返回（单份多任务共用——判活/超时/区分批次由面板算）"""
@@ -253,7 +276,8 @@ def handle(action, qs):
         if _running():
             return {"ok": True, "login": None, "msg": "批运行中——跳过探测"}
         _login(force=True)
-        return {"ok": True, "login": _lg_read().get("v")}
+        _d = _lg_read()
+        return {"ok": True, "login": _d.get("v"), "msg": _d.get("msg") or ""}
     if action == "refresh-caps":
         # 刷新容量：subprocess detach 跑 refresh_caps.py（headless 静默——约 25-30s）
         import subprocess as _sp

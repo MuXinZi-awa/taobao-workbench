@@ -63,6 +63,10 @@ _DEFAULTS = {
     "root": ROOT,
     "runtime": os.path.join(ROOT, "runtime"),
     "cache": os.path.join(ROOT, "cache"),
+    # 原生窗口（exe）的 WebView2 用户数据目录。默认放漫游配置里，不跟程序目录走：
+    # 程序目录（工作台（双击启动））每次重建都会被整个删掉重建，放里面等于每次重置。
+    # 主题、面板偏好这些"存在页面 localStorage 里"的设置全靠它固定下来。
+    "webview_data": os.path.join(_HOME, "AppData", "Roaming", "OHWorkbench", "webview_data"),
     "port": 8900,
     "open_qty": "3000000",        # 敞开卖的库存值：按同行在用的量级（比谁拍一个数可靠）
     "state": os.path.join(ROOT, "plugins", "pipeline", "state.json"),
@@ -79,8 +83,8 @@ _DEFAULTS = {
                   os.path.join(_DESKTOP, "推广一键跑", "xyq_key.txt")],
 }
 
-_KEYS = ["root", "runtime", "cache", "port", "open_qty", "state", "mat_root", "data", "product",
-         "tg_root", "tg_runtime", "python", "chrome", "key_files"]
+_KEYS = ["root", "runtime", "cache", "webview_data", "port", "open_qty", "state", "mat_root",
+         "data", "product", "tg_root", "tg_runtime", "python", "chrome", "key_files"]
 
 
 def _write_template(path, values):
@@ -196,6 +200,8 @@ NOTES = {
     "runtime": ("运行目录", "进度、留痕、断点、锁日志都存这里", "目录"),
     "cache": ("缓存·临时目录", "临时文件一律落这里（不再散在脚本旁边）", "目录"),
     "port": ("内核端口", "默认 8900；被占时内核会自动往后找（面板地址栏里看到的才是实际端口）", "端口号"),
+    "webview_data": ("窗口数据目录", "原生窗口（exe）的本地存储：主题、字号、面板偏好都存这里。"
+                     "换了它等于恢复默认外观；指向固定目录才不会每次启动被清空", "目录"),
     "state": ("流水线状态文件", "选品/送修/换源的进度状态", "文件"),
     "mat_root": ("素材根目录", "产品素材（封面 / 主图 / 详情图）", "目录"),
     "data": ("数据目录", "推广记录、全量汇总、定价表等数据文件", "目录"),
@@ -330,7 +336,7 @@ _TG_PLUGINS = ["pipeline", "stock-edit", "tg-monitor", "adreport", "dual-check",
 # 键 → (分组, 需要哪些插件（装了任一个才显示；空 = 总显示）)
 OWNER = {
     "root": ("core", []), "runtime": ("core", []), "cache": ("core", []),
-    "state": ("core", []), "port": ("core", []),
+    "state": ("core", []), "port": ("core", []), "webview_data": ("core", []),
     "mat_root": ("data", []), "data": ("data", []), "product": ("data", []),
     "tg_root": ("tg", _TG_PLUGINS), "tg_runtime": ("tg", _TG_PLUGINS),
     "python": ("tg", _TG_PLUGINS),

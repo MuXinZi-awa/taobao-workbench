@@ -117,8 +117,10 @@ def manifest_full(pid):
 
 
 def _bslog(line):
-    """登录态检测留痕：内核与插件两条路写同一个文件，一眼看出差在哪。"""
+    """登录态检测留痕：内核与插件两条路写同一个文件，一眼看出差在哪。
+    换行在这里压平——留痕是一行一条，被拆行了 grep 和肉眼比对都难。"""
     import datetime
+    line = str(line).replace("\r", " ").replace("\n", " / ")
     try:
         d = paths.RUNTIME
         os.makedirs(d, exist_ok=True)

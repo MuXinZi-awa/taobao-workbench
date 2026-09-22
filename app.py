@@ -412,13 +412,26 @@ def main():
             % (no_wv[0]["advice"], url))
         return 0
 
-    # 窗口：正常用过再关=退出；**开出来很快就没了=异常** → 自动重开一次，还不行就说人话。
-    #
-    # 自愈不能误伤：用户点 X（或别的程序正常关它）时不能重开，否则窗口"关不掉"。
-    # 区分靠 closing 事件：closing=有人主动关 → 照常退出；只有 closed、没有 closing = 窗口自己没了 → 才重开。
+    # 原生窗口的本地存储目录**必须固定**：默认每次启动都是干净沙箱，而主题/字号/面板偏好
+    # 都存在页面 localStorage 里，沙箱一换就全没了（源码版走浏览器所以没这问题）。
+    try:
+        import paths as _paths
+        _wvdir = str(_paths.WEBVIEW_DATA)
+    except Exception:
+        _wvdir = os.path.join(os.path.expanduser("~"), "AppData", "Roaming",
+                              "OHWorkbench", "webview_data")
+    try:
+        os.makedirs(_wvdir, exist_ok=True)
+    except Exception:
+        pass
+    _log("窗口数据目录（主题/偏好存这里）：%s" % _wvdir)
+
+    # 窗口：正常用过再关=退出；开出来很快就没了=异常。**不自动重开**——
+    # 重开会让人觉得"关不掉、还老是弹"；这里只留痕 + 弹一次人话（写清存活多久、日志在哪）。
+    # 判据靠 closing 事件：有 closing=有人主动关（用户点 X / 别的程序正常关）；只有 closed=窗口自己没了。
     dt = 0.0
     died = False
-    for attempt in (1, 2):
+    for attempt in (1,):
         st = {"loaded": False, "closing": False}
 
         def _on_loaded(*a, _st=st, **k):
@@ -447,7 +460,14 @@ def main():
             pass
         t_open = time.time()
         try:
-            webview.start()
+            # private_mode=False + storage_path：把 localStorage 落到固定目录
+            webview.start(private_mode=False, storage_path=_wvdir)
+        except TypeError:
+            # 老版本 pywebview 不认这两个参数——别因此开不了窗
+            try:
+                webview.start()
+            except Exception as e:
+                _log("webview.start 抛错：%s" % str(e)[:200])
         except Exception as e:
             _log("webview.start 抛错：%s" % str(e)[:200])
         dt = time.time() - t_open
@@ -462,19 +482,15 @@ def main():
             _log("→ 用过 %.0fs 才关 → 当正常关闭" % dt)
             died = False
             break
-        _log("→ 没有 closing 事件、又只有 %.1fs = 窗口自己没了" % dt)
+        _log("→ 没有 closing 事件、又只有 %.1fs = 窗口自己没了（只留痕，不重开）" % dt)
         died = True
-        if attempt == 2:
-            break
-        _log("→ 自动重开一次（只对\"窗口自己没了\"做）")
-        time.sleep(1)
+        break
 
     if died:
         say("窗口开出来又马上没了",
-            "这是异常情况——已经自动重开过一次，还是这样。\n\n"
-            "可能原因：WebView2 正被别的程序占用/更新中，或安全软件拦了原生窗口。\n"
-            "排查线索：%s\n（每次窗口是加载了还是没加载、存活多久、是不是有人主动关的，都记在里面）"
-            % os.path.join(HERE, "runtime", "startup.log"))
+            "窗口在这次启动后 %.0f 秒就被关掉了（没有收到「有人主动关」的信号，像是它自己没的）。\n\n"
+            "可能原因：WebView2 正被别的程序占用/更新中，或安全软件拦了原生窗口。\n\n"
+            "留痕在这儿，把这一段发我就能定位：\n%s" % (dt, os.path.join(HERE, "runtime", "startup.log")))
     # 窗口关闭 → 结束进程（同进程里起的内核随之消失，端口释放，不留幽灵）
     _log("退出（内核随进程结束）")
     sys.stdout.flush() if hasattr(sys.stdout, "flush") else None
