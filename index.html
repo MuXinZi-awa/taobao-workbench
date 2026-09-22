@@ -233,6 +233,20 @@ body[data-theme="dawn"] .set-nav { background:transparent; }
 body[data-theme="dawn"] .modal-mask { background:rgba(70,110,150,.22); backdrop-filter:blur(2px); }
 </style></head>
 <body>
+<script>
+/* 前端脚本报错要说话：某些区域空白时，这一条就是线索（语法错 try/catch 抓不住，只能显示） */
+window.addEventListener('error', function(e){
+  try{
+    var b=document.getElementById('jsErrBar');
+    if(!b){ b=document.createElement('div'); b.id='jsErrBar';
+      b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#8c3b3b;color:#fff;font-size:12px;padding:6px 12px';
+      document.body.appendChild(b); }
+    var src=(e.filename||'').split('/').pop()+':'+e.lineno;
+    b.textContent='⚠ 前端脚本出错（某些区域可能是空白）：'+e.message+'　← '+src;
+  }catch(_){}
+});
+</script>
+
 <div class="topbar"><span class="t">优化管理工作台</span>
   <div class="right">
     <button class="iconbtn" id="deskToggle" onclick="toggleDesk()" title="收起/展开书桌">
@@ -420,7 +434,7 @@ function showPlugin(pl){
   var c=document.getElementById('plg-'+pl.id);
   if(!c){ c=document.createElement('div'); c.id='plg-'+pl.id;
     c.style.cssText='position:absolute;inset:0;display:none;padding:4px;box-sizing:border-box';
-    c.innerHTML='<iframe src="'+API+'/panel/'+pl.id+'" style="width:100%;height:100%;border:none"></iframe>';
+    c.innerHTML='<iframe src="'+API+'/panel/'+pl.id+'?t='+Date.now()+'" style="width:100%;height:100%;border:none"></iframe>';
    c.querySelector('iframe').onload=()=>{ setTimeout(broadcastTheme,120); };
     body.appendChild(c); }
   Array.prototype.forEach.call(body.children,function(x){ if(x.id&&x.id.indexOf('plg-')===0) x.style.display='none'; });
@@ -450,9 +464,12 @@ function switchView(v){ document.querySelectorAll('.vt').forEach(x=>x.classList.
  document.getElementById('logPane').classList.toggle('active',v==='log'); document.getElementById('wsPane').classList.toggle('active',v==='ws'); document.getElementById('prevPane').classList.toggle('active',v==='prev'); }
 function toggleDesk(){ document.getElementById('desk').classList.toggle('closed'); }
 function openFolder(){ const p=curDir||''; fetch(API+'/api/open?p='+encodeURIComponent(p)); }
-async function loadPlugins(){ try{ const d=await api('/api/plugins); const box=document.getElementById('plugins'); box.innerHTML='';
-  (d.plugins||[]).filter(p=>p.enabled!==false).forEach(pl=>{ const el=document.createElement('div'); el.className='plugin'; el.innerHTML=(pl.icon?'<span style="font-size:15px;width:17px;text-align:center;flex:none">'+pl.icon+'</span>':ICO.plug)+'<span>'+pl.name+'</span>';
-   el.onclick=()=>{ document.querySelectorAll('.plugin').forEach(x=>x.classList.remove('active')); el.classList.add('active'); showPlugin(pl); }; box.appendChild(el); });
+async function loadPlugins(){ try{ const d=await api('/api/plugins'); const box=document.getElementById('plugins'); box.innerHTML='';
+  (d.plugins||[]).filter(p=>p.enabled!==false).forEach(pl=>{
+   try{ const el=document.createElement('div'); el.className='plugin'; el.innerHTML=(pl.icon?'<span style="font-size:15px;width:17px;text-align:center;flex:none">'+pl.icon+'</span>':ICO.plug)+'<span>'+pl.name+'</span>';
+    el.onclick=()=>{ document.querySelectorAll('.plugin').forEach(x=>x.classList.remove('active')); el.classList.add('active'); showPlugin(pl); }; box.appendChild(el); }
+   catch(e){ /* 一个插件坏了不该带崩整栏：只把它自己标出来 */ const bad=document.createElement('div'); bad.className='plugin';
+    bad.style.color='var(--danger)'; bad.textContent='「'+((pl&&pl.id)||'?')+'」加载失败：'+(e&&e.message||e); box.appendChild(bad); } });
   if(!(d.plugins||[]).length)box.innerHTML='<div class="plugin" style="color:var(--text-m)">暂无——放 manifest 即出现</div>';
  }catch(e){ document.getElementById('plugins').innerHTML='<div class="plugin" style="color:var(--danger)">服务未启动</div>'; } }
 function openSettings(page){ document.getElementById('settingsModal').classList.add('open'); document.getElementById('mask').style.display='block'; openSetPage(page); }
@@ -549,7 +566,7 @@ async function renderPlugins(c){ c.innerHTML='<h3>插件</h3><div class="desc">�
    else { dz.textContent='✗ '+(d.error||'安装失败'); }
   }).catch(e=>{ dz.textContent='✗ '+e.message; });
  };
- const d=await api('/api/plugins); const pls=d.plugins||[]; const list=document.getElementById('plugList');
+ const d=await api('/api/plugins'); const pls=d.plugins||[]; const list=document.getElementById('plugList');
  if(!pls.length){ list.innerHTML='<div style="font-size:12px;color:var(--text-m)">暂无已装插件——拖 zip 安装</div>'; return; }
  pls.forEach(p=>{ const el=document.createElement('div'); el.className='plug-item';
   el.innerHTML='<div style="flex:1;min-width:0"><div class="pn">'+p.name+' <span class="pv">v'+(p.version||'0.0.0')+'</span></div><div class="pd">'+(p.desc||'')+'</div></div><span class="tag">'+(p.enabled===false?'已禁用':'已启用')+'</span><span style="margin-left:6px;cursor:pointer;font-size:11px;color:var(--accent-h)" onclick="event.stopPropagation();togglePlug('+p.id+',this)">切换</span>';
@@ -687,7 +704,7 @@ function pathsPost(url,body,cb){
  fetch(API+url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
   .then(r=>r.json()).then(cb); }
 function pathsLoadOld(){
- fetch(API+'/api/paths).then(r=>r.json()).then(d=>{
+ fetch(API+'/api/paths').then(r=>r.json()).then(d=>{
   var box=document.getElementById('pathsBox'); if(!box) return;
   if(!d.ok){ box.textContent='读取失败：'+(d.error||''); return; }
   box.innerHTML=d.keys.map(function(it){
@@ -706,7 +723,7 @@ function pathsLoadOld(){
 function pathsSave(k){
  var el=document.getElementById('pth_'+k); if(!el) return;
  var v=(k==='key_files')?el.value.replace(/[;\n]+/g,';'):el.value;
- pathsPost('/api/paths,'key='+encodeURIComponent(k)+'&value='+encodeURIComponent(v),function(d){
+ pathsPost('/api/paths','key='+encodeURIComponent(k)+'&value='+encodeURIComponent(v),function(d){
   if(!d.ok){ alert('保存失败：'+(d.error||'')); return; }
   alert('已保存：'+d.item.label+'\n'+d.item.value); pathsLoad(); }); }
 function pathsReset(k){
@@ -718,7 +735,7 @@ function pathsResetAll(){ pathsReset(''); }
 /* ===== 设置-通用 · 路径：按归属分组（谁的路径谁管）+ 相对段 + 搜索 ===== */
 var PATH_OPEN = {core: true};     /* 默认只展开「工作台自己」那组 */
 function pathsLoad(q){
- fetch(API+'/api/paths).then(r=>r.json()).then(function(d){
+ fetch(API+'/api/paths').then(r=>r.json()).then(function(d){
   var box=document.getElementById('pathsBox'); if(!box) return;
   if(!d||!d.ok){ box.textContent='读取失败：'+((d&&d.error)||''); return; }
   var keys={}; (d.keys||[]).forEach(function(k){ keys[k.key]=k; });
@@ -775,7 +792,7 @@ function pathRow(it){
 }
 
 function pluginListLoad(){
- fetch(API+'/api/plugin-registry).then(r=>r.json()).then(function(d){
+ fetch(API+'/api/plugin-registry').then(r=>r.json()).then(function(d){
   var box=document.getElementById('listBox'); if(!box) return;
   var reg=(d&&d.plugins)||[], inst=(d&&d.installed)||{};
   if(!reg.length){ box.innerHTML='<div style="color:var(--text-m)">没有插件列表（registry.json 不在或为空）</div>'; return; }
@@ -839,7 +856,7 @@ function renderAbout(c){ c.innerHTML='<h3>关于</h3><div class="desc">优化管
  +'<div class="about-row"><span class="k">设计</span><span>简单内核 + 插件丰富</span></div>'
  +'<div class="about-row"><span class="k">书桌联动</span><span>当前品素材</span></div>'
  +'<div class="about-row"><span class="k">全盘浏览</span><span>批注工作台</span></div>';
- try{ api('/api/plugins).then(function(d){ var e=document.getElementById('corever'); if(e) e.textContent='v'+((d&&d.core)||'?'); }); }catch(e){}
+ try{ api('/api/plugins').then(function(d){ var e=document.getElementById('corever'); if(e) e.textContent='v'+((d&&d.core)||'?'); }); }catch(e){}
  try{ api('/api/ping').then(function(d){ var e=document.getElementById('corePort'); if(e&&d&&d.port) e.textContent=d.port; }); }catch(e){} }
 let searchTimer=null;
 function bindUI(){ const inp=document.getElementById('searchInput'), sg=document.getElementById('suggest');
