@@ -294,21 +294,61 @@ def _check_imports(extra=()):
     return 1 if bad else 0
 
 
+def name_of_self():
+    """自己叫什么（frozen 时是 exe 名）——用来认出"工作台自己拉自己"""
+    return os.path.basename(sys.executable).lower()
+
+
 def _log_who_launched():
-    """谁把我拉起来的？——排查"反复起退"要有这一行（父进程能看出是不是被某个循环拉起）"""
-    try:
-        import subprocess as _sp
-        me = os.getpid()
-        r = _sp.run(["wmic", "process", "where", "processid=%d" % me,
-                     "get", "parentprocessid,commandline"],
+    """谁把我拉起来的？——排查"反复起退"第一眼就看这一行。
+
+    来源必须分清，否则会把"自己做验证起的实例"当成"有人在反复起它"：
+      explorer.exe      → 用户双击
+      python/wscript/cmd/powershell → 脚本或子助手起的（把父进程命令行也记上）
+      OHWorkbench.exe   → 另一个工作台实例拉的（递归启动，要警惕）
+      已退出查不到       → 临时启动器（起完就走的脚本/任务）
+
+    谁做验证，给进程带上 WB_LAUNCH_TAG=xxx，日志里会写明，别把自己的实例留成"幽灵"。
+    """
+    import subprocess as _sp
+    me = os.getpid()
+    tag = os.environ.get("WB_LAUNCH_TAG") or ""
+
+    def wq(pid, field):
+        r = _sp.run(["wmic", "process", "where", "processid=%d" % pid, "get", field, "/value"],
                     capture_output=True, timeout=6)
-        txt = (r.stdout or b"").decode("gbk", "replace")
-        parts = [x.strip() for x in txt.replace("\r", "").split("\n") if x.strip()]
-        _log("启动：pid=%d 命令行=%s" % (me, " ".join(sys.argv)[:160]))
-        if len(parts) >= 2:
-            _log("启动：父进程/参数 = %s" % parts[1][:160])
-    except Exception as e:
-        _log("启动：pid=%d（父进程查不到：%s）" % (os.getpid(), str(e)[:60]))
+        txt = (r.stdout or b"").decode("gbk", "replace").replace("\r", "")
+        for ln in txt.split("\n"):
+            if "=" in ln:
+                return ln.split("=", 1)[1].strip()
+        return ""
+
+    try:
+        ppid = int(wq(me, "parentprocessid") or 0)
+    except Exception:
+        ppid = 0
+    _log("启动：pid=%d%s 命令行=%s"
+         % (me, (" 标记=%s" % tag) if tag else "", " ".join(sys.argv)[:160]))
+    if not ppid:
+        _log("启动：父进程查不到（wmic 不可用或已退出）")
+        return
+    pname = wq(ppid, "name")
+    pcmd = wq(ppid, "commandline")
+    low = (pname or "").lower()
+    if low == "explorer.exe":
+        src = "用户双击"
+    elif low == name_of_self():
+        src = "另一个工作台实例（递归启动？）"
+    elif low.startswith("python"):
+        src = "脚本(python)"
+    elif low in ("wscript.exe", "cscript.exe", "cmd.exe", "powershell.exe", "pwsh.exe"):
+        src = "脚本(命令/计划任务)"
+    elif not pname:
+        src = "临时启动器（父进程已退出）"
+    else:
+        src = "其它(%s)" % pname
+    _log("启动：来源=%s 父进程=%s(pid=%d) 父命令行=%s"
+         % (src, pname or "已退出", ppid, (pcmd or "")[:160]))
 
 
 def main():
@@ -372,10 +412,23 @@ def main():
             % (no_wv[0]["advice"], url))
         return 0
 
-    # 窗口：正常用过再关=退出；**开出来很快就没了=异常** → 自动重开一次，还不行就说人话
-    # （用户看到的"弹窗一闪、来不及截图"就是早退；所以这里必须留痕 + 重开 + 给原因）
+    # 窗口：正常用过再关=退出；**开出来很快就没了=异常** → 自动重开一次，还不行就说人话。
+    #
+    # 自愈不能误伤：用户点 X（或别的程序正常关它）时不能重开，否则窗口"关不掉"。
+    # 区分靠 closing 事件：closing=有人主动关 → 照常退出；只有 closed、没有 closing = 窗口自己没了 → 才重开。
     dt = 0.0
+    died = False
     for attempt in (1, 2):
+        st = {"loaded": False, "closing": False}
+
+        def _on_loaded(*a, _st=st, **k):
+            _st["loaded"] = True
+            _log("窗口已加载")
+
+        def _on_closing(*a, _st=st, **k):
+            _st["closing"] = True
+            _log("有人主动关窗口（closing 事件）")
+
         try:
             win = webview.create_window(TITLE, url, width=1320, height=880, min_size=(980, 620))
         except Exception as e:
@@ -388,8 +441,8 @@ def main():
             return 4
         t0 = time.time()
         try:
-            win.events.loaded += (lambda a=attempt, s=t0: _log("窗口已加载（第 %d 次，%.1fs）" % (a, time.time() - s)))
-            win.events.closed += (lambda a=attempt, s=t0: _log("窗口被关闭（第 %d 次，存活 %.1fs）" % (a, time.time() - s)))
+            win.events.loaded += _on_loaded
+            win.events.closing += _on_closing
         except Exception:
             pass
         t_open = time.time()
@@ -398,17 +451,29 @@ def main():
         except Exception as e:
             _log("webview.start 抛错：%s" % str(e)[:200])
         dt = time.time() - t_open
-        _log("窗口结束（第 %d 次）：存活 %.1fs" % (attempt, dt))
-        if dt >= 60 or attempt == 2:
+        _log("窗口结束（第 %d 次）：存活 %.1fs 已加载=%s closing=%s"
+             % (attempt, dt, st["loaded"], st["closing"]))
+
+        if st["closing"]:
+            _log("→ 是有人主动关的 → 照常退出，不重开")
+            died = False
             break
-        _log("开出来才 %.1fs 就没了 → 自动重开一次" % dt)
+        if dt >= 60:
+            _log("→ 用过 %.0fs 才关 → 当正常关闭" % dt)
+            died = False
+            break
+        _log("→ 没有 closing 事件、又只有 %.1fs = 窗口自己没了" % dt)
+        died = True
+        if attempt == 2:
+            break
+        _log("→ 自动重开一次（只对\"窗口自己没了\"做）")
         time.sleep(1)
 
-    if dt < 60:
+    if died:
         say("窗口开出来又马上没了",
             "这是异常情况——已经自动重开过一次，还是这样。\n\n"
             "可能原因：WebView2 正被别的程序占用/更新中，或安全软件拦了原生窗口。\n"
-            "排查线索：%s\n（每次窗口的存活时长、加载与否都记在里面）"
+            "排查线索：%s\n（每次窗口是加载了还是没加载、存活多久、是不是有人主动关的，都记在里面）"
             % os.path.join(HERE, "runtime", "startup.log"))
     # 窗口关闭 → 结束进程（同进程里起的内核随之消失，端口释放，不留幽灵）
     _log("退出（内核随进程结束）")

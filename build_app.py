@@ -191,7 +191,12 @@ def main():
         subprocess.run(["taskkill", "/IM", "msedgewebview2.exe", "/F"], capture_output=True)
         subprocess.run(["taskkill", "/IM", NAME + ".exe", "/F"], capture_output=True)
         time.sleep(1)
-        shutil.rmtree(OUT, ignore_errors=True)
+        for _try in range(4):
+            shutil.rmtree(OUT, ignore_errors=True)
+            if not os.path.isdir(OUT):
+                break
+            # 进程刚退出时句柄释放会晚一拍，删除要等它一下；一下判死会误报
+            time.sleep(1.5)
     if os.path.isdir(OUT):
         # 静默失败过一次：删不干净却继续拷 → 拷到一半报 FileExistsError。这里要说人话
         print("！！目标目录没删干净（多半有残留进程占着 _internal）：%s" % OUT)
