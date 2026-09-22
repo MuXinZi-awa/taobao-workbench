@@ -142,7 +142,7 @@ def _est_price(cost, qty):
 
 
 def inbound_query(qs):
-    """新品入库报表（只读）：date_from / date_to / kw（型号，可空）/ plid（价格表，可空）"""
+    """新品入库报表（只读）：from / to / kw（型号，可空）。单价是成本系数的**估算**，不查价格表。"""
     d1 = (qs.get("from") or "").strip()
     d2 = (qs.get("to") or "").strip()
     if not d1 or not d2:
