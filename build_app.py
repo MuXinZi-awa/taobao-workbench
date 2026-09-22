@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 正式入口（构建的默认目标）：构建时拷过去的那份副本就在它里面
@@ -186,7 +187,16 @@ def main():
                 print("  拆掉旧的 runtime 链接（不碰源目录）")
         except Exception:
             pass
+        # rmtree 前先清掉可能占着 _internal 的残留进程（WebView2 的子进程会挂 DLL，不清就删不干净）
+        subprocess.run(["taskkill", "/IM", "msedgewebview2.exe", "/F"], capture_output=True)
+        subprocess.run(["taskkill", "/IM", NAME + ".exe", "/F"], capture_output=True)
+        time.sleep(1)
         shutil.rmtree(OUT, ignore_errors=True)
+    if os.path.isdir(OUT):
+        # 静默失败过一次：删不干净却继续拷 → 拷到一半报 FileExistsError。这里要说人话
+        print("！！目标目录没删干净（多半有残留进程占着 _internal）：%s" % OUT)
+        print("   先关掉所有工作台窗口/msedgewebview2 进程，再重建；或手工删掉这个目录")
+        return 4
     shutil.copytree(built, OUT)
 
     for f in SRC_FILES:

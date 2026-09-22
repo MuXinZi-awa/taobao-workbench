@@ -294,9 +294,27 @@ def _check_imports(extra=()):
     return 1 if bad else 0
 
 
+def _log_who_launched():
+    """谁把我拉起来的？——排查"反复起退"要有这一行（父进程能看出是不是被某个循环拉起）"""
+    try:
+        import subprocess as _sp
+        me = os.getpid()
+        r = _sp.run(["wmic", "process", "where", "processid=%d" % me,
+                     "get", "parentprocessid,commandline"],
+                    capture_output=True, timeout=6)
+        txt = (r.stdout or b"").decode("gbk", "replace")
+        parts = [x.strip() for x in txt.replace("\r", "").split("\n") if x.strip()]
+        _log("启动：pid=%d 命令行=%s" % (me, " ".join(sys.argv)[:160]))
+        if len(parts) >= 2:
+            _log("启动：父进程/参数 = %s" % parts[1][:160])
+    except Exception as e:
+        _log("启动：pid=%d（父进程查不到：%s）" % (os.getpid(), str(e)[:60]))
+
+
 def main():
     _fix_stdio()
     _install_crash_hooks()
+    _log_who_launched()
 
     # 首次运行自检：缺什么、怎么办（一项一句中文，同时落盘一份）
     checks = preflight.check(HERE)
@@ -354,20 +372,46 @@ def main():
             % (no_wv[0]["advice"], url))
         return 0
 
-    try:
-        webview.create_window(TITLE, url, width=1320, height=880, min_size=(980, 620))
-        webview.start()
-    except Exception as e:
-        say("窗口起不来（多半是缺 WebView2）",
-            "系统里没找到 WebView2 运行时，原生窗口打不开。\n\n"
-            "装一次就好（免费，微软官方）：\n%s\n\n"
-            "装完再双击本程序。\n\n（本次已改用浏览器打开）\n%s" % (WEBVIEW2_URL, str(e)[:120]))
-        import webbrowser
-        webbrowser.open(url)
-        return 4
+    # 窗口：正常用过再关=退出；**开出来很快就没了=异常** → 自动重开一次，还不行就说人话
+    # （用户看到的"弹窗一闪、来不及截图"就是早退；所以这里必须留痕 + 重开 + 给原因）
+    dt = 0.0
+    for attempt in (1, 2):
+        try:
+            win = webview.create_window(TITLE, url, width=1320, height=880, min_size=(980, 620))
+        except Exception as e:
+            say("窗口起不来（多半是缺 WebView2）",
+                "系统里没找到 WebView2 运行时，原生窗口打不开。\n\n"
+                "装一次就好（免费，微软官方）：\n%s\n\n"
+                "装完再双击本程序。\n\n（本次已改用浏览器打开）\n%s" % (WEBVIEW2_URL, str(e)[:120]))
+            import webbrowser
+            webbrowser.open(url)
+            return 4
+        t0 = time.time()
+        try:
+            win.events.loaded += (lambda a=attempt, s=t0: _log("窗口已加载（第 %d 次，%.1fs）" % (a, time.time() - s)))
+            win.events.closed += (lambda a=attempt, s=t0: _log("窗口被关闭（第 %d 次，存活 %.1fs）" % (a, time.time() - s)))
+        except Exception:
+            pass
+        t_open = time.time()
+        try:
+            webview.start()
+        except Exception as e:
+            _log("webview.start 抛错：%s" % str(e)[:200])
+        dt = time.time() - t_open
+        _log("窗口结束（第 %d 次）：存活 %.1fs" % (attempt, dt))
+        if dt >= 60 or attempt == 2:
+            break
+        _log("开出来才 %.1fs 就没了 → 自动重开一次" % dt)
+        time.sleep(1)
 
-    # 窗口关闭 → 直接结束进程：同进程里起的内核随之消失，端口释放，不留幽灵进程
-    _log("窗口已关闭，退出（内核随进程结束）")
+    if dt < 60:
+        say("窗口开出来又马上没了",
+            "这是异常情况——已经自动重开过一次，还是这样。\n\n"
+            "可能原因：WebView2 正被别的程序占用/更新中，或安全软件拦了原生窗口。\n"
+            "排查线索：%s\n（每次窗口的存活时长、加载与否都记在里面）"
+            % os.path.join(HERE, "runtime", "startup.log"))
+    # 窗口关闭 → 结束进程（同进程里起的内核随之消失，端口释放，不留幽灵）
+    _log("退出（内核随进程结束）")
     sys.stdout.flush() if hasattr(sys.stdout, "flush") else None
     os._exit(0)
 

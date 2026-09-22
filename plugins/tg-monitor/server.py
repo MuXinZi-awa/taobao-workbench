@@ -136,6 +136,18 @@ _LG = {"v": None, "t": 0.0}
 LG_FP = os.path.join(BASE, "login_state.json")   # 登录态持久化（模块每次请求重载——缓存必须落文件）
 
 
+def _bslog(line):
+    """登录态检测留痕：与内核写同一个文件（runtime/browser_status.log），便于比对两条路的差异。"""
+    try:
+        import datetime as _dt
+        d = os.path.join(TG, "runtime")
+        os.makedirs(d, exist_ok=True)
+        with io.open(os.path.join(d, "browser_status.log"), "a", encoding="utf-8") as f:
+            f.write("[%s] %s\n" % (_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), line))
+    except Exception:
+        pass
+
+
 def _lg_read():
     try:
         return json.load(io.open(LG_FP, encoding="utf-8"))
@@ -159,11 +171,15 @@ def _login(force=False):
         return _d.get("v")
     try:
         # 万相台 headless probe 拿不到 csrf（新 profile 无头不授）——用 _dual_one（淘宝 mtop API headless 可用）
-        r = subprocess.run([os.path.join(TG, "runtime", "python.exe"), "-X", "utf8", "-u",
+        _py = os.path.join(TG, "runtime", "python.exe")
+        r = subprocess.run([_py, "-X", "utf8", "-u",
                             os.path.join(TG, "_dual_one.py"), "1379668", "", "--headless"],
                            capture_output=True, timeout=90)
         out = (r.stdout or b"").decode("utf-8", "replace")
         ok = any(k in out for k in ("已双百", "未双百", "流量加速中", "未搜到"))
+        _bslog("来源=插件 脚本=_dual_one.py 参数='1379668 \"\" --headless' headless=是 python=%s cwd=%s rc=%s 判定=%s 输出尾=%s"
+               % (_py, os.getcwd(), r.returncode, "有效" if ok else "失效",
+                  out.strip().replace("\n", " / ")[-160:]))
         _lg_write(ok)
         return ok
     except Exception:

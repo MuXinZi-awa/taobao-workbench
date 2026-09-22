@@ -116,6 +116,18 @@ def manifest_full(pid):
     return None
 
 
+def _bslog(line):
+    """登录态检测留痕：内核与插件两条路写同一个文件，一眼看出差在哪。"""
+    import datetime
+    try:
+        d = paths.RUNTIME
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "browser_status.log"), "a", encoding="utf-8") as f:
+            f.write("[%s] %s\n" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), line))
+    except Exception:
+        pass
+
+
 def _registry_fp():
     return os.path.join(BASE, "registry.json")
 
@@ -695,6 +707,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                        capture_output=True, timeout=90)
                     out = (r.stdout or b"").decode("utf-8", "replace")
                     ok = "已双百" in out or "未双百" in out or "流量加速中" in out
+                    _bslog("来源=内核 脚本=_dual_one.py 参数='1379668 \"\"' headless=否 python=%s cwd=%s rc=%s 判定=%s 输出尾=%s"
+                           % (RT, os.getcwd(), r.returncode, "有效" if ok else "失效",
+                              out.strip().replace("\n", " / ")[-160:]))
                     return self._json({"ok": True, "login": ok,
                                        "msg": "登录态有效（cookie 在 chrome_profile）" if ok else "登录态失效"})
                 except Exception as e:
