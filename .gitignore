@@ -44,3 +44,7 @@ build/
 _build_wb/
 *.spec
 *.exe
+# 连接库/凭据库（含 DPAPI 密文）与运行时数据——绝不入库，也别让 git add . 扫到
+data/
+*.db
+*.db.bak_*
