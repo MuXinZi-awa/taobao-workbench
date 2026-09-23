@@ -4,11 +4,27 @@
 - 密码：Windows DPAPI 加密（ctypes 调 crypt32——可逆、绑当前用户、零依赖；绝不明文/MD5）
 - 类型：taobao（店铺账号）/ odoo（ERP：url+dbname+账号+密码）/ custom
 """
-import os, io, json, sqlite3, ctypes, ctypes.wintypes, datetime
+import os, io, json, shutil, sqlite3, ctypes, ctypes.wintypes, datetime
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(BASE, "data")
-DB = os.path.join(DATA, "conn.db")
+# 连接库位置由 paths 决定（工作区级）——源码方式与打包后的 exe 用【同一个文件】。
+# 以前固定在 <程序目录>\data\conn.db：两个壳各存一套账号，exe 那套 member_id 是空的，
+# 面板就退回读旧的全局数据（数字对不上就是这么来的）。数据进库、配置留文件，这里就是"进库"。
+try:
+    import paths as _paths
+    DB = str(_paths.CONN_DB)
+except Exception:
+    DB = os.path.join(BASE, "data", "conn.db")
+DATA = os.path.dirname(DB)
+if not os.path.isfile(DB):
+    # 兜底：新位置还没有库时，把老位置那份拷过来（老文件不删，可回退）
+    _old = os.path.join(BASE, "data", "conn.db")
+    if os.path.isfile(_old):
+        try:
+            os.makedirs(DATA, exist_ok=True)
+            shutil.copy2(_old, DB)
+        except Exception:
+            pass
 
 # ---------- DPAPI ----------
 class _BLOB(ctypes.Structure):
