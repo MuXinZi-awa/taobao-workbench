@@ -106,7 +106,7 @@ def sync_copies(target):
 SKIP_DIRS = {"__pycache__", ".profile", "runtime", "cache"}
 SKIP_FILES = {"state.json", "paths.local.json", "conn.db", ".disabled"}
 SKIP_EXT = {".pyc", ".log"}
-SRC_FILES = ["app.py", "preflight.py", "workbench.py", "paths.py", "conn_store.py",
+SRC_FILES = ["state_db.py", "app.py", "preflight.py", "workbench.py", "paths.py", "conn_store.py",
              "index.html", "CHANGELOG.md", "registry.json"]
 # 壳用 runpy 在**运行时**加载 workbench.py / conn_store.py，PyInstaller 的静态分析看不见它们
 # 里面的导入 —— 这些模块不显式带上，exe 就会「界面能开、一点就报 No module named」。

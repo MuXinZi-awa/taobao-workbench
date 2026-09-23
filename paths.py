@@ -68,6 +68,11 @@ _DEFAULTS = {
     # 默认放程序目录下的 data\——便携：整个文件夹拷走，设置跟着走。想放漫游配置（%APPDATA%）
     # 就在设置里改这一项。注意构建脚本必须把这个目录抱出来再放回，不然重建会连主题一起清掉。
     "webview_data": os.path.join(ROOT, "data", "webview_data"),
+    # 工作台状态库（sqlite）：数据/状态放库里——按账号查，天生只有一个真相源。
+    # 位置由工作区推导，所以【源码方式】和【打包后的 exe】算出来是同一个文件；
+    # 放程序目录下就又变成各存一份（json 时代踩过的坑）。
+    # 配置类（paths.local.json / 端口 / 界面偏好）**不进库**：那些要能被人打开来看、来改、拷走。
+    "db": os.path.join(WS, "办公室工作", "数据", "workbench.db"),
     "port": 8900,
     "open_qty": "3000000",        # 敞开卖的库存值：按同行在用的量级（比谁拍一个数可靠）
     "state": os.path.join(ROOT, "plugins", "pipeline", "state.json"),
@@ -84,7 +89,7 @@ _DEFAULTS = {
                   os.path.join(_DESKTOP, "推广一键跑", "xyq_key.txt")],
 }
 
-_KEYS = ["root", "runtime", "cache", "webview_data", "port", "open_qty", "state", "mat_root",
+_KEYS = ["root", "runtime", "cache", "webview_data", "db", "port", "open_qty", "state", "mat_root",
          "data", "product", "tg_root", "tg_runtime", "python", "chrome", "key_files"]
 
 
@@ -339,6 +344,7 @@ _TG_PLUGINS = ["pipeline", "stock-edit", "tg-monitor", "adreport", "dual-check",
 OWNER = {
     "root": ("core", []), "runtime": ("core", []), "cache": ("core", []),
     "state": ("core", []), "port": ("core", []), "webview_data": ("core", []),
+    "db": ("core", []),
     "mat_root": ("data", []), "data": ("data", []), "product": ("data", []),
     "tg_root": ("tg", _TG_PLUGINS), "tg_runtime": ("tg", _TG_PLUGINS),
     "python": ("tg", _TG_PLUGINS),

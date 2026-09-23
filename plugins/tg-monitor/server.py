@@ -62,7 +62,13 @@ def plans_cur():
     mid = str(_acct().get("member_id") or "")
     fp = _acct_fp("plan_names.json")
     pn = {}
-    if os.path.isfile(fp):
+    if mid:
+        try:
+            import state_db
+            pn = {k: (v.get("name") or k) for k, v in (state_db.get_plans(mid) or {}).items() if v}
+        except Exception:
+            pn = {}
+    if not pn and os.path.isfile(fp):
         try:
             pn = json.load(io.open(fp, encoding="utf-8"))
         except Exception:
@@ -241,22 +247,24 @@ def status():
 
     plans = []
     plan_state = {}
-    _psfp = _acct_fp("plan_state.json")
-    if os.path.isfile(_psfp):
-        try:
-            plan_state = json.load(open(_psfp, encoding="utf-8"))
-        except Exception:
-            pass
-    # 未绑账号时 _acct_fp 会退回读【全局旧文件】（历史兼容）——那就必须在面板上说清楚，
-    # 别把过期数据当现状端上来（用户看到的"数字对不上"多半就是这里）。
+    # 计划容量按账号存在状态库里（sqlite）。以前是 json，同一个东西两份
+    # （plan_state.json / plan_state_<member>.json），刷新写 A、面板读 B，数字就对不上了。
     _mid_now = str(_acct().get("member_id") or "")
     _stale_note = ""
-    if plan_state and not _mid_now:
-        _ts = sorted([str(v.get("time") or "") for v in plan_state.values()
-                      if isinstance(v, dict) and v.get("time")])
-        _stale_note = ("当前没有激活的店铺账号（连接里 member_id 为空）——下面这些是历史全局数据"
-                       "（最后更新 %s），可能已过期。先到 设置→连接 激活/保存账号，再点「刷新容量」。"
-                       % ((_ts[-1] if _ts else "时间未知")))
+    if _mid_now:
+        try:
+            import state_db
+            plan_state = state_db.get_plans(_mid_now) or {}
+            if not plan_state:
+                _stale_note = ("状态库里还没有账号 %s 的容量数据——点「刷新容量」拉一次（约 30s）。"
+                               % _mid_now)
+        except Exception as e:
+            _stale_note = "状态库读不到：%s" % str(e)[:80]
+    else:
+        # 没有激活账号：**不显示数**。以前这里退回读全局旧文件，于是面板一直挂着几十天前的数字，
+        # 看着像"数据丢了"。正确做法是引导登录取账号——按账号入库的东西，没账号就不该有数。
+        _stale_note = ("当前没有激活的店铺账号——先到 设置→连接 保存/激活账号（登录在 设置→浏览器"
+                       "里的「引导登录」），再点「刷新容量」。容量按账号存，认到账号才有数。")
     for p in plans_cur():
         pid = p["id"]
         st = plan_state.get(pid, {})
@@ -277,7 +285,7 @@ def status():
         "stats": {"rec": len(rec_lh), "today": rec_today, "units": _units_total(plan_state),
                  "pool": _pool_stats(rec_lh)},
         "stale": bool(_stale_note), "stale_note": _stale_note,
-        "state_file": os.path.basename(_psfp) if plan_state else "",
+        "state_file": ("状态库 %s" % os.path.basename(str(paths.DB))) if plan_state else "",
         "plans": plans,
         "time": datetime.datetime.now().strftime("%H:%M:%S"),
     }
