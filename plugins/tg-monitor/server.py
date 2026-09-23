@@ -223,7 +223,12 @@ def status():
     rec_lh = set()
     rec_today = 0
     today = datetime.date.today().strftime("%m-%d")
-    for r in rec_rows[1:]:
+    # 这份 csv 其实没有表头（第一行就是数据）。只有当第一行真的像表头时才跳过，
+    # 否则会把第一条记录漏掉（4756 行数成 4755）。
+    _rows = rec_rows
+    if _rows and _rows[0] and ("料号" in (_rows[0][0] or "") or "状态" in " ".join(_rows[0])):
+        _rows = _rows[1:]
+    for r in _rows:
         if len(r) >= 2 and r[0].strip():
             _racct = (r[3].strip() if len(r) > 3 else "") or "<MEMBER_ID>"   # 第4列 account（老数据归店铺1）
             _mid = str(_acct().get("member_id") or "")
@@ -242,6 +247,16 @@ def status():
             plan_state = json.load(open(_psfp, encoding="utf-8"))
         except Exception:
             pass
+    # 未绑账号时 _acct_fp 会退回读【全局旧文件】（历史兼容）——那就必须在面板上说清楚，
+    # 别把过期数据当现状端上来（用户看到的"数字对不上"多半就是这里）。
+    _mid_now = str(_acct().get("member_id") or "")
+    _stale_note = ""
+    if plan_state and not _mid_now:
+        _ts = sorted([str(v.get("time") or "") for v in plan_state.values()
+                      if isinstance(v, dict) and v.get("time")])
+        _stale_note = ("当前没有激活的店铺账号（连接里 member_id 为空）——下面这些是历史全局数据"
+                       "（最后更新 %s），可能已过期。先到 设置→连接 激活/保存账号，再点「刷新容量」。"
+                       % ((_ts[-1] if _ts else "时间未知")))
     for p in plans_cur():
         pid = p["id"]
         st = plan_state.get(pid, {})
@@ -261,6 +276,8 @@ def status():
         "running": running,
         "stats": {"rec": len(rec_lh), "today": rec_today, "units": _units_total(plan_state),
                  "pool": _pool_stats(rec_lh)},
+        "stale": bool(_stale_note), "stale_note": _stale_note,
+        "state_file": os.path.basename(_psfp) if plan_state else "",
         "plans": plans,
         "time": datetime.datetime.now().strftime("%H:%M:%S"),
     }
@@ -283,9 +300,15 @@ def handle(action, qs):
         import subprocess as _sp
         rt = os.path.join(TG, "runtime", "python.exe")
         try:
+            lg = os.path.join(TG, "runtime", "refresh_caps.log")
+            _f = io.open(lg, "a", encoding="utf-8", errors="replace")
+            _f.write("\n==== %s 刷新容量开始 ====\n" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            _f.flush()
+            # 输出必须接住：以前是 fire-and-forget，失败也看不见（"点了没反应"就是这么来的）
             _sp.Popen([rt, "-X", "utf8", "-u", os.path.join(TG, "runtime", "refresh_caps.py")],
-                      cwd=TG, creationflags=0x08000000)  # 0x08000000 = 不弹窗
-            return {"ok": True, "msg": "容量刷新已启动（headless 静默，约 30s 完成）"}
+                      cwd=TG, creationflags=0x08000000, stdout=_f, stderr=_sp.STDOUT)
+            return {"ok": True,
+                    "msg": "容量刷新已启动（约 30s）。完成后点刷新。日志：runtime\\refresh_caps.log"}
         except Exception as e:
             return {"ok": False, "error": str(e)[:80]}
     if action == "start-batch":

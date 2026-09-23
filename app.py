@@ -25,6 +25,33 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)          # 打包后自己的目录不在默认搜索路径里
 import preflight                       # noqa: E402
 
+
+def _no_console_children():
+    """Windows：窗口程序（exe 没有控制台）起控制台子进程时，系统会给它【新开一个黑窗】，
+    那个黑窗会抢走前台焦点——用户正在打字就被打断（探测/轮询里带 tasklist，面板每 10s 拉一次，
+    所以每 10s 一次）。源码方式跑时父进程自己有控制台，子进程共用它，所以不显形。
+    这里统一补 CREATE_NO_WINDOW；调用方显式给过 creationflags 的尊重原样（守护进程要 DETACHED）。
+    """
+    if os.name != "nt":
+        return
+    import subprocess as _sp
+    FLAG = 0x08000000
+
+    def _wrap(f):
+        def g(*a, **kw):
+            kw.setdefault("creationflags", FLAG)
+            return f(*a, **kw)
+        g._wb_nowin = True
+        return g
+
+    for _n in ("run", "Popen", "call", "check_call", "check_output"):
+        _f = getattr(_sp, _n, None)
+        if _f is not None and not getattr(_f, "_wb_nowin", False):
+            setattr(_sp, _n, _wrap(_f))
+
+
+_no_console_children()
+
 TITLE = "优化管理工作台"
 PROBE_RANGE = [8900 + i for i in range(0, 12)]     # 认实例时的探测范围（端口可变，到这里找）
 WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
@@ -62,14 +89,16 @@ def _fix_stdio():
 
 
 def say(title, msg):
-    """打包后没有控制台，弹窗才算「明确提示」；用带超时的弹窗，无人值守时不会一直卡着"""
+    """打包后没有控制台，弹窗才算「明确提示」；用带超时的弹窗，无人值守时不会一直卡着。
+    MB_NOFOCUS：该提示但**不许抢输入焦点**——用户打字的当口被系统模态抢走键盘是最烦的。"""
     _log("[%s] %s" % (title, msg.replace("\n", " / ")))
+    _FLAG = 0x00000040 | 0x00008000      # MB_ICONINFORMATION | MB_NOFOCUS
     try:
         u = ctypes.windll.user32
         try:
-            u.MessageBoxTimeoutW(0, msg, title, 0x00000040, 0, 120000)
+            u.MessageBoxTimeoutW(0, msg, title, _FLAG, 0, 15000)
         except Exception:
-            u.MessageBoxW(0, msg, title, 0x00000040)
+            u.MessageBoxW(0, msg, title, _FLAG)
     except Exception:
         pass
 

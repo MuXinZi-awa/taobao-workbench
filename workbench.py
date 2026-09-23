@@ -14,6 +14,34 @@ import re
 import paths            # 机器特有路径的唯一出处（换机/换目录只改 paths.local.json）
 import preflight        # 启动自检：缺什么、怎么办（壳与面板共用）
 
+
+# ---- Windows：绝不允许子进程新开控制台窗口（它会抢走前台焦点，用户打字被打断）----
+def _no_console_children():
+    """窗口程序（exe 没有控制台）起控制台子进程时，系统会给它【新开一个黑窗】，那个黑窗会抢走
+    前台焦点——用户正在打字就被打断。轮询越勤越明显：面板每 10s 拉一次状态，探测里带 tasklist。
+    源码方式跑时父进程自己有控制台，子进程共用它，所以不显形（这就是「源码版没事」的原因）。
+    这里统一补 CREATE_NO_WINDOW；调用方显式给过 creationflags 的尊重原样（守护进程要 DETACHED）。
+    """
+    if os.name != "nt":
+        return
+    import subprocess as _sp
+    FLAG = 0x08000000
+
+    def _wrap(f):
+        def g(*a, **kw):
+            kw.setdefault("creationflags", FLAG)
+            return f(*a, **kw)
+        g._wb_nowin = True
+        return g
+
+    for _n in ("run", "Popen", "call", "check_call", "check_output"):
+        _f = getattr(_sp, _n, None)
+        if _f is not None and not getattr(_f, "_wb_nowin", False):
+            setattr(_sp, _n, _wrap(_f))
+
+
+_no_console_children()
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 PLUGINS_DIR = os.path.join(BASE, "plugins")
 try:

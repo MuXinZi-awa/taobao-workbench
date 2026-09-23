@@ -58,6 +58,7 @@ input::placeholder { color:var(--text-m,#999); }
   <button class="chip" style="cursor:pointer;border-color:#4a7cf7;color:#4a7cf7" onclick="refreshCap()">↻ 刷新容量</button>
 </div>
 <div class="prog" id="prog" style="display:none"></div>
+<div id="stale" style="display:none;margin:8px 0;padding:8px 10px;border-radius:6px;background:#FFF4D6;border:1px solid #E8C86A;color:#6B4E00;font-size:12px;line-height:1.5"></div>
 <div class="sec" id="planTitle">计划组 · 容量 count/500</div>
 <div class="grid" id="grid">加载中…</div>
 
@@ -102,6 +103,8 @@ let curFile="", curFileName="", lastRec=null, lastRun=false;
 
 async function load(){
  const d=await fetch(P+'status').then(r=>r.json()); if(!d.ok) return;
+ if(d.stale){ const _b=document.getElementById('stale'); if(_b){ _b.style.display='block'; _b.textContent='⚠ '+(d.stale_note||'当前无激活账号，显示的是历史全局数据'); } }
+ else { const _b=document.getElementById('stale'); if(_b) _b.style.display='none'; }
  const ac=document.getElementById('acct');
  const an=(d.account&&d.account.name)?d.account.name:'未命名';
  const am=(d.account&&d.account.member_id)?(' · '+d.account.member_id):'';
