@@ -81,7 +81,12 @@ _DEFAULTS = {
     "state": os.path.join(ROOT, "plugins", "pipeline", "state.json"),
     "mat_root": os.path.join(WS, "办公室工作", "素材", "产品素材"),
     "data": os.path.join(WS, "办公室工作", "数据"),
-    "product": os.path.join(WS, "产品"),
+    # product 键保留（preflight 健康检查在用）——但不再指旧目录 OH-WorkSpace\产品：
+    # 与 mat_root 同处（办公室工作\素材\产品素材），全流程唯一素材出处
+    "product": os.path.join(WS, "办公室工作", "素材", "产品素材"),
+    # 文件书桌「工作台」tab 的自设目录——梓帆随手放待处理文件的地方，拖进插件批量区用。
+    # 单独一个键：不写死、可改（paths.local.json / 设置里改）
+    "desk": WS,
     "tg_root": os.path.join(_DESKTOP, "推广一键跑"),
     "tg_runtime": os.path.join(_DESKTOP, "推广一键跑", "runtime"),
     "python": _default_python(),
@@ -93,7 +98,7 @@ _DEFAULTS = {
 }
 
 _KEYS = ["root", "runtime", "cache", "webview_data", "db", "conn_db", "port", "open_qty", "state", "mat_root",
-         "data", "product", "tg_root", "tg_runtime", "python", "chrome", "key_files"]
+         "data", "product", "desk", "tg_root", "tg_runtime", "python", "chrome", "key_files"]
 
 
 def _write_template(path, values):
@@ -215,7 +220,8 @@ NOTES = {
     "state": ("流水线状态文件", "选品/送修/换源的进度状态", "文件"),
     "mat_root": ("素材根目录", "产品素材（封面 / 主图 / 详情图）", "目录"),
     "data": ("数据目录", "推广记录、全量汇总、定价表等数据文件", "目录"),
-    "product": ("产品目录", "按料号落盘的工作目录", "目录"),
+    "product": ("产品目录", "按料号落盘的素材目录（与「素材根目录」同处，历史键名保留）", "目录"),
+    "desk": ("书桌·工作台目录", "右侧书桌「工作台」tab 列的目录——你随手放待处理文件的地方（可随时改）", "目录"),
     "tg_root": ("推广一键跑目录", "外部脚本本体（上品/推广/采集）", "目录"),
     "tg_runtime": ("推广一键跑·运行目录", "它的进度、日志都在这里", "目录"),
     "python": ("插件用的 Python", "面板里点下去跑的批处理脚本用这个解释器；打包后壳自己不能当解释器（壳里没有 playwright / openpyxl）。默认优先用包里的 runtime（跟 plugins 一样可以单独换），没装则用推广一键跑自带的那个", "文件"),
@@ -349,6 +355,7 @@ OWNER = {
     "state": ("core", []), "port": ("core", []), "webview_data": ("core", []),
     "db": ("core", []), "conn_db": ("core", []),
     "mat_root": ("data", []), "data": ("data", []), "product": ("data", []),
+    "desk": ("data", []),
     "tg_root": ("tg", _TG_PLUGINS), "tg_runtime": ("tg", _TG_PLUGINS),
     "python": ("tg", _TG_PLUGINS),
     "chrome": ("env", _TG_PLUGINS), "key_files": ("env", _TG_PLUGINS),

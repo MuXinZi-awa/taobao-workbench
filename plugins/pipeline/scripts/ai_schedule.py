@@ -311,7 +311,7 @@ def main():
     lh = sys.argv[1] if len(sys.argv) > 1 else None
     img = sys.argv[2] if len(sys.argv) > 2 else None
     usage = sys.argv[3] if len(sys.argv) > 3 else "cover"
-    out = sys.argv[4] if len(sys.argv) > 4 else os.path.join(paths.PRODUCT, lh)
+    out = sys.argv[4] if len(sys.argv) > 4 else os.path.join(paths.MAT_ROOT, lh)   # 素材根（原 paths.PRODUCT 是旧目录）
     if not lh or not img or not os.path.isfile(img):
         print("用法: python ai_schedule.py 料号 参考图.jpg cover|white|detail|main2-5|all [输出目录]")
         return

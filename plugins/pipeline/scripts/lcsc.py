@@ -89,7 +89,7 @@ def lcsc_fetch_images(lh, outdir, max_imgs=5):
                 pass
             # 精确匹配：行文本含料号的 item 链接（不是第一个推荐）
             try:
-                item_url = page.evaluate("""(k) => {
+                item_url = page.evaluate(r"""(k) => {
                     const links = Array.from(document.querySelectorAll('a[href*="item.szlcsc.com"]'));
                     // 优先标准 item.szlcsc.com/{数字}.html（排除 details/ 合作库存页——无产品主图）
                     const norm = links.filter(a => !a.href.includes('/details/') && /item\.szlcsc\.com\/\d+/.test(a.href));
@@ -345,7 +345,7 @@ def main():
     if _d not in _sys.path:
         _sys.path.insert(0, _d)
     import paths
-    outdir = os.path.join(paths.PRODUCT, lh, "立创")
+    outdir = os.path.join(paths.MAT_ROOT, lh, "立创")   # 素材根（原 paths.PRODUCT 是旧目录）
     url = None
     i = 0
     while i < len(args):

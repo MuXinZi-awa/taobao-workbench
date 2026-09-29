@@ -23,6 +23,8 @@ body { font-family:var(--font-ui); background:var(--bg); margin:0; color:var(--t
 .iconbtn { border:.5px solid var(--border); background:transparent; border-radius:var(--r); width:24px; height:24px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-l); flex-shrink:0; padding:0; }
 .iconbtn:hover { background:var(--accent); color:#FFFDF7; }
 .iconbtn svg { width:14px; height:14px; }
+.ghost { border:.5px solid var(--border); background:transparent; border-radius:var(--r); padding:4px 12px; font-size:12px; cursor:pointer; color:var(--text-l); font-family:inherit; }
+.ghost:hover { border-color:var(--accent); color:var(--accent-h); }
 .main { flex:1; display:flex; min-height:0; }
 .col-side { width:150px; border-right:.5px solid var(--border); background:var(--side); padding:6px 4px; overflow-y:auto; flex-shrink:0; }
 .col-side .cap { font-size:11px; color:var(--text-m); padding:2px 6px; }
@@ -61,6 +63,12 @@ body { font-family:var(--font-ui); background:var(--bg); margin:0; color:var(--t
 .desk-head .dh { font-size:0.88rem; font-weight:500; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .desk-head .cnt { font-size:0.8rem; color:var(--text-m); flex-shrink:0; }
 .desk-tools { display:flex; gap:3px; padding:3px 8px; align-items:center; flex-shrink:0; position:relative; }
+.desk-tabs { display:flex; gap:4px; padding:4px 8px 2px; align-items:center; flex-shrink:0; }
+.desk-tabs .dtab { font-size:0.85rem; padding:2px 10px; border-radius:6px; cursor:pointer; color:var(--text-l); border:.5px solid transparent; }
+.desk-tabs .dtab:hover { background:var(--accent-l); }
+.desk-tabs .dtab.on { color:var(--accent-h); border-color:var(--border); background:var(--card); font-weight:600; }
+#dragGhost { position:fixed; z-index:9999; pointer-events:none; background:var(--accent); color:#fff; font-size:12px; padding:3px 9px; border-radius:6px; box-shadow:0 3px 10px rgba(0,0,0,.25); display:none; }
+#deskToast { position:fixed; left:50%; bottom:56px; transform:translateX(-50%); z-index:9999; background:rgba(30,30,30,.92); color:#fff; font-size:12px; padding:6px 14px; border-radius:8px; display:none; }
 .ddbtn { display:flex; align-items:center; gap:3px; border:.5px solid var(--border); background:transparent; border-radius:var(--r); padding:3px 8px; font-size:0.8rem; color:var(--text-l); cursor:pointer; font-family:var(--font-ui); }
 .ddbtn:hover { background:var(--accent-l); }
 .ddbtn svg { width:11px; height:11px; }
@@ -103,6 +111,11 @@ body { font-family:var(--font-ui); background:var(--bg); margin:0; color:var(--t
 .plug-item .pv { font-size:11px; color:var(--text-m); }
 .plug-item .pd { font-size:11px; color:var(--text-m); }
 .plug-item .tag { font-size:10px; padding:1px 7px; border-radius:10px; background:var(--accent-l); color:var(--accent-h); margin-left:auto; flex-shrink:0; }
+.plug-item .mk-state { font-size:10px; border:.5px solid; border-radius:3px; padding:0 4px; margin-left:4px; flex-shrink:0; }
+.sw { position:relative; width:34px; height:18px; border-radius:9px; background:var(--border); flex-shrink:0; cursor:pointer; transition:background .15s; }
+.sw::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:#fff; transition:left .15s; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+.sw.on { background:var(--accent); }
+.sw.on::after { left:18px; }
 .dropzone { border:1px dashed var(--border); border-radius:var(--r); padding:10px; text-align:center; font-size:12px; color:var(--text-m); margin-bottom:8px; cursor:pointer; }
 .dropzone:hover { border-color:var(--accent); color:var(--accent-h); }
 .plug-detail .row { display:flex; justify-content:space-between; padding:3px 0; border-bottom:.5px solid rgba(0,0,0,.05); font-size:12px; gap:10px; }
@@ -273,7 +286,16 @@ window.addEventListener('error', function(e){
         <label style="font-size:11px;display:flex;align-items:center;gap:3px"><input type="checkbox" id="adForce" onchange="adForceTg()">force</label>
       </span>
     </div>
-    <div id="adPic2" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg,#f5f5f2);border:.5px solid var(--border,#ddd);border-radius:8px;min-height:200px;overflow:hidden"></div>
+    <div style="flex:1;display:flex;gap:8px;min-height:200px">
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="font-size:11px;color:var(--text-l,#888);padding:2px 4px">原图（参考）</div>
+        <div id="adOrig" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg,#f5f5f2);border:.5px solid var(--border,#ddd);border-radius:8px;overflow:hidden"></div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="font-size:11px;color:var(--text-l,#888);padding:2px 4px">成品（送审）</div>
+        <div id="adPic2" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg,#f5f5f2);border:.5px solid var(--border,#ddd);border-radius:8px;overflow:hidden"></div>
+      </div>
+    </div>
     <div style="display:flex;align-items:center;gap:8px;padding:8px 4px;flex-wrap:wrap">
       <button id="adCmpBtn" onclick="adCmpToggle()" style="display:none;padding:7px 14px;border-radius:8px;border:.5px solid #666;color:#666;background:transparent;cursor:pointer;font-size:12px">⇄ 对比原图</button>
       <button id="aOk" onclick="adMark('放行')"  style="padding:7px 18px;border-radius:8px;border:.5px solid #2a7a3a;color:#2a7a3a;background:transparent;cursor:pointer;font-size:13px">✅ 放行</button>
@@ -296,6 +318,11 @@ window.addEventListener('error', function(e){
       <input id="searchInput" placeholder="搜索工作台" autocomplete="off">
       <div class="suggest" id="suggest"></div>
     </div>
+    <div class="desk-tabs">
+      <span class="dtab on" id="dtabChat" onclick="deskTab('chat')">对话文件</span>
+      <span class="dtab" id="dtabWork" onclick="deskTab('work')">工作台</span>
+      <span id="deskPick" style="margin-left:auto;font-size:11px;color:var(--accent-h);cursor:pointer;display:none" onclick="deskSetDir()" title="设置「工作台」tab 的目录">改目录</span>
+    </div>
     <div class="desk-head"><span class="dh" id="deskDir">文件书桌</span><span class="cnt" id="deskCount"></span></div>
     <div class="desk-tools">
       <button class="ddbtn" id="openFolderBtn" onclick="openFolder()" title="在系统文件管理器中打开当前目录">打开</button>
@@ -311,6 +338,8 @@ window.addEventListener('error', function(e){
     <div class="desk-info" id="deskInfo"></div>
     <div class="desk-files" id="deskFiles"></div>
   </div>
+  <div id="dragGhost"></div>
+  <div id="deskToast"></div>
 </div>
 <div class="modal-mask" id="mask" onclick="closeSettings()"></div>
 <div class="modal" id="settingsModal">
@@ -351,21 +380,95 @@ function applyFS(files){ let fs=files.filter(f=>!f.is_dir);
  if(sortMode==='type')fs.sort((a,b)=>ftype(a.name).localeCompare(ftype(b.name))||a.name.localeCompare(b.name));
  return fs; }
 const SORT_LABEL={time:'时间',nameA:'A→Z',nameZ:'Z→A',size:'大小',type:'类型'};
+/* ── 书桌两 tab：对话文件（产品素材目录）/ 工作台（自设目录）——拖文件投进插件批量区 ── */
+const SEP=String.fromCharCode(92);   /* 反斜杠：路径拼接（避免源码转义踩坑） */
+let deskTabCur='chat', deskDir='';
+function deskTabsOn(){ var c=document.getElementById('dtabChat'), w=document.getElementById('dtabWork');
+ if(c) c.classList.toggle('on',deskTabCur==='chat'); if(w) w.classList.toggle('on',deskTabCur==='work');
+ var dp=document.getElementById('deskPick'); if(dp) dp.style.display=(deskTabCur==='work')?'':'none'; }
+function deskTab(t){ deskTabCur=t; curDir=''; deskDir=''; deskTabsOn(); deskLoad(); }
+function deskToast(m){ var t=document.getElementById('deskToast'); if(!t) return;
+ t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(function(){ t.style.display='none'; },2800); }
+async function deskSetDir(){
+ var d=prompt('「工作台」目录（绝对路径）——把待处理的 csv/图片放这儿，直接拖进插件批量区：', deskDir||'');
+ if(d==null) return; d=(d||'').trim(); if(!d) return;
+ var r=await api('/api/desk-set?p='+encodeURIComponent(d));
+ if(!r.ok){ deskToast('✗ '+(r.error||'设置失败')); return; }
+ deskTabCur='work'; deskDir=''; deskTabsOn(); deskLoad(); deskToast('工作台目录：'+(r.dir||d));
+}
+function mkFileEl(f, dir){
+ var el=document.createElement('div'); el.className='file';
+ el.innerHTML=iconFor(f.name,f.is_dir)+'<span class="nm">'+esc(f.name)+'</span>'+(f.is_dir?'':'<span class="sz">'+fmtSize(f.size)+'</span>');
+ var full=dir+SEP+f.name;
+ if(f.is_dir){ el.ondblclick=function(){ deskDir=full; deskLoad(); }; }
+ else{ el.ondblclick=function(){ previewFile(full); }; el.style.cursor='grab';
+   el.onmousedown=function(e){ discPress(e, full, f.name); }; }
+ return el;
+}
+async function deskLoad(){
+ var box=document.getElementById('deskFiles');
+ try{
+  var d=await api('/api/desk?tab='+deskTabCur+(deskDir?('&p='+encodeURIComponent(deskDir)):''));
+  var dir=d.dir||'';
+  document.getElementById('deskDir').textContent=((deskTabCur==='chat')?'对话文件':'工作台')+' · '+((dir||'').split(SEP).join('/').split('/').slice(-2).join('/')||'—');
+  document.getElementById('deskCount').textContent=(d.files||[]).length+' 项';
+  document.getElementById('deskInfo').textContent=(dir||'').split(SEP).join('/')+(d.error?('  ['+d.error+']'):'');
+  var dirs=(d.files||[]).filter(function(f){return f.is_dir;}).sort(function(a,b){return a.name.localeCompare(b.name);});
+  var all=dirs.concat(applyFS(d.files||[]));
+  box.innerHTML='';
+  if(!all.length){ box.innerHTML='<div class="file" style="color:var(--text-m)">空目录'+(d.error?('（'+d.error+'）'):'')+'</div>'; return; }
+  all.forEach(function(f){ box.appendChild(mkFileEl(f, dir)); });
+ }catch(e){ box.innerHTML='<div class="file" style="color:var(--danger)">'+esc(e.message)+'</div>'; }
+}
+/* 跨 iframe 原生 drop 被浏览器禁 ⇒ 自制 mousedown/move/up：跟手浮标 + 松手按坐标命中插件 iframe → postMessage 路径 */
+let _dk=null;
+function discPress(e, path, name){ _dk={x:e.clientX,y:e.clientY,path:path,name:name,moved:false}; document.body.style.userSelect='none'; }
+document.addEventListener('mousemove',function(e){
+ if(!_dk) return;
+ if(!_dk.moved && Math.hypot(e.clientX-_dk.x,e.clientY-_dk.y)>6){ _dk.moved=true;
+   var g=document.getElementById('dragGhost'); if(g){ g.textContent='投放：'+_dk.name; g.style.display='block'; } }
+ if(_dk.moved){
+   var g2=document.getElementById('dragGhost'); if(g2){ g2.style.left=(e.clientX+12)+'px'; g2.style.top=(e.clientY+12)+'px'; }
+   var b=document.getElementById('wsBody'); if(b){ var r=b.getBoundingClientRect();
+     b.style.outline=(e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom)?'2px solid var(--accent)':''; }
+ }
+});
+let _ackTimer=null;
+window.addEventListener('message',function(e){ var d=e.data;
+ if(d&&d.type==='wb-desk-drop-ack'&&_ackTimer){ clearTimeout(_ackTimer); _ackTimer=null; deskToast('插件已接住 ✓'); } });
+document.addEventListener('mouseup',function(e){
+ if(!_dk) return; var d=_dk; _dk=null; document.body.style.userSelect='';
+ var g=document.getElementById('dragGhost'); if(g) g.style.display='none';
+ var b=document.getElementById('wsBody'); if(b) b.style.outline='';
+ if(!d.moved) return;   /* 没移动=单击，交给 dblclick */
+ if(!curPlugin){ deskToast('先在中间打开一个插件面板，再拖进来'); return; }
+ var host=document.getElementById('plg-'+curPlugin.id);
+ var ifr=host?host.querySelector('iframe'):(b?b.querySelector('iframe'):null);
+ var r=b?b.getBoundingClientRect():null;
+ var on=r&&e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;
+ if(!on||!ifr){ deskToast('拖到插件面板里才能放（当前插件：'+(curPlugin.name||'')+'）'); return; }
+ if(!ifr.contentWindow){ deskToast('投递失败：拿不到插件窗口'); return; }
+ ifr.contentWindow.postMessage({type:'wb-desk-drop', paths:[d.path]}, '*');
+ deskToast('已投递：'+d.name+' → '+(curPlugin.name||'插件'));
+ if(_ackTimer) clearTimeout(_ackTimer);
+ _ackTimer=setTimeout(function(){ _ackTimer=null; deskToast('已递路径，但该插件没接批量区（没反应）'); }, 900);
+});
 async function loadDesk(){
  const files=document.getElementById('deskFiles');
- if(!curDir){ files.innerHTML='<div class="file" style="color:var(--text-m)">搜索料号 → 显示素材</div>'; return; }
+ if(!curDir){ return deskLoad(); }   /* 无搜索目标 → 列当前 tab 的目录 */
  try{ const d=await api('/api/current/'+encodeURIComponent(curDir.split(/[\\/]/).pop()));
   if(d.dir)curDir=d.dir;
   document.getElementById('deskDir').textContent=(d.dir||curDir).replace(/\\/g,'/').split('/').slice(-2).join('/')||'文件书桌';
   document.getElementById('deskCount').textContent=(d.files||[]).length+' 文件';
   document.getElementById('deskInfo').textContent=(d.dir||'').replace(/\\/g,'/').split('/').slice(-4).join('/');
-  const fs=applyFS(d.files||[]); files.innerHTML='';
-  if(!fs.length){ files.innerHTML='<div class="file" style="color:var(--text-m)">无匹配文件</div>'; return; }
-  fs.forEach(f=>{ const el=document.createElement('div'); el.className='file';
+  const fs2=applyFS(d.files||[]); files.innerHTML='';
+  if(!fs2.length){ files.innerHTML='<div class="file" style="color:var(--text-m)">无匹配文件</div>'; return; }
+  fs2.forEach(f=>{ const el=document.createElement('div'); el.className='file';
    el.innerHTML=iconFor(f.name,f.is_dir)+'<span class="nm">'+f.name+'</span>'+(f.is_dir?'':'<span class="sz">'+fmtSize(f.size)+'</span>');
    el.ondblclick=()=>{ if(f.is_dir){curDir=(d.dir||curDir)+'\\'+f.name;loadDesk();} else previewFile(d.dir+'\\'+f.name); };
    files.appendChild(el); });
  }catch(e){ files.innerHTML='<div class="file" style="color:var(--danger)">'+e.message+'</div>'; } }
+deskTabsOn();
 let zoomLv=1, zoomNW=0, zoomNH=0;
 function zEl(id){ return document.getElementById(id); }
 function updateZoomVal(){ const v=zEl('zoomVal'); if(v) v.textContent=Math.round(zoomLv*100)+'%'; }
@@ -496,12 +599,17 @@ async function renderConnList(){
    return '<div class="plug-item" style="margin-bottom:6px">'
     +'<div style="flex:1;min-width:0"><div class="pn">'+esc(x.name||'(未命名)')+' <span class="pv">'+t+(x.active?' · 已激活':'')+'</span></div>'
     +'<div class="pd">'+esc(x.username||'')+(x.url?' · '+esc(x.url):'')+(x.dbname?' · '+esc(x.dbname):'')+'</div></div>'
-    +'<span style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px" onclick="connAct('+x.id+')">激活</span>'
-    +'<span style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px" onclick="connTest('+x.id+')">测试</span>'
-    +'<span style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px" onclick="connEdit('+x.id+')">编辑</span>'
-    +'<span style="cursor:pointer;font-size:11px;color:#b04a3a;margin-left:6px" onclick="connDel('+x.id+')">删</span>'
+    +'<span class="cf-act" data-act="act" data-id="'+esc(String(x.id))+'" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">激活</span>'
+    +'<span class="cf-act" data-act="test" data-id="'+esc(String(x.id))+'" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">测试</span>'
+    +'<span class="cf-act" data-act="edit" data-id="'+esc(String(x.id))+'" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">编辑</span>'
+    +'<span class="cf-act" data-act="del" data-id="'+esc(String(x.id))+'" style="cursor:pointer;font-size:11px;color:#b04a3a;margin-left:6px">删</span>'
     +'</div>';
   }).join('');
+  // 别把数据拼进内联 onclick——统一 dataset + addEventListener
+  list.querySelectorAll('.cf-act').forEach(function(b){
+   b.addEventListener('click', function(){ var a=b.dataset.act, id=b.dataset.id;
+    if(a==='act') connAct(id); else if(a==='test') connTest(id); else if(a==='edit') connEdit(id); else if(a==='del') connDel(id); });
+  });
  }
  renderConnForm();
 }
@@ -510,6 +618,10 @@ function renderConnForm(){
  const f=document.getElementById('connForm'); if(!f)return;
  if(CONN_EDIT) f.innerHTML=connFormHtml(CONN_EDIT);
  else f.innerHTML='<div style="text-align:left"><button class="ghost" onclick="CONN_EDIT={};renderConnForm()">+ 新增连接</button></div>';
+ // 表单按钮统一 dataset + addEventListener（不拼内联 onclick）
+ f.querySelectorAll('[data-conf]').forEach(function(b){
+  b.addEventListener('click', function(){ var a=b.dataset.conf, id=b.dataset.id;
+   if(a==='reveal') connReveal(id); else if(a==='save') connSave(id||0); }); });
 }
 function connFormHtml(d){
  const ty=d.type||'taobao';
@@ -532,8 +644,8 @@ function connFormHtml(d){
    +row('备注','cfNote',d.note,'');
  }
  body+='<div class="cbtns"><button class="ghost" onclick="CONN_EDIT=null;renderConnForm()">取消</button>'
-  +(d.id?'<button class="ghost" onclick="connReveal('+d.id+')">显示密码</button>':'')
-  +'<button onclick="connSave('+(d.id||0)+')">保存</button></div>'
+  +(d.id?'<button class="ghost" data-conf="reveal" data-id="'+esc(String(d.id)) +'">显示密码</button>':'')
+  +'<button data-conf="save" data-id="'+esc(String(d.id||0)) +'">保存</button></div>'
   +'<div id="cfMsg" style="font-size:12px;color:var(--text-m);margin-top:8px;text-align:right"></div>';
  return '<div class="conn-form">'+body+'</div>';
 }
@@ -552,8 +664,13 @@ async function connEdit(id){
  const d=await api('/api/conn/list'); const x=(d.items||[]).find(v=>v.id===id);
  if(x){ CONN_EDIT=x; renderConnForm(); }
 }
-async function renderPlugins(c){ c.innerHTML='<h3>插件</h3><div class="desc">拖入 .zip 安装（含 manifest.json + README.md）· 或从下面列表点装 · 点击查看详情</div><div class="dropzone" id="dz">拖入插件 zip 到此处安装</div><div id="listBox" style="font-size:12px;color:var(--text-m);margin-top:10px">插件列表加载中…</div><div id="plugList"></div>';
- pluginListLoad();
+async function renderPlugins(c){ c.innerHTML='<h3>插件市场</h3>'
+  +'<div class="desc">可安装的插件都在这：查版本 · 安装/更新 · 开关 · 详情。拖入 .zip 也能离线安装。</div>'
+  +'<div class="dropzone" id="dz">拖入插件 zip 到此处安装</div>'
+  +'<div style="display:flex;gap:6px;margin:8px 0;align-items:center">'
+  +'<input id="mkSearch" placeholder="搜插件名 / 关键词…" style="flex:1;border:.5px solid var(--border);border-radius:6px;padding:6px 9px;font-size:12px" oninput="marketRender()">'
+  +'<button class="ghost" onclick="marketReload()">刷新</button></div>'
+  +'<div id="plugList" style="font-size:12px;color:var(--text-m)">加载中…</div>';
  const dz=document.getElementById('dz');
  dz.ondragover=e=>{ e.preventDefault(); dz.style.borderColor='var(--accent)'; };
  dz.ondragleave=()=>{ dz.style.borderColor=''; };
@@ -566,23 +683,81 @@ async function renderPlugins(c){ c.innerHTML='<h3>插件</h3><div class="desc">�
    else { dz.textContent='✗ '+(d.error||'安装失败'); }
   }).catch(e=>{ dz.textContent='✗ '+e.message; });
  };
- const d=await api('/api/plugins'); const pls=d.plugins||[]; const list=document.getElementById('plugList');
- if(!pls.length){ list.innerHTML='<div style="font-size:12px;color:var(--text-m)">暂无已装插件——拖 zip 安装</div>'; return; }
- pls.forEach(p=>{ const el=document.createElement('div'); el.className='plug-item';
-  el.innerHTML='<div style="flex:1;min-width:0"><div class="pn">'+p.name+' <span class="pv">v'+(p.version||'0.0.0')+'</span></div><div class="pd">'+(p.desc||'')+'</div></div><span class="tag">'+(p.enabled===false?'已禁用':'已启用')+'</span><span style="margin-left:6px;cursor:pointer;font-size:11px;color:var(--accent-h)" onclick="event.stopPropagation();togglePlug('+p.id+',this)">切换</span>';
-  el.onclick=()=>showPlugDetail(c,p); list.appendChild(el); }); }
-async function togglePlug(id,el){ const on=el.textContent==='已禁用';
- const d=await api('/api/plugin-toggle?id='+encodeURIComponent(id)+'&on='+(on?'1':'0'));
- if(d.ok){ el.textContent=on?'已启用':'已禁用'; el.style.background=on?'var(--accent-l)':'#E8E6DC'; loadPlugins(); } else alert(d.error||'切换失败'); }
-function showPlugDetail(c,p){ c.innerHTML='<h3>'+p.name+'</h3><div class="plug-detail">'
- +'<div class="row"><span class="k">版本</span><span>v'+(p.version||'0.0.0')+'</span></div>'
- +'<div class="row"><span class="k">ID</span><span>'+p.id+'</span></div>'
- +'<div class="row"><span class="k">状态</span><span>已启用 · 热插拔</span></div>'
- +'<div class="row"><span class="k">介绍</span><span>'+((p.desc||'(无)').slice(0,80))+'</span></div>'
- +'<div class="row"><span class="k">位置</span><span>plugins/'+p.id+'/</span></div>'
- +'<div style="margin-top:8px"><button class="iconbtn" style="width:auto;padding:3px 12px" onclick="openSetPage(\'plugins\')">← 返回</button></div>'
- +'<div id="readmeBox"></div>';
- loadReadme(p.id); }
+ await marketReload();
+}
+// ── 插件市场：设置里的「插件」页就是市场本身（列表 · 安装/更新 · 开关 · 详情都在这），不再有市场/列表两处切换 ──
+var MK={reg:[],inst:{},list:[]};
+async function marketReload(){
+ try{
+  var d=await api('/api/plugin-registry'); MK.reg=(d&&d.plugins)||[]; MK.inst=(d&&d.installed)||{};
+  var p=await api('/api/plugins'); MK.list=(p&&p.plugins)||[];
+ }catch(e){ var box=document.getElementById('plugList'); if(box) box.textContent='✗ '+e.message; return; }
+ marketRender();
+}
+function _verNum(v){ return String(v||'').split('.').map(function(x){return parseInt(x,10)||0;}); }
+function _newer(a,b){ var A=_verNum(a),B=_verNum(b); for(var i=0;i<3;i++){ if((A[i]||0)!==(B[i]||0)) return (A[i]||0)>(B[i]||0); } return false; }
+// registry 与本机已装合成一份：已装但不在 registry 的（自装/dev）也列出来，否则装完就从列表里消失
+function _merged(){
+ var instMeta={}; (MK.list||[]).forEach(function(m){ instMeta[String(m.id)]=m; });
+ var byId={}, order=[];
+ (MK.reg||[]).forEach(function(r){ var id=String(r.id), m=instMeta[id];
+  byId[id]={ id:id, name:(m&&m.name)||r.name||id, version:(m&&m.version)||r.version||'', regVer:r.version||'',
+             desc:(m&&m.desc)||r.desc||'', has:m!==undefined, enabled:m?m.enabled!==false:false, inReg:true };
+  order.push(id); });
+ (MK.list||[]).forEach(function(m){ var id=String(m.id); if(byId[id]) return;
+  byId[id]={ id:id, name:m.name||id, version:m.version||'', regVer:'', desc:m.desc||'', has:true, enabled:m.enabled!==false, inReg:false };
+  order.push(id); });
+ return order.map(function(id){ return byId[id]; });
+}
+function marketRender(){
+ var box=document.getElementById('plugList'); if(!box) return;
+ var kw=((document.getElementById('mkSearch')||{}).value||'').trim().toLowerCase();
+ var all=_merged();
+ if(kw) all=all.filter(function(x){ return ((x.name||'')+(x.id||'')+(x.desc||'')).toLowerCase().indexOf(kw)>=0; });
+ if(!all.length){ box.innerHTML='<div style="color:var(--text-m);padding:8px 0">无匹配（列表文件 registry.json 可能为空）</div>'; return; }
+ box.innerHTML='';
+ all.forEach(function(x){
+  var upgradable=x.has && x.inReg && _newer(x.regVer,x.version);
+  var state=!x.has?'未装':(upgradable?('可更新 v'+x.version+' → v'+x.regVer):('已装 v'+x.version));
+  var col=!x.has?'var(--text-m)':(upgradable?'var(--accent-h)':'var(--green,#3A6B4A)');
+  var el=document.createElement('div'); el.className='plug-item';
+  el.innerHTML='<div style="flex:1;min-width:0"><div class="pn">'+esc(x.name||x.id)+' <span class="pv">v'+esc(x.version||x.regVer||'?')+'</span>'
+   +' <span class="mk-state" style="color:'+col+';border-color:'+col+'">'+esc(state)+'</span></div>'
+   +'<div class="pd">'+esc(x.desc||'')+'</div></div>';
+  if((!x.has||upgradable)&&x.inReg){ var ib=document.createElement('button'); ib.className='iconbtn';
+   ib.style.cssText='width:auto;padding:2px 10px;font-size:12px;flex-shrink:0'; ib.textContent=x.has?'更新':'安装';
+   ib.addEventListener('click',function(ev){ ev.stopPropagation(); pluginInstall(x.id); }); el.appendChild(ib); }
+  if(x.has){ var sw=document.createElement('span'); sw.className='sw'+(x.enabled?' on':'');
+   sw.title=x.enabled?'已启用，点击停用':'已停用，点击启用';
+   sw.addEventListener('click',function(ev){ ev.stopPropagation(); togglePlug(x.id, sw); }); el.appendChild(sw); }
+  el.addEventListener('click',function(){ marketDetail(x.id); });
+  box.appendChild(el);
+ });
+}
+function marketDetail(id){
+ var x=(_merged().filter(function(v){return v.id===id;})[0])||{id:id,name:id,has:false};
+ var box=document.getElementById('plugList'); if(!box) return;
+ box.innerHTML='<div class="plug-detail">'
+  +'<div style="margin-bottom:6px"><b>'+esc(x.name||id)+'</b> <span class="pv">v'+esc(x.version||x.regVer||'?')+'</span></div>'
+  +'<div style="color:var(--text-m);margin-bottom:8px">'+esc(x.desc||'')+'</div>'
+  +'<div class="row"><span class="k">状态</span><span>'+(x.has?('已装'+(x.enabled?' · 已启用':' · 已停用')):'未装')+'</span></div>'
+  +'<div class="row"><span class="k">ID</span><span>'+esc(x.id)+'</span></div>'
+  +(x.has?'<div class="row"><span class="k">位置</span><span>plugins/'+esc(x.id)+'/</span></div>':'')
+  +'<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">'
+  +'<button class="ghost" data-back="1">← 返回列表</button>'
+  +(x.has?'<button class="ghost" data-un="1" style="color:#b04a3a;border-color:#b04a3a">卸载</button>':'')
+  +'</div><div id="readmeBox"></div></div>';
+ box.querySelector('[data-back]').addEventListener('click', function(){ marketRender(); });
+ var ub=box.querySelector('[data-un]'); if(ub) ub.addEventListener('click', function(){ pluginUninstall(x.id, x.name||x.id); });
+ if(x.has) loadReadme(x.id);
+ else { var rb=document.getElementById('readmeBox'); if(rb) rb.innerHTML='<div style="font-size:12px;color:var(--text-m);margin-top:8px">未安装——本机没有 README，装完再看</div>'; }
+}
+async function togglePlug(id,sw){ /* 开关状态看 .on（真切状态），不用按钮自身文本 */
+ var on = sw ? !sw.classList.contains('on') : true;
+ var d=await api('/api/plugin-toggle?id='+encodeURIComponent(id)+'&on='+(on?'1':'0'));
+ if(d.ok){ if(sw){ sw.classList.toggle('on',on); sw.title=on?'已启用，点击停用':'已停用，点击启用'; }
+  var m=(MK.list||[]).filter(function(v){return String(v.id)===String(id);})[0]; if(m) m.enabled=on; loadPlugins(); }
+ else alert(d.error||'切换失败'); }
 async function loadReadme(pid){ const box=document.getElementById('readmeBox'); if(!box)return;
  const d=await api('/api/plg/'+pid+'/readme');
  if(d.ok){ box.innerHTML='<div style="margin-top:8px;border-top:.5px solid var(--border);padding-top:8px"><div style="font-size:12px;color:var(--text-m);margin-bottom:4px">说明 README.md</div>'
@@ -791,30 +966,20 @@ function pathRow(it){
   +'<div style="font-size:10px;color:var(--text-m);margin-top:2px">默认：'+esc(it.default_short||it.default)+'</div></div></div>';
 }
 
-function pluginListLoad(){
- fetch(API+'/api/plugin-registry').then(r=>r.json()).then(function(d){
-  var box=document.getElementById('listBox'); if(!box) return;
-  var reg=(d&&d.plugins)||[], inst=(d&&d.installed)||{};
-  if(!reg.length){ box.innerHTML='<div style="color:var(--text-m)">没有插件列表（registry.json 不在或为空）</div>'; return; }
-  box.innerHTML='<div style="font-size:12px;font-weight:600;margin:6px 0 4px">插件列表 <span style="font-weight:400;color:var(--text-m)">——点「安装」即从列表下载并装好（热插拔）</span></div>'
-   + reg.map(function(p){
-      var cur=inst[p.id]||'';
-      var state=!cur?'未装':(cur===p.version?'已装 v'+cur:'可更新 v'+cur+' → v'+p.version);
-      var col=!cur?'var(--text-m)':(cur===p.version?'var(--green)':'var(--accent-h)');
-      var btn=(cur===p.version)?'':'<button class="iconbtn" style="width:auto;padding:2px 10px;font-size:12px" onclick="pluginInstall(\''+p.id+'\')">'+(cur?'更新':'安装')+'</button>';
-      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:.5px solid rgba(0,0,0,.05)">'
-       +'<div style="flex:1"><div style="font-size:13px;color:var(--text)">'+esc(p.name||p.id)+' <span style="font-size:11px;color:var(--text-m)">v'+esc(p.version||'?')+'</span></div>'
-       +'<div style="font-size:11px;color:var(--text-m)">'+esc(p.desc||'')+'</div></div>'
-       +'<span style="font-size:11px;color:'+col+'">'+state+'</span>'+btn+'</div>';
-    }).join('');
- }); }
 function pluginInstall(id){
- var box=document.getElementById('listBox'); if(box) box.textContent='正在安装 '+id+'…';
+ // 装/更新：市场页的动作（可安装列表只在市场）。装完刷新市场状态 + 已装列表。
  fetch(API+'/api/plugin-install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
   .then(r=>r.json()).then(function(d){
-    if(d.ok){ alert('已安装「'+(d.name||id)+'」'+(d.version?(' v'+d.version):'')+'——刷新生效（热插拔）'); pluginListLoad(); loadPlugins(); }
-    else { alert('装不上：'+(d.error||'未知')); pluginListLoad(); }
-  }).catch(function(e){ alert('装不上：'+e.message); pluginListLoad(); });
+    if(d.ok){ alert('已安装「'+(d.name||id)+'」'+(d.version?(' v'+d.version):'')+'——刷新生效（热插拔）'); if(document.getElementById('plugList')) marketReload(); loadPlugins(); }
+    else { alert('装不上：'+(d.error||'未知')); if(document.getElementById('plugList')) marketReload(); }
+  }).catch(function(e){ alert('装不上：'+e.message); if(document.getElementById('plugList')) marketReload(); });
+}
+async function pluginUninstall(id,name){
+ // 卸载：本机管理（插件页）。删本机插件目录——源码在仓库里，随时能重装。
+ if(!confirm('卸载「'+(name||id)+'」？删掉本机插件目录（源码在仓库里，可随时重装）')) return;
+ var d=await api('/api/plugin-uninstall?id='+encodeURIComponent(id));
+ if(d.ok){ renderPlugins(document.getElementById('setContent')); loadPlugins(); }
+ else alert(d.error||'卸载失败');
 }
 
 /* ===== 启动自检提示：缺什么说一句，不拦人（起不来的事在窗体外已经说过了）===== */
@@ -930,10 +1095,10 @@ function adRender(){
  document.getElementById('adProg').textContent='审核 '+(AD.idx+1)+'/'+AD.items.length+'（需审 '+need+'）';
  document.getElementById('adLh2').textContent=it.lh;
  document.getElementById('adType2').innerHTML=(it.type||'')+(it.skip?' <span style="color:#b8860b">(双百-已跳过,force纳入)</span>':'');
- var showP = AD.cmp ? (it.orig||it.ref) : (it.ref||it.img||'');
- document.getElementById('adPic2').innerHTML=adImg(showP);
- var cbtn=document.getElementById('adCmpBtn'); if(cbtn){ cbtn.textContent=AD.cmp?'↔ 原图(对比)':'⇄ 对比原图';
-   cbtn.style.display=(it.ref&&it.orig&&it.ref!==it.orig)?'':'none'; }
+ var _og=it.orig||'', _rf=it.ref||it.img||'';   // 并排：左原图 · 右成品（三秒判断——不让人凭空判）
+ document.getElementById('adOrig').innerHTML=_og?adImg(_og):'<div style="color:var(--text-m,#999);padding:40px">无原图</div>';
+ document.getElementById('adPic2').innerHTML=adImg(_rf);
+ var cbtn=document.getElementById('adCmpBtn'); if(cbtn){ cbtn.style.display='none'; }
  var m=AD.marks[it.lh];
  ['aOk','aFix','aSrc'].forEach(function(id){var b=document.getElementById(id); if(b) b.style.background='';});
  if(m){ var bid=m==='放行'?'aOk':(m==='送修'?'aFix':'aSrc'); var b=document.getElementById(bid); if(b) b.style.background='#e3f0e3'; }

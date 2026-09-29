@@ -183,19 +183,130 @@ def _registry_entry(pid):
     return None
 
 
-def _fetch_plugin_zip(ent):
-    """取插件包：registry 里给 path（本地文件，测试用）或 url（公开直链，不需凭据）"""
+# ── 从仓库目录直接装（不再存 pkgs/zip 的第二份）──────────────────────
+# 仓库里的 plugins/<id>/ 源码就是发布源：data API 列清单 → 逐文件拉 → 打成一个 zip 交给
+# install_plugin_zip（复用同一套校验/防穿越/落盘，不另写一套）。
+_JSD_REPO_DEFAULT = "MuXinZi-awa/taobao-workbench"
+_JSD_CDN = ["https://fastly.jsdelivr.net/gh/", "https://cdn.jsdelivr.net/gh/"]
+_JSD_DATA = "https://data.jsdelivr.com/v1/packages/gh/"
+
+
+def _registry_repo():
+    """registry 顶层的 _repo（缺省用内置仓）"""
+    try:
+        with open(_registry_fp(), encoding="utf-8") as f:
+            return str(json.load(f).get("_repo") or _JSD_REPO_DEFAULT)
+    except Exception:
+        return _JSD_REPO_DEFAULT
+
+
+# 本机网络：python 直连 jsDelivr 常被断（RemoteDisconnected），走 Clash 代理可达（WinINET 系统代理只对 PowerShell 生效，urllib 不认）。
+# 顺序：直连 → 环境变量(urllib 自动读 HTTP(S)_PROXY) → Clash 7897 兜底。
+_PROXY_FALLBACK = ["http://127.0.0.1:7897"]
+
+
+def _http_get(url, timeout=60):
     import urllib.request
+    last = None
+    for px in [None] + _PROXY_FALLBACK:
+        try:
+            # Request 每轮新建：直连失败过的对象再喂给代理 open 会失效
+            req = urllib.request.Request(url, headers={"User-Agent": "workbench"})
+            if px:
+                op = urllib.request.build_opener(urllib.request.ProxyHandler({"http": px, "https": px}))
+            else:
+                op = urllib.request.build_opener()
+            with op.open(req, timeout=timeout) as r:
+                return r.read()
+        except Exception as e:
+            last = e
+    raise last
+
+
+def _tree_files(node, prefix=""):
+    """jsDelivr data API 的文件树节点 → [(相对路径, size)]"""
+    for f in node.get("files", []):
+        if f.get("type") == "directory":
+            for x in _tree_files(f, prefix + f["name"] + "/"):
+                yield x
+        else:
+            yield prefix + f["name"], f.get("size", 0)
+
+
+def _fetch_plugin_from_dir(ent):
+    """从仓库目录装：data API 列清单 → 逐文件拉（多 CDN 兜底）→ 打成一个 zip bytes。
+    为什么打 zip：install_plugin_zip 的校验/防路径穿越/落盘是唯一口径，不另写一套。"""
+    import io
+    import zipfile
+    repo = str(ent.get("repo") or _registry_repo())
+    ref = str(ent.get("ref") or "master")
+    dirp = str(ent.get("dir") or "").strip("/")
+    if not dirp:
+        raise RuntimeError("该插件没给目录（dir）")
+    meta = json.loads(_http_get(_JSD_DATA + "%s@%s" % (repo, ref), 30).decode("utf-8"))
+    node = {"files": meta.get("files") or []}
+    for seg in dirp.split("/"):
+        node = next((x for x in node.get("files", [])
+                     if x.get("type") == "directory" and x.get("name") == seg), None)
+        if node is None:
+            raise RuntimeError("仓库里没有目录 %s（ref=%s）" % (dirp, ref))
+    files = list(_tree_files(node))
+    if not files:
+        raise RuntimeError("目录 %s 是空的" % dirp)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for rel, _sz in files:
+            data, err = None, None
+            for cdn in _JSD_CDN:
+                try:
+                    data = _http_get(cdn + "%s@%s/%s/%s" % (repo, ref, dirp, rel))
+                    break
+                except Exception as e:
+                    err = e
+            if data is None:
+                raise RuntimeError("拉不到文件 %s（%s）" % (rel, str(err)[:60]))
+            z.writestr(rel, data)
+    return buf.getvalue()
+
+
+def _fetch_plugin_zip(ent):
+    """取插件包：path（本地文件，离线/测试用）→ dir（从仓库目录装，首选）→ url（zip 直链，多源竞速）。
+    失败说人话：缺文件/目录不存在/网络断，都在这里抛出具体原因。"""
+    import urllib.request
+    import threading
     p = str(ent.get("path") or "").strip()
     if p and os.path.isfile(p):
         with open(p, "rb") as f:
             return f.read()
+    if str(ent.get("dir") or "").strip():       # 从仓库目录装（新方案：仓库只有一份）
+        return _fetch_plugin_from_dir(ent)
     u = str(ent.get("url") or "").strip()
     if not u:
         raise RuntimeError("列表里这一项既没有 url 也没有 path")
-    req = urllib.request.Request(u, headers={"User-Agent": "workbench"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read()
+    urls = [x.strip() for x in re.split(r"[;,]", u) if x.strip()]
+    got = {}
+    lock = threading.Lock()
+
+    def _g(i, url):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "workbench"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = r.read()
+            if data:
+                with lock:
+                    got[i] = data
+        except Exception:
+            pass
+
+    ths = [threading.Thread(target=_g, args=(i, url)) for i, url in enumerate(urls)]
+    for t in ths:
+        t.start()
+    for t in ths:
+        t.join(timeout=90)
+    for i in range(len(urls)):
+        if got.get(i):
+            return got[i]
+    raise RuntimeError("所有下载源都取不到（%d 个源）" % len(urls))
 
 
 def install_plugin_zip(data):
@@ -806,6 +917,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return self._json({"ok": True, "id": pid, "enabled": on})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:80]})
+            if p.startswith("/api/plugin-uninstall?"):
+                # 卸载：删 plugins/<id> 整个目录（本机管理——插件页调，市场页不碰）
+                import urllib.parse
+                import shutil
+                q = urllib.parse.parse_qs(p.split("?", 1)[1])
+                pid = (q.get("id", [""])[0] or "").strip()
+                if not re.match(r"^[a-zA-Z0-9_-]{1,40}$", pid):
+                    return self._json({"ok": False, "error": "非法插件 id"})
+                base = os.path.join(PLUGINS_DIR, pid)
+                if not os.path.isdir(base):
+                    return self._json({"ok": False, "error": "没装「%s」" % pid})
+                try:
+                    shutil.rmtree(base, ignore_errors=True)
+                    return self._json({"ok": True, "id": pid})
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)[:80]})
             if p.startswith("/api/open?"):
 
 
@@ -840,6 +967,55 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                 hits.append({"type": "file", "name": f, "label": label,
                                             "path": os.path.join(base, f)})
                 return self._json({"hits": hits[:30]})
+            if p.startswith("/api/desk-set"):
+                # 书桌「工作台」tab 的自设目录 → paths.local.json 的 desk 键（配置进文件、可改可拷）
+                import urllib.parse
+                q = urllib.parse.parse_qs(p.split("?", 1)[1]) if "?" in p else {}
+                nd = (q.get("p", [""])[0] or "").strip()
+                if not nd:
+                    return self._json({"ok": False, "error": "缺目录 p"})
+                # 容错：给个文件就取它的目录
+                if os.path.isfile(nd):
+                    nd = os.path.dirname(nd)
+                if not os.path.isdir(nd):
+                    return self._json({"ok": False, "error": "目录不存在：%s" % nd})
+                try:
+                    paths.set_value("desk", nd)
+                    return self._json({"ok": True, "dir": str(getattr(paths, "DESK", nd))})
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)[:80]})
+            if p.startswith("/api/desk"):
+                # 书桌两 tab：chat=当前处理的产品目录（素材根）；work=自设目录
+                # 返回该目录的文件列表（前端沿用那一套渲染/过滤/排序）
+                import urllib.parse
+                q = urllib.parse.parse_qs(p.split("?", 1)[1]) if "?" in p else {}
+                tab = (q.get("tab", ["chat"])[0] or "chat").strip()
+                sub = (q.get("p", [""])[0] or "").strip()
+                if tab == "chat":
+                    d = MAT_ROOT
+                else:
+                    d = str(getattr(paths, "DESK", "") or "")
+                if sub:
+                    # 允许钻进子目录（相对当前根）
+                    cand = sub if os.path.isabs(sub) else os.path.join(d, sub)
+                    if os.path.isdir(cand):
+                        d = cand
+                if not d or not os.path.isdir(d):
+                    return self._json({"ok": True, "tab": tab, "dir": d, "files": [], "error": "目录不存在"})
+                out = []
+                try:
+                    for name in sorted(os.listdir(d)):
+                        fp = os.path.join(d, name)
+                        try:
+                            st = os.stat(fp)
+                            out.append({"name": name, "path": fp, "is_dir": os.path.isdir(fp),
+                                        "size": (0 if os.path.isdir(fp) else st.st_size),
+                                        "mtime": int(st.st_mtime)})
+                        except Exception:
+                            continue
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)[:80]})
+                return self._json({"ok": True, "tab": tab, "dir": d, "files": out})
             if p.startswith("/api/file?"):
                 # 文件读取（书桌预览——图片返回字节，文本返回内容）
                 import urllib.parse

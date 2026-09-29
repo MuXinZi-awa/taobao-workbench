@@ -10,6 +10,11 @@ if _d not in _sys.path:
     _sys.path.insert(0, _d)
 import paths
 
+try:
+    import state_db    # 工作台库：审核记录等状态进库（数据进库、不进 json）
+except Exception:
+    state_db = None
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATE_FP = os.path.join(ROOT, "state.json")
 TG = paths.TG_ROOT
@@ -94,19 +99,18 @@ def scan_material(lh):
     names = os.listdir(d)
     out["文件"] = sorted(names)
     out["文件路径"] = [os.path.join(d, n) for n in out["文件"]]
-    for n in names:
-        low = n.lower()
-        if "封面" in n or "cover" in low: out["封面"] = True
-        elif "详情" in n or "detail" in low: out["详情图"] = True
-        if any(k in n for k in ("白底", "主图", "cover")) and not any(k in n for k in ("详情", "待复核")):
-            out["主图"] = True
-        if any(k in low for k in (".pdf", ".doc", ".docx", "规格", "spec")): out["规格书"] = True
-        if low.endswith((".mp4", ".mov", ".webm")): out["视频"] = True
-    for k in ("封面", "主图", "规格书", "视频", "详情图"):
-        if not out[k]:
-            out["缺失"].append(k)
-            if k in ("封面", "主图") and out["图库数"]:
-                out["可换源"] = True  # 图库有图——主图/封面可从库补
+    # 齐缺判定走公共函数 material_status（与 organize 同口径——一处维护，避免两边各判一套）
+    try:
+        import material_status as _ms
+        _s = _ms.scan(lh, with_video_spec=True)
+        out["封面"] = _s["封面"]; out["详情图"] = _s["详情"]
+        out["视频"] = _s["视频"]; out["规格书"] = _s["规格书"]
+        out["主图数"] = _s["主图数"]; out["主图"] = _s["主图数"] >= _ms.MAIN_NEED
+        out["缺失"] = _s["缺失"]
+    except Exception:
+        pass
+    if out.get("图库数") and ("封面" in out["缺失"] or any(str(x).startswith("主图") for x in out["缺失"])):
+        out["可换源"] = True  # 图库有图——主图/封面可从库补
     # 参考图：封面/主图1 原图（排除 _标注 加工图 / _白底 AI返图）——默认审核看的图
     ref = ""
     for pat in ("%s_主图1", "%s_封面", "%s_主图"):
@@ -128,6 +132,12 @@ def scan_batch(lhs):
     """逐品汇总状态（本版：素材清点 + 推广记录 + state 内的人工/阶段标记）"""
     st = load_state()
     tg = _read_tg_rec()
+    _an = {}
+    try:
+        if state_db:
+            _an = state_db.audit_note_get([str(x).strip() for x in lhs if str(x).strip()], _mid())
+    except Exception:
+        _an = {}
     items = []
     for lh in lhs:
         lh = (lh or "").strip()
@@ -152,6 +162,10 @@ def scan_batch(lhs):
             "上品/优化": rec.get("sp", ""),
             "推广": tg.get(lh, ""),
             "stage": s,
+            # 上次人工审核记录（库里）——再审同品时有据可查（越用越准）
+            "上次审核": (_an.get(lh) or {}).get("res", ""),
+            "上次备注": (_an.get(lh) or {}).get("note", ""),
+            "上次审核时间": (_an.get(lh) or {}).get("at", ""),
         })
     try:
         _wlog("流水线扫描 %d 品: %s" % (len(items), " | ".join("%s=%s" % (i["lh"], i["素材"][:16]) for i in items[:10])))
@@ -335,8 +349,19 @@ def _last_script_out(n=10):
         return ""
 
 
+def _entry_alert():
+    """从 stage_out.log 抽最近的 [入口自检] 行——站点改版失效要显眼，别埋在大段日志里"""
+    try:
+        txt = io.open(os.path.join(TG, "runtime", "stage_out.log"),
+                      encoding="utf-8", errors="replace").read()[-15000:]
+        hits = [x.strip() for x in txt.splitlines() if '[入口自检]' in x]
+        return hits[-1][:220] if hits else ""
+    except Exception:
+        return ""
+
+
 def _run_script(script, args, timeout=3600):
-    """子进程跑现成脚本（照 _classify_one 范式）→ (ok, 末行输出)"""
+    """子进程跑现成脚本（照 _classify_one 范式）→ (ok, 末行输出）"""
     if not os.path.isfile(script):
         return False, "缺少脚本: %s" % os.path.basename(script)
     try:
@@ -456,6 +481,12 @@ def handle(action, qs):
             it["audit_note"] = note
         it["audit_time"] = _dt.datetime.now().strftime("%m-%d %H:%M:%S")
         save_state(st)
+        # 落库（数据进库、不进 json）——“漏网之鱼”记下来，下次同品再审时有据可查
+        try:
+            if state_db:
+                state_db.audit_note_set(lh, res, note, ref=_ref_for(lh, res), member_id=_mid())
+        except Exception:
+            pass
         try:
             _wlog("审核 %s => %s%s" % (lh, res, ("：" + note[:30]) if note else ""))
         except Exception:
@@ -568,6 +599,22 @@ def handle(action, qs):
                     "ref": _ref_for(lh, audit), "orig": _ref_for(lh, "")}
         except Exception as e:
             return {"ok": False, "error": str(e)[:80]}
+    if action == "contact-sheet":
+        """拼图目检：把选中品的成品图拼成一张网格（_contact_sheet.py）→ 返回产物路径供面板看图"""
+        lhs = [x.strip() for x in (qs.get("lhs") or "").split(",") if x.strip()]
+        if not lhs:
+            return {"ok": False, "error": "缺 lhs"}
+        ok, tail = _run_script(os.path.join(TG, "_contact_sheet.py"), lhs, timeout=600)
+        out = ""
+        try:
+            for _ln in io.open(os.path.join(TG, "runtime", "stage_out.log"),
+                               encoding="utf-8", errors="replace").read()[-4000:].splitlines():
+                if "拼图已保存" in _ln:
+                    out = _ln.split("拼图已保存:")[-1].split("（")[0].strip()
+        except Exception:
+            pass
+        return {"ok": ok, "msg": tail, "out": out,
+                "error": None if ok else ("拼图失败：" + tail)}
     if action == "repair-status":
         # 外部系统行为：repair_state.json 跑完不会自清——多天前的「已结束」会一直留在盘上，
         # 面板若只看内容就天天冒旧横幅（梓帆说的“旧记录赖着不走”）。所以这里把 mtime/age/stale
@@ -663,19 +710,32 @@ def handle(action, qs):
         if key == "material":
             if not lhs:
                 return {"ok": False, "error": "缺 lhs"}
-            # 本地一条龙补齐：make_local 出封面/主图/详情图/视频（已生成自动跳过，--force 才重跑）
-            _force = str((qs.get("force") or "")).strip() in ("1", "true", "yes")
+            # 素材造：默认本地一条龙（make_local 出封面/主图/详情/视频）；
+            # 勾「AI 补全」→ 调 _auto_material（图库/立创找图 → AI 白底清理 → 详情/视频/规格书）
+            _ai = str(qs.get("ai") or "").strip() in ("1", "true", "yes")
+            _force = str(qs.get("force") or "").strip() in ("1", "true", "yes")
             _fextra = ["--force"] if _force else []
-            _notes = ["强制重做（不跳过已生成）"] if _force else []
-            for _lh in lhs:
-                _ok, _tail = _run_script(os.path.join(TG, "make_local.py"), [_lh] + _fextra, timeout=1800)
-                _notes.append("%s%s" % (_lh, "✓" if _ok else "✗"))
+            _notes = []
+            if _force:
+                _notes.append("强制重做")
+            if _ai:
+                _ok, _tail = _run_script(os.path.join(TG, "_auto_material.py"), list(lhs), timeout=5400)
+                _notes.append("AI 补全 → %s（%s）" % ("ok" if _ok else "失败", _tail))
+            else:
+                for _lh in lhs:
+                    _ok, _tail = _run_script(os.path.join(TG, "make_local.py"), [_lh] + _fextra, timeout=1800)
+                    _notes.append("%s%s" % (_lh, "✓" if _ok else "✗"))
             _items = scan_batch(lhs)
             _bad = [x for x in _items if x.get("缺列表")]
+            _failN = sum(1 for n in _notes if str(n).endswith("✗"))
+            _tip = ""
+            if _failN:
+                # 低分图停在素材格是设计（人工审核的意义）——面板要说清怎么往下走
+                _tip = "｜有 %d 个停在「需人工确认」（多为图库低分图）：勾「强制重做」用它，或去「人工审核」标「换源/送修」" % _failN
             return {"ok": True, "items": _items,
-                    "msg": "本地一条龙：%s%s" % ("  ".join(_notes),
+                    "msg": "%s：%s%s%s" % ("AI 补全" if _ai else "本地一条龙", "  ".join(_notes),
                             ("｜仍缺：" + "；".join("%s→%s" % (m["lh"], ",".join(m["缺列表"])) for m in _bad[:6]))
-                            if _bad else "｜素材齐 ✓")}
+                            if _bad else "｜素材齐 ✓", _tip)}
         if key == "audit":
             return {"ok": True, "msg": "人工审核走面板「\U0001F4CB 开始审核」（预览 Tab 标记）", "lhs": lhs}
         if key == "attrs":
@@ -733,9 +793,11 @@ def handle(action, qs):
                     notes.append("面板类目=%s（%s）" % ((get_settings().get("category") or {}).get("kw"), _cat))
                 return {"ok": _ok, "items": scan_batch(lhs), "msg": " ／ ".join(notes),
                         "error": None if _ok else ("接口版失败：" + _tail)}
+            _oks = []
             if new:
                 ok, tail = _run_script(os.path.join(TG, "_xinpin_shangpin.py"),
                                        ["--only", ",".join(new)] + _extra, timeout=7200)
+                _oks.append(ok)
                 notes.append("新品上品 %d 个 → %s（%s）" % (len(new), "ok" if ok else "失败", tail))
             if old:
                 pairs = _ids_of(old)
@@ -746,8 +808,13 @@ def handle(action, qs):
                     fp = _write_tmp("opt.csv", [[lh, "", "", iid] for lh, iid in pairs],
                                     ["料号", "标题", "类型", "淘宝ID"])
                     ok, tail = _run_script(os.path.join(TG, "_batch_optimize.py"), [fp] + _extra, timeout=7200)
+                    _oks.append(ok)
                     notes.append("老品优化 %d 个 → %s（%s）" % (len(old), "ok" if ok else "失败", tail))
-            return {"ok": True, "items": scan_batch(lhs), "msg": " ／ ".join(notes) or "无可处理项"}
+            _allok = all(_oks) if _oks else True
+            # 入口自检失败（站点改版）要显眼回给面板——别让人以为“跑完了”
+            _err = None if _allok else (_entry_alert() or ("上品/优化未完成：" + " ／ ".join(notes)))
+            return {"ok": _allok, "items": scan_batch(lhs),
+                    "msg": " ／ ".join(notes) or "无可处理项", "error": _err}
         if key == "tuiguang":
             if not lhs:
                 return {"ok": False, "error": "缺 lhs"}

@@ -1,8 +1,8 @@
 {
   "id": "stock-edit",
   "name": "改库存",
-  "version": "0.2.0",
-  "desc": "改库存 / 改售价：全店或指定品，粘一列即可；照镜子确认，不提交",
+  "version": "0.3.0",
+  "desc": "改库存 / 改售价：库存默认敞开卖（50000）；照镜子确认，提交走 CLI（真点击）+ 读回",
   "panel": "panel.html",
   "has_server": true,
   "icon": "📦",

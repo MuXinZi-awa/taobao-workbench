@@ -38,22 +38,6 @@ input::placeholder { color:var(--text-m,#999); }
  .pill.n{border-color:#2a7a3a;color:#2a7a3a}
  .batchprog{display:none;align-items:center;gap:8px;padding:5px 10px;border:.5px solid var(--accent,#4a7cf7);border-radius:6px;margin-bottom:6px;font-size:12px;color:var(--accent,#4a7cf7);background:rgba(74,124,247,.06)}
 
- .audit{border:.5px solid var(--border,#ccc);border-radius:10px;padding:10px;margin-top:8px;background:var(--card,#fffdf7);display:none}
- .audit .head{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
- .audit .picbox{display:flex;gap:10px;min-height:220px}
- .audit .mainpic{flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg,#f5f5f2);border:.5px solid var(--border,#ddd);border-radius:8px;min-height:220px;overflow:hidden}
- .audit .mainpic img{max-width:100%;max-height:320px;object-fit:contain}
- .audit .files{width:130px;border:.5px solid var(--border,#ddd);border-radius:8px;overflow:auto;max-height:260px;padding:4px}
- .audit .fitem{padding:3px 6px;font-size:11px;cursor:pointer;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .audit .fitem.on{background:var(--accent,#4a7cf7);color:#fff}
- .audit .fitem img{width:100%;height:36px;object-fit:cover;border-radius:3px;display:block;margin-bottom:2px}
- .audit .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
- .audit button{padding:5px 12px;border-radius:6px;border:.5px solid;cursor:pointer;font-size:12px;background:transparent;color:var(--text,#333)}
- .audit .ok{border-color:#2a7a3a;color:#2a7a3a}.audit .ok.on{background:#2a7a3a;color:#fff}
- .audit .fix{border-color:#b8860b;color:#b8860b}.audit .fix.on{background:#b8860b;color:#fff}
- .audit .src{border-color:#4a7cf7;color:#4a7cf7}.audit .src.on{background:#4a7cf7;color:#fff}
- .audit .st{font-size:12px;margin-left:auto;color:var(--text-l,#888)}
-
  /* ── 分区与节奏：每块一个卡，8px 竖节奏，标题行打头 ── */
  .phead{display:flex;align-items:center;gap:10px;padding:0 2px 8px}
  .ptitle{font-size:12.5px;font-weight:600;color:var(--text,#333)}
@@ -91,10 +75,11 @@ input::placeholder { color:var(--text-m,#999); }
 </script>
 <div class="bar" id="mainbar" data-zone="查询与操作">
   <input id="lh" type="text" placeholder="料号 或 淘宝 ID（单量回车）">
-  <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button onclick="adStartFrom(0)">📋 开始审核</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button><button id="ssBtn" onclick="srcRun()" style="display:none">🔁 换源处理</button>
+  <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button onclick="adStartFrom(0)" title="审核在内核视图里进行：点它收集本批素材 → 中间预览区「左原图｜右成品」逐张标记（放行/送修/换源），可拼图快扫">📋 开始审核</button><button class="ghost" onclick="contactSheet()" title="把选中品的成品图拼成一张网格——快速扫一遍挑漏网之鱼">🖼 拼图审核</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button><button id="ssBtn" onclick="srcRun()" style="display:none">🔁 换源处理</button>
   <button class="ghost" onclick="demo()">试填</button>
   <label style="font-size:12px;color:var(--text-l,#999);margin-left:6px" title="上品/优化：只走流程不提交，用来试跑"><input type="checkbox" id="dryChk"> 预演不提交</label>
   <label style="font-size:12px;color:var(--text-l,#999);margin-left:6px" title="素材：不跳过已生成的图，强制重做（用于清掉旧脏图）"><input type="checkbox" id="forceChk"> 强制重做</label>
+  <label style="font-size:12px;color:var(--text-l,#999);margin-left:6px" title="素材：调 _auto_material——图库/立创找图 → AI 白底清理 → 详情/视频/规格书"><input type="checkbox" id="aiChk"> AI 补全</label>
 </div>
 <div class="bar" id="catbar" data-zone="类目与实现">
   <span style="font-size:12px;color:var(--text-l,#888);white-space:nowrap">类目</span>
@@ -143,7 +128,7 @@ function render(items){ curHasAudit(items);
  tb.innerHTML=items.map((it,i)=>
   '<tr id="r'+i+'" style="cursor:pointer" onclick="adStartFrom('+i+')">'+cell(it.lh)+typeCell(it.type)+cell(it.id||'—')
   +(it.素材==='齐'?cell('齐','ok'):cell(it.素材,'missing'))
-  +cell(it.审核||'待审')+cell(it['上品/优化']||'—')+cell(it.推广||'—')+'</tr>').join('');
+  +cell(it.审核||(it['上次审核']?('上次:'+it['上次审核']):'待审'))+cell(it['上品/优化']||'—')+cell(it.推广||'—')+'</tr>').join('');
  if(!items.length) tb.innerHTML='<tr><td colspan=7 style="color:#aaa;text-align:center;padding:16px">空——拖入清单或输料号</td></tr>';
 }
 function highlight(i){ document.querySelectorAll('#tb tr').forEach(r=>r.classList.remove('doing'));
@@ -173,16 +158,25 @@ function setStageKey(k,st,nm){ setStage(idxOf(k),st,nm); }
 async function runStage(i){
  var s=STAGES[i]; if(!s) return;
  if(!s.ready){ $('#cur').textContent='\u23f3「'+s.label+'」还没接血肉 —— 计划调用：'+s.desc; return; }
- var v=(curLhs&&curLhs.length)?curLhs.join(','):$('#lh').value.trim();
- if(!v){ alert('先输料号或拖入清单'); return; }
+ var arr=curLhsIndexed();
+ if(!arr.length){ alert('先输料号或拖入清单'); return; }
  setStage(i,'on',s.label);
  var _dry=document.getElementById('dryChk'), _fo=document.getElementById('forceChk');
  var _mi=document.getElementById('mirrorChk');
- var d=await fetch(P+'run?stage='+encodeURIComponent(s.key)+'&lhs='+encodeURIComponent(v)+((_dry&&_dry.checked)?'&dry=1':'')+((_fo&&_fo.checked)?'&force=1':'')+((_mi&&_mi.checked)?'&mirror=1':'')).then(function(r){return r.json();});
- if(!d.ok){ setStage(i,'fail',s.label+' \u2717'); $('#cur').textContent='\u2717 '+(d.error||'执行失败'); return; }
- if(d.items) render(d.items);
+ var _ai=document.getElementById('aiChk');
+ var _extra=((_dry&&_dry.checked)?'&dry=1':'')+((_fo&&_fo.checked)?'&force=1':'')+((_mi&&_mi.checked)?'&mirror=1':'')+((s.key==='material'&&_ai&&_ai.checked)?'&ai=1':'');
+ var chs=chunkLhs(arr,200), items=[], msgs=[], allok=true;
+ for(var ci=0;ci<chs.length;ci++){
+  if(chs.length>1) $('#cur').textContent='「'+s.label+'」第 '+(ci+1)+'/'+chs.length+' 批（共 '+arr.length+' 品）…';
+  var d=await fetch(P+'run?stage='+encodeURIComponent(s.key)+'&lhs='+encodeURIComponent(chs[ci].join(','))+_extra).then(function(r){return r.json();});
+  if(d.items) items=items.concat(d.items);
+  if(d.msg) msgs.push(d.msg);
+  if(!d.ok){ allok=false; if(d.error) msgs.push(d.error); }
+ }
+ if(items.length) render(items);
+ if(!allok){ setStage(i,'fail',s.label+' \u2717'); $('#cur').textContent='\u2717 '+msgs.join(' ／ '); return; }
  setStage(i,'done',s.label+' ok');
- $('#cur').textContent='「'+s.label+'」完成'+(d.msg?('：'+d.msg):'');
+ $('#cur').textContent='「'+s.label+'」完成（'+arr.length+' 品）'+(msgs.length?('：'+msgs.join(' ／ ')):'');
 }
 loadStages();
 /* ── 类目（面板打人话 → 脚本自己搜 catId；命中缓存秒回）+ 上品/优化实现开关 ── */
@@ -231,6 +225,11 @@ async function pubImplSave(){
 }
 loadSettings();
 var curLhs=[];
+/* 全量处理：不静默截断 —— curLhs 或输入框 → 料号数组 */
+function curLhsIndexed(){ if(curLhs&&curLhs.length) return curLhs.slice();
+ return (($('#lh').value)||'').split(',').map(function(x){return x.trim();}).filter(Boolean); }
+/* 分批：大批量时把 lhs 切开逐批发（避免 querystring 太长；一批 200 个 ≈ 3KB 安全） */
+function chunkLhs(a,n){ var o=[]; for(var i=0;i<a.length;i+=n) o.push(a.slice(i,i+n)); return o; }
 async function scan(lhs){
  curLhs=lhs; const items=[]; $('#cur').textContent='批量 '+lhs.length+' 品…';
  for(let i=0;i<lhs.length;i++){ $('#cur').textContent='处理中：'+lhs[i]+'（'+(i+1)+'/'+lhs.length+'）'; $('#stnm').textContent=lhs[i]; highlight(i); await new Promise(r=>setTimeout(r,50));
@@ -246,15 +245,30 @@ function typeCell(t){
  var col = t==='老品-双百跳过'?'#2a7a3a':(t==='新品-待上架'?'#b8860b':(t&&t.indexOf('需优化')>=0?'#4a7cf7':'#999'));
  return '<td style="color:'+col+';white-space:nowrap">'+(t||'—')+'</td>'; }
 async function classify(){
- var v=curLhs.length?curLhs.join(','):$('#lh').value.trim();
- if(!v){ alert('先输料号或拖入 csv'); return; }
- $('#cur').textContent='查询分流中（每品搜+查双百，约 5-10s/品）…';
- var d=await fetch(P+'classify?lhs='+encodeURIComponent(v)).then(r=>r.json());
- if(!d.ok){ $('#cur').textContent='✗ '+(d.error||''); return; }
- render(d.items||[]);
- setStageKey('query','done','查询分流完成'); $('#cur').textContent='分流完成 '+d.items.length+' 品——点「开始审核」或行';
+ var arr=curLhsIndexed();
+ if(!arr.length){ alert('先输料号或拖入 csv'); return; }
+ $('#cur').textContent='查询分流中（'+arr.length+' 品，约 5-10s/品）…';
+ var chs=chunkLhs(arr,200), items=[], lastErr='';
+ for(var i=0;i<chs.length;i++){
+  if(chs.length>1) $('#cur').textContent='查询分流 第 '+(i+1)+'/'+chs.length+' 批（共 '+arr.length+' 品）…';
+  var d=await fetch(P+'classify?lhs='+encodeURIComponent(chs[i].join(','))).then(r=>r.json());
+  if(!d.ok){ lastErr=d.error||''; continue; }
+  items=items.concat(d.items||[]);
+ }
+ if(!items.length){ $('#cur').textContent='✗ '+(lastErr||'分流失败'); return; }
+ render(items);
+ setStageKey('query','done','查询分流完成'); $('#cur').textContent='分流完成 '+items.length+' 品——点「开始审核」或行';
 }
 function openAuditIdx(i){ adStartFrom(i); }
+/* 拼图审核：一批图拼成一张网格——快速扫一遍挑漏网之鱼（_contact_sheet.py） */
+async function contactSheet(){
+ var v=(curLhs&&curLhs.length)?curLhs.join(','):$('#lh').value.trim();
+ if(!v){ alert('先查询/输料号'); return; }
+ $('#cur').textContent='拼图生成中…';
+ var d=await fetch(P+'contact-sheet?lhs='+encodeURIComponent(v)).then(function(r){return r.json();});
+ if(!d.ok){ $('#cur').textContent='✗ '+(d.error||'拼图失败'); return; }
+ $('#cur').innerHTML='🖼 拼图已生成：<a href="/api/file?p='+encodeURIComponent(d.out||'')+'" target="_blank">点开看图</a>';
+}
 async function adStartFrom(i){
  var list=curItems||[]; if(!list.length){ alert('先查询/分流'); return; }
  if(!list[0].type){ // 未分流——自动先分类（补 type/skip 依据）
@@ -344,6 +358,24 @@ $('#drop').onclick=()=>{ const f=document.createElement('input'); f.type='file';
  f.onchange=()=>handleFile(f.files[0]); f.click(); };
 ['dragover','drop'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.toggle('over',ev==='dragover');}));
 $('#drop').addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f)handleFile(f); });
+/* 书桌→插件 投递（内核拖拽层 postMessage 过来的路径）：同源，直接用 /api/file 读内容走本插件的批量流程。
+   怎么用由本插件决定（不替内核猜）——这是投递层接口，不是业务逻辑。 */
+window.addEventListener('message',function(e){ var d=e.data;
+ if(!d||d.type!=='wb-desk-drop'||!d.paths||!d.paths.length) return;
+ var p=d.paths[0]||''; var nm=(p.split(/[\\/]/).pop()||'').toLowerCase();
+ try{ if(e.source) e.source.postMessage({type:'wb-desk-drop-ack'},'*'); }catch(_){}   /* 回执：让内核知道本插件接住了 */
+ $('#cur').textContent='书桌投放：'+nm+' —— 读文件中…';
+ if(nm.endsWith('.csv')){
+   fetch('/api/file?p='+encodeURIComponent(p)).then(function(r){return r.json();}).then(function(x){
+     if(x&&x.content!=null){ parseCSV(x.content); } else { $('#cur').textContent='读不到文件内容（'+((x&&x.error)||'')+'）'; }
+   }).catch(function(err){ $('#cur').textContent='投放读取失败：'+err.message; });
+ } else if(nm.endsWith('.xls')||nm.endsWith('.xlsx')){
+   $('#cur').textContent='xlsx 暂不支持书桌投递（内核只递路径）——请存为 csv 或点批量区选文件';
+ } else {
+   $('#lh').value=(p.split(/[\\/]/).pop()||'');
+   $('#cur').textContent='已投放：'+p;
+ }
+});
 function handleFile(f){
  const name=f.name.toLowerCase(); $('#cur').textContent='读文件 '+f.name+' …';
  if(name.endsWith('.csv')){ const rd=new FileReader(); rd.onload=()=>parseCSV(rd.result); rd.readAsText(f); }
@@ -354,8 +386,10 @@ function parseCSV(text){ const rows=text.split(/\r?\n/).map(l=>l.split(',')).fil
 function parseRows(rows){
  if(!rows.length) return; const ci=pickLhCol(rows[0]);
  const lhs=rows.slice(1).map(r=>(r[ci]||'').trim()).filter(x=>x&&!/料号|合计|总计/.test(x));
- $('#cur').textContent='识别到 '+lhs.length+' 个料号（列：'+rows[0][ci]+'）';
- scan(lhs.slice(0,30)); // 本版单批最多 30，防拖垮
+ // 全量处理——原 slice(0,30) 会静默丢品（用户以为全跑了，其实只跑了前 30）
+ var mins=Math.max(1,Math.round(lhs.length*7/60));   // 5-10s/品，取中值 7s
+ $('#cur').textContent='识别到 '+lhs.length+' 个料号（列：'+rows[0][ci]+'）——开始全量处理，按 7s/品 预计约 '+mins+' 分钟';
+ scan(lhs);
 }
 // 跑批进度（读 tg-monitor 的 progress.json——脚本侧单份；running 且 updated 距今 <120s 才算在跑）
 let _bpTimer=null;
@@ -387,21 +421,9 @@ async function loadBatchProg(){
 }
 loadBatchProg();
 </script>
-<div class="audit" id="auditBox">
- <div class="head"><b id="adLh">—</b><span id="adType" style="font-size:11px"></span>
-  <span style="margin-left:auto;font-size:11px;color:var(--text-l,#888)">素材人工审核（铁律：全人工过——点行打开逐张看，标记可反悔）</span></div>
- <div class="picbox">
-  <div class="mainpic" id="adPic">点表格行打开审核</div>
-  <div class="files" id="adFiles"></div>
- </div>
- <div class="btns">
-  <button class="ok" id="bOk" onclick="markAudit('放行')">✅ 放行</button>
-  <button class="fix" id="bFix" onclick="markAudit('送修')">🛠 水印-AI送修</button>
-  <button class="src" id="bSrc" onclick="markAudit('换源')">🔄 质量差-换源</button>
-  <span class="st" id="adSt"></span>
-  <span style="font-size:11px;color:var(--text-m,#999)">◀ ▶ 切文件</span>
- </div>
-</div>
+<!-- 原有的审核空壳（auditBox / 三个 markAudit 按钮）已删：那套从未实现（markAudit 不存在、#adPic 从没被填过），
+     且审核已有真路径——点行/「开始审核」→ postMessage 'wb-audit-start' → 内核预览区「左原图｜右成品」接管。
+     两套审核并存只会让人分不清哪套算数，故不补 markAudit，直接拆。 -->
 <script>
 /* wb-theme 接收器：宿主切主题广播 CSS 变量 → 应用到自身 */
 window.addEventListener('message', function(e){ var d=e.data; if(!d||d.type!=='wb-theme'||!d.vars) return;

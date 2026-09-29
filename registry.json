@@ -1,20 +1,85 @@
 {
-  "_说明": "插件列表（公开文件，别放需要凭据的东西）。装插件时内核读它：path=本机 zip 文件（测试用）、url=公开直链（发布用）。面板拿 manifest 里的 version 跟这里比，不一致就显示「可更新」。",
+  "_说明": "插件市场列表（公开文件，别放需要凭据的东西）。内核读它：path=本机 zip（离线/测试，最优先）；dir=仓库目录（从仓库直接装，仓库只有一份源码，改了立刻生效）；url=zip 直链（多源竞速，备选）。dir 配 ref：ref=master 走分支缓存（改动后需 purge），ref=<commit/tag> 精确引用。面板拿 manifest 版本跟 registry 版本比，不一致就显示「可更新」。",
+  "_repo": "MuXinZi-awa/taobao-workbench",
   "plugins": [
     {
-      "id": "stock-edit",
-      "name": "改库存",
-      "version": "0.3.0",
-      "desc": "改库存 / 改售价：全店或指定品，粘一列即可；先照镜子确认，提交要单独点头",
-      "path": "",
+      "id": "adreport",
+      "name": "报表",
+      "version": "0.2.9",
+      "desc": "万相台报表台：账户概览 / 推广计划(11) / 营销场景 / 日走势，指标可点切走势、本期比上期、随范围联动；刷新即后台静默采集",
+      "dir": "plugins/adreport",
+      "ref": "master",
+      "path": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\workbench\\_pkgs\\adreport.zip",
+      "url": ""
+    },
+    {
+      "id": "attr-fill",
+      "name": "补必填",
+      "version": "0.1.0",
+      "desc": "老品补必填项（品牌/接口类型）：读编辑页校验 → 补值 → 复查「错误(0)」→（可选）提交",
+      "dir": "plugins/attr-fill",
+      "ref": "master",
+      "path": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\workbench\\_pkgs\\attr-fill.zip",
+      "url": ""
+    },
+    {
+      "id": "dual-check",
+      "name": "查双百",
+      "version": "0.2.1",
+      "desc": "查商品双百：单查（填料号即可）+ 批量（拖 csv/xlsx/xls 表格——自动识别料号列逐行查，带进度和总结）",
+      "dir": "plugins/dual-check",
+      "ref": "master",
+      "path": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\workbench\\_pkgs\\dual-check.zip",
+      "url": ""
+    },
+    {
+      "id": "odoo-erp",
+      "name": "ERP 数据",
+      "version": "0.1.0",
+      "desc": "Odoo ERP 只读查询：料号 → 售价/库存/成本/品牌/描述/分类（用内核「连接导航」里的激活 Odoo 连接）",
+      "dir": "plugins/odoo-erp",
+      "ref": "master",
+      "path": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\workbench\\_pkgs\\odoo-erp.zip",
       "url": ""
     },
     {
       "id": "pipeline",
       "name": "流水线",
-      "version": "0.2.16",
-      "desc": "上品 / 优化 / 推广 一条龙状态机：拖入清单 → 查询分流 → 属性 → 素材 → 整理 → 人工审核",
-      "path": "",
+      "version": "0.2.17",
+      "desc": "上品/优化/推广 一条龙状态机：拖入清单 → 查询分流 → 属性 → 素材 → 整理 → 人工审核 → 上品/优化 → 推广",
+      "dir": "plugins/pipeline",
+      "ref": "master",
+      "path": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\workbench\\_pkgs\\pipeline.zip",
+      "url": ""
+    },
+    {
+      "id": "scheduler",
+      "name": "任务计划",
+      "version": "0.1.3",
+      "desc": "定时驱动工作台功能：到点自动采集/推广/上品，不经过助手。支持 间隔/一次性/每天/每周/每月/Cron；批处理可传参（数据文件、批次、账号）并断点续跑。",
+      "dir": "plugins/scheduler",
+      "ref": "master",
+      "path": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\workbench\\_pkgs\\scheduler.zip",
+      "url": ""
+    },
+    {
+      "id": "stock-edit",
+      "name": "改库存",
+      "version": "0.3.0",
+      "desc": "改库存 / 改售价：库存默认敞开卖（50000）；照镜子确认，提交走 CLI（真点击）+ 读回",
+      "dir": "plugins/stock-edit",
+      "ref": "master",
+      "path": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\workbench\\_pkgs\\stock-edit.zip",
+      "url": ""
+    },
+    {
+      "id": "tg-monitor",
+      "name": "推广监控",
+      "version": "0.2.1",
+      "desc": "推广监控台（物维网风格）：11 计划组容量看板 + 推广进度两源合并 + 登录态大灯",
+      "dir": "plugins/tg-monitor",
+      "ref": "master",
+      "path": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\workbench\\_pkgs\\tg-monitor.zip",
       "url": ""
     }
   ]

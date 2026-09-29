@@ -24,6 +24,15 @@ CREATE TABLE IF NOT EXISTS plan_capacity (
   PRIMARY KEY (member_id, plan_id)
 );
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS audit_notes (
+  lh        TEXT NOT NULL,
+  member_id TEXT NOT NULL DEFAULT '',
+  res       TEXT,
+  note      TEXT,
+  ref       TEXT,
+  at        TEXT,
+  PRIMARY KEY (lh, member_id)
+);
 """
 
 _ready = False
@@ -88,6 +97,35 @@ def set_plans(member_id, plans, capacity=500):
             (mid, str(pid), str(v.get("name") or ""), v.get("count"),
              int(v.get("capacity") or capacity), str(v.get("time") or now)))
     c.commit()
+
+
+def audit_note_set(lh, res, note="", ref="", member_id=""):
+    """记一条人工审核结论（每品每账号一条，覆盖）。
+    为什么入库：梓帆的“漏网之鱼”要能记下来、下次再审同品/同类时有据可查（越用越准），
+    不是每次从零看一遍。"""
+    c = conn()
+    c.execute(
+        "INSERT INTO audit_notes(lh,member_id,res,note,ref,at) VALUES(?,?,?,?,?,?) "
+        "ON CONFLICT(lh,member_id) DO UPDATE SET res=excluded.res, note=excluded.note, "
+        "ref=excluded.ref, at=excluded.at",
+        (str(lh), str(member_id or ""), str(res or ""), str(note or ""),
+         str(ref or ""), time.strftime("%Y-%m-%d %H:%M:%S")))
+    c.commit()
+
+
+def audit_note_get(lhs, member_id=""):
+    """按料号取审核记录 → {lh: {res, note, ref, at}}（查不到就是空，不回退别的账号）"""
+    ls = [str(x) for x in (lhs or []) if str(x).strip()]
+    if not ls:
+        return {}
+    try:
+        q = ",".join("?" * len(ls))
+        rows = conn().execute(
+            "SELECT lh,res,note,ref,at FROM audit_notes WHERE member_id=? AND lh IN (%s)" % q,
+            [str(member_id or "")] + ls).fetchall()
+        return {r[0]: {"res": r[1] or "", "note": r[2] or "", "ref": r[3] or "", "at": r[4] or ""} for r in rows}
+    except Exception:
+        return {}
 
 
 def total(member_id):

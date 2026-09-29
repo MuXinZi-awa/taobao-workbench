@@ -6,13 +6,16 @@
 ## 界面
 
 ```
-操作      改什么 [库存|售价|库存+售价]  数值 [50000]  间隔 [2.5] 秒/品  最多 [0] 个  ☑照镜子
+操作      改什么 [库存|售价|库存+售价]  库存 [敞开卖（50000）|手填] [数值] 件
+          间隔 [2.5] 秒/品  最多 [0] 个  ☑照镜子
           [▶ 开始改全店]  [▶ 只跑下面这些]  [清空]
 指定商品  粘一列料号或淘宝ID（一行一个）/ 料号,淘宝ID / 拖 csv·xlsx
 进度      📦 改库存 3/9 · 当前 xxx · 通过1 跳过8 失败0 · 已结束
-结果      [本次结果] [历史留痕]   料号 | 淘宝ID | 形态 | 项目 | 旧值 | 新值 | 结果
+结果      [本次结果] [历史留痕]   料号 | 淘宝ID | 形态 | 项目 | 旧值 | 新值 | 结果（含来源/封顶）
 ```
 
+- **库存值默认「敞开卖（50000）」**：ERP 非实时 + 连接器流通快，在手 0 是常态——不拿它在手数当库存。
+  手填仍可覆盖。ERP 只用于**成本**（改价）。
 - **全店为主**（直接读当前激活账号的在售清单，不用先导表）；个别品用「只跑下面这些」
 - 输入写法：`料号,淘宝ID` / 纯淘宝ID / **纯料号**（先查流水线 state，查不到走一次分流）
 - **运行日志**不在面板底部——在工作台右上「运行日志」Tab（读 `manifest.log` = `runtime/stock_edit_run.log`）
@@ -32,24 +35,32 @@
 ## 命令行
 
 ```bash
-python stock_api.py --shop --qty 50000 --what stock --gap 2.5 --mirror [--limit N]
+python stock_api.py --item 1079324970464 --what stock --qty open [--mirror] [--submit]
+python stock_api.py --shop --what stock --qty open [--gap 2.5] [--limit N] [--mirror]
 python stock_api.py --item 868303791275 --what price --mirror
-python stock_api.py --batch runtime\_pl_tmp\x.csv --qty 50000 --mirror
+python stock_api.py --batch runtime\_pl_tmp\x.csv --what stock --qty open
 python stock_api.py --rollback runtime\attr_snapshots\<快照>.json
 python pricing.py            # 自校：定价规则 vs 新品定价表
 ```
 
-`--what`：`stock` / `price` / `both`。`--gap` 默认 2.5 秒。`--no-resume` 不跳过已通过的。
+- `--qty open`（默认，=50000 敞开卖）；也可给数字手填。
+- `--submit`：**只允许单品**（`--item`）。走**页面内真点击**（跑页面自己的 JS），提交后**读回**验证真值。
+- `--what`：`stock` / `price` / `both`。`--gap` 默认 2.5 秒。`--no-resume` 不跳过已通过的。
 
 ## 字段与规则
 
-- 库存：单 SKU 改 `quantity`；多 SKU 改每个 `sku[i].skuStock` + 顶层 `quantity`（= 各 SKU 之和）
+- **库存值来源**：默认 **敞开卖 50000**（ERP 非实时 + 连接器流通快，在手 0 是常态）；手填时按面板/`--qty` 的数字。
+  ERP 只用于**成本**（改价）。
+- 库存落位：单 SKU 改 `quantity`；多 SKU 改每个 `sku[i].skuStock` + 顶层 `quantity`（= 各 SKU 之和）
 - 售价：单 SKU 改 `price`；多 SKU 改每个 `sku[i].skuPrice` + 顶层 `price`；值 = 成本 × 倍数（见 `工具\定价规则.md`）
 - **不动**：`globalStock`（计数方式）、`subStock`（开关）、`skuPostCouponPrice`（券后价）
 
 ## 护栏与留痕
 
 - 守卫：顶层键数不变 + 变化点＝目标集合；回传前再复检一次；不过就**就地停手**
+- **真提交（`--submit`，CLI 单品行）**：`submit.htm` 走裸请求/合成表单会被风控打回（落地 punish 验证页），
+  所以改成**页面内真点击**（先把目标值真输入进 SKU 表格的数量格，再点「提交宝贝信息」），
+  提交后**读回** `quantity`/`price` 验真。⚠️ 落地 `success.htm` **不等于改成功**——无变化的提交也会回 success。
 - 快照：`runtime/attr_snapshots/<淘宝ID>_<what>_<时间>.json`
 - 留痕：`runtime/stock_edit.csv`（时间/账号/料号/淘宝ID/项目/旧值/新值/结果）
 - **断点续跑**：按留痕跳过「本账号 + (淘宝ID, 项目) 已照镜子通过」的；掐掉后重跑接着跑

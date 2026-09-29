@@ -236,6 +236,7 @@ function renderNow(rows){
         if(r.readback && r.readback.quantity != null) res += '（读回 quantity='+esc(r.readback.quantity)+'）';
       }
       if(r.qtySrc) res += ' ｜ 库存来源：'+esc(r.qtySrc);
+      if(r.stockNotCarried) res += ' ｜ ⚠ 已提交但库存未变（这条路对这个品不带库存）';
     }
     else { res = '✗ 失败：' + esc(r.why||'未知原因'); cls = 'bad'; }
     if(r.ok && !r.skip && r.costUsed){ res += '（成本 ' + esc(r.costUsed) + ' · 来源 ' + esc(r.costSrc||'—') + '）'; }
