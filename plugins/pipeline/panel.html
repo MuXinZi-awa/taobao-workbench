@@ -89,7 +89,7 @@ input::placeholder { color:var(--text-m,#999); }
 <div id="guide"><span class="gStep">① 起手</span><span class="gTip">输入料号或拖入清单，点「查询」看状态</span></div>
 <div class="bar" id="mainbar" data-zone="查询与操作">
   <input id="lh" type="text" placeholder="料号 或 淘宝 ID（单量回车）">
-  <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button id="stopBtn" class="ghost" onclick="stopQuery()" title="停掉正在跑的查询分流（连它起的浏览器一起带走，不用去任务管理器杀进程）">⏹ 停止</button><button onclick="adStartFrom(0)" title="审核在内核视图里进行：点它收集本批素材 → 中间预览区「左原图｜右成品」逐张标记（放行/送修/换源），可拼图快扫">📋 开始审核</button><button class="ghost" onclick="contactSheet()" title="把选中品的成品图拼成一张网格——快速扫一遍挑漏网之鱼">🖼 拼图审核</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button><button id="ssBtn" onclick="srcRun()" style="display:none">🔁 换源处理</button>
+  <button onclick="go()">查询</button><button id="clsBtn" onclick="classify()">▶ 查询分流</button><button id="stopBtn" class="ghost" onclick="stopQuery()" title="停掉正在跑的查询分流（连它起的浏览器一起带走，不用去任务管理器杀进程）">⏹ 停止</button><button onclick="adStartFrom(0)" title="审核在内核视图里进行：点它收集本批素材 → 中间预览区「左原图｜右成品」逐张标记（放行/送修/换源），可拼图快扫">📋 开始审核</button><button class="ghost" onclick="contactSheet()" title="把选中品的成品图拼成一张网格——快速扫一遍挑漏网之鱼">🖼 拼图审核</button><button class="ghost" onclick="brandFill()" title="品牌补全：把选中/输入的料号过一遍 brand_map → 料号规则表 → 立创 → Octopart，命中就写回 brand_map（下次零成本）">🏷 品牌补全</button><button id="rpBtn" onclick="repairRun()" style="display:none">🛠 送修处理</button><button id="ssBtn" onclick="srcRun()" style="display:none">🔁 换源处理</button>
   <button class="ghost" onclick="demo()">试填</button>
   <span style="font-size:12px;color:var(--text-l,#999);margin-left:6px">每批数量</span>
   <input type="number" id="bn" min="1" max="200" value="30" title="批量阶段一次跑多少个品：切小便于盯进度、也少招风控（查询/属性/素材/整理/上品/推广都按它切批）" style="width:64px;border:.5px solid var(--border,#ccc);border-radius:6px;padding:4px 6px;font-size:13px">
@@ -389,6 +389,15 @@ async function contactSheet(){
  var d=await fetch(P+'contact-sheet?lhs='+encodeURIComponent(v)).then(function(r){return r.json();});
  if(!d.ok){ $('#cur').textContent='✗ '+humanErr(d.error||'拼图失败'); return; }
  $('#cur').innerHTML='🖼 拼图已生成：<a href="/api/file?p='+encodeURIComponent(d.out||'')+'" target="_blank">点开看图</a>';
+}
+/* 品牌补全：多级兜底查品牌——命中写回 brand_map（下次零成本） */
+async function brandFill(){
+ var v=(curLhs&&curLhs.length)?curLhs.join(','):$('#lh').value.trim();
+ if(!v){ alert('先查询/输料号'); return; }
+ $('#cur').textContent='品牌查询中…（没命中的会走网络，料号多会慢）';
+ var d=await fetch(P+'brand-fill?lhs='+encodeURIComponent(v)).then(function(r){return r.json();});
+ if(!d.ok){ $('#cur').textContent='✗ '+humanErr(d.error||'品牌补全失败'); return; }
+ $('#cur').textContent='🏷 '+d.msg;
 }
 async function adStartFrom(i){
  var list=curItems||[]; if(!list.length){ alert('先查询/分流'); return; }

@@ -846,6 +846,29 @@ def handle(action, qs):
             pass
         return {"ok": ok, "msg": tail, "out": out,
                 "error": None if ok else ("拼图失败：" + tail)}
+    if action == "brand-fill":
+        """品牌补全：料号 → 多级兜底（brand_map → 料号规则表 → 立创 → Octopart），命中写回 brand_map
+        工具落在推广一键跑（单一来源，不在插件里另存副本）
+        """
+        lhs = [x.strip() for x in (qs.get("lhs") or "").split(",") if x.strip()]
+        if not lhs:
+            return {"ok": False, "error": "缺 lhs"}
+        try:
+            if TG not in sys.path:
+                sys.path.insert(0, TG)      # brand_lookup 在推广一键跑（单一来源，插件不另存副本）
+            import brand_lookup as _bl
+        except Exception as e:
+            return {"ok": False, "error": "brand_lookup 不可用：%s" % str(e)[:60]}
+        try:
+            res = _bl.fill(lhs, net=True, do_write=True)
+            ok = [r for r in res if r[1]]
+            msg = "品牌补全 %d/%d 命中" % (len(ok), len(res))
+            miss = [r[0] for r in res if not r[1]]
+            if miss:
+                msg += "；未命中 %d 个：%s" % (len(miss), ", ".join(miss[:6]))
+            return {"ok": True, "msg": msg, "hit": len(ok), "total": len(res), "miss": miss}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:80]}
     if action == "repair-status":
         # 外部系统行为：repair_state.json 跑完不会自清——多天前的「已结束」会一直留在盘上，
         # 面板若只看内容就天天冒旧横幅（梓帆说的“旧记录赖着不走”）。所以这里把 mtime/age/stale
