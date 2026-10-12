@@ -1,4 +1,5 @@
 <!doctype html><meta charset="utf-8">
+<script src="/vendor/xlsx.full.min.js"></script>
 <style>
 input, textarea, select { background:var(--card,#fffdf7); color:var(--text,#333); }
 input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus {
@@ -194,21 +195,32 @@ drop.onclick=()=>{ const f=document.createElement('input'); f.type='file';
 drop.addEventListener('drop',e=>{ e.preventDefault(); drop.classList.remove('over');
  const f=e.dataTransfer.files[0]; if(f) readFile(f); });
 async function readFile(f){
+ const nm=(f.name||'').toLowerCase();
+ const isXlsx=nm.endsWith('.xlsx')||nm.endsWith('.xls');
  const rd=new FileReader();
  rd.onload=async ()=>{
-  const txt=rd.result; const rows=txt.split(/\r?\n/).map(l=>l.split(',')).filter(r=>r.join('').trim());
+  // xlsx/xls：SheetJS 解析（二进制，不能当文本读）；csv：按文本切
+  let rows;
+  if(isXlsx){
+   const wb=XLSX.read(new Uint8Array(rd.result),{type:'array'});
+   rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1})
+        .map(r=>r.map(c=>String(c==null?'':c).trim())).filter(r=>r.join('').trim());
+  } else {
+   const txt=rd.result;
+   rows=txt.split(/\r?\n/).map(l=>l.split(',')).filter(r=>r.join('').trim());
+  }
   if(!rows.length){ alert('空文件'); return; }
   const ci=pickLhCol(rows[0]);
   const lhList=rows.slice(1).map(r=>(r[ci]||'').trim()).filter(x=>x&&!/料号|合计/.test(x));
-  if(!lhList.length){ alert('没识别到料号列'); return; }
-  const d=await fetch(P+'batch-save?content='+encodeURIComponent(txt)).then(r=>r.json());
+  if(!lhList.length){ alert('没识别到料号列（表头需含“料号/型号/part/mpn/sku”）'); return; }
+  // 统一转成 csv 文本再存（后端按 csv 读）
+  const csvTxt=rows.map(r=>r.join(',')).join('\n');
+  const d=await fetch(P+'batch-save?content='+encodeURIComponent(csvTxt)).then(r=>r.json());
   if(d.ok){ curFile=d.file; curFileName=f.name;
-   const st=await fetch(P+'status').then(r=>r.json());
-   const doneCnt=lhList.filter(x=>{ /*粗略：无法精确——显示总数*/ return false; }).length;
    drop.innerHTML='<div style="color:#2a7a3a;font-weight:600">✅ 已载 '+lhList.length+' 品</div><div style="font-size:11px;color:var(--text-l,#888)">'+f.name+' —— 点「跑拖入表」执行；已跑过的会自动跳过</div>';
   } else alert(d.error||'保存失败');
  };
- rd.readAsText(f);
+ if(isXlsx){ rd.readAsArrayBuffer(f); } else { rd.readAsText(f); }
 }
 async function chkLogin(){
  const lg=document.getElementById('login'); lg.innerHTML='<span class="dot"></span>检测中…(约30s)';

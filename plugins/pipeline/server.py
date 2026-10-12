@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """流水线插件 server：状态读取（只读调用层）"""
-import json, os, io, sys, csv, subprocess
+import json, os, io, sys, csv, subprocess, time
 
 import sys as _sys
 _d = os.path.dirname(os.path.abspath(__file__))
@@ -267,36 +267,213 @@ def _ref_for(lh, audit):
         pass
     return ""
 
+# 分流进度落盘：内核每次请求都重新 exec 插件模块（热插拔），模块级变量不跨请求——
+# 进度、以及「有没有批在跑」，只能靠这个文件说话。
+QSTATE_FP = os.path.join(SCRIPTS, "query_state.json")
+
+
+def _q_write(d):
+    try:
+        tmp = QSTATE_FP + ".tmp"
+        with io.open(tmp, "w", encoding="utf-8") as f:
+            f.write(json.dumps(d, ensure_ascii=False))
+        os.replace(tmp, QSTATE_FP)
+    except Exception:
+        pass
+
+
+def _q_read():
+    try:
+        with io.open(QSTATE_FP, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+QLOG_FP = os.path.join(SCRIPTS, "query_run.log")
+
+
+QSTALL_SEC = 90      # 子进程连续多久不吐字就认它卡住（见 classify_batch 里的判据）
+
+
+def _parse_line(line):
+    """把「[料号] 类型 | id=… | 说明」还原成一条结果——中途中止时靠它把已查到的捞回来"""
+    try:
+        if not (line.startswith("[") and "]" in line and "|" in line):
+            return None
+        lh = line[1:line.index("]")]
+        parts = [x.strip() for x in line[line.index("]") + 1:].split("|")]
+        typ = parts[0] if parts else ""
+        if typ not in ("新品-待上架", "老品-双百跳过", "老品-需优化", "查询异常"):
+            return None
+        iid = ""
+        for x in parts:
+            if x.startswith("id="):
+                iid = x[3:].strip()
+        return {"lh": lh, "id": iid, "title": "", "type": typ,
+                "dual": (typ == "老品-双百跳过"),
+                "note": parts[-1] if len(parts) > 1 else ""}
+    except Exception:
+        return None
+
+
+def _items_from_buf(buf):
+    """从已收到的输出行里重建结果（去重、保序）"""
+    out, seen = [], set()
+    for _ln in buf:
+        _it = _parse_line(_ln)
+        if _it and _it["lh"] not in seen:
+            seen.add(_it["lh"])
+            out.append(_it)
+    return out
+
+
+def _q_log(line):
+    """子进程每一行顺手落盘：卡住时能事后查它停在哪一步（管道里的输出留不下）。"""
+    try:
+        if os.path.isfile(QLOG_FP) and os.path.getsize(QLOG_FP) > 2 * 1024 * 1024:
+            os.remove(QLOG_FP)
+        with io.open(QLOG_FP, "a", encoding="utf-8") as f:
+            f.write("%s  %s\n" % (time.strftime("%H:%M:%S"), line))
+    except Exception:
+        pass
+
+
+def _pid_alive(pid):
+    """Windows 上进程还在不在——比 mtime 靠谱：被强杀时状态文件会留在 running=true。"""
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, int(pid))
+        if h:
+            k.CloseHandle(h)
+            return True
+    except Exception:
+        return True
+    return False
+
+
+def _q_busy():
+    """有批在跑？先看记下的子进程 pid 还活不活（进程被强杀时状态文件会留在
+    running=true——今天的乱局就是这么来的），再看文件多久没刷新作兜底。"""
+    st = _q_read()
+    if not st.get("running"):
+        return None
+    pid = st.get("pid")
+    if pid and not _pid_alive(pid):
+        return None
+    try:
+        age = time.time() - os.path.getmtime(QSTATE_FP)
+    except Exception:
+        return None
+    return st if age <= 300 else None
+
+
 def classify_batch(lhs):
     """必须**起子进程**跑（playwright 在内核请求线程里不稳 → 拿不到 _m_h5_tk）
-    子进程：scripts/_classify_one.py 料号1,料号2 → stdout 最后一行是 JSON"""
-    import subprocess
+    子进程：scripts/_classify_one.py 料号1,料号2 → stdout 最后一行是 JSON
+    逐行读 stdout（不用 run()）：面板要看到「第几个/共几个」，否则长批就是一个黑箱。"""
     fp = os.path.join(SCRIPTS, "_classify_one.py")
     if not os.path.isfile(fp):
         return [], "缺少 _classify_one.py"
     ls = [str(x).strip() for x in lhs if str(x).strip()]
     if not ls:
         return [], "无料号"
+    # 防重入：连点两下会起两个子进程，而它们跟推广/送修共用同一把浏览器锁
+    # → 第二个白等锁 20 分钟，一个品也查不动。
+    _b = _q_busy()
+    if _b:
+        return [], "查询分流已在跑（%d/%d，当前 %s）——等它跑完再点" % (
+            _b.get("done", 0), _b.get("total", 0), _b.get("cur") or "—")
+    want = set(ls)
+    st = {"running": True, "total": len(ls), "done": 0, "cur": "", "type": "",
+          "err": "", "start": time.time(), "ts": time.time()}
+    _q_write(st)
+    limit = max(600, 15 * len(ls))     # 每品约 5-10s；按品数放宽，别让长批撞死在自己的超时上
+    p = None
     try:
-        r = subprocess.run([_py(), "-X", "utf8", "-u", fp, ",".join(ls)],
-                           cwd=SCRIPTS, capture_output=True, timeout=600)
-        out = (r.stdout or b"").decode("utf-8", "replace")
-        err = (r.stderr or b"").decode("utf-8", "replace")
-        tail = ""
-        for line in out.strip().splitlines()[::-1]:
-            if line.strip().startswith("{"):
-                tail = line.strip()
+        p = subprocess.Popen([_py(), "-X", "utf8", "-u", fp, ",".join(ls)],
+                             cwd=SCRIPTS, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True,
+                             encoding="utf-8", errors="replace", bufsize=1)
+        st["pid"] = p.pid          # 记下来：面板的「停止」要靠它杀整棵树
+        _q_write(st)
+        tail, buf = "", []
+        # 读 stdout 必须放线程里：直接 for line in p.stdout 会在“子进程不吐字”时永久
+        # 阻塞，超时检查根本没机会跑——实测一个卡住的品能把整批拖到天荒地老。
+        import queue as _q
+        import threading as _th
+        _lines = _q.Queue()
+
+        def _reader():
+            try:
+                for _ln in p.stdout:
+                    _lines.put(_ln)
+            except Exception:
+                pass
+            _lines.put(None)
+
+        _th.Thread(target=_reader, daemon=True).start()
+        while True:
+            try:
+                _raw = _lines.get(timeout=2)
+            except _q.Empty:
+                _now = time.time()
+                if _now - st["start"] > limit:
+                    st["err"] = "超时"
+                    return _items_from_buf(buf), "分流子进程超时(%ds，%d 品)" % (limit, len(ls))
+                # 子进程整个卡住时（页面 JS 死了），它自己的 fetch 超时也救不了它——
+                # 只能由外面盯着“多久没吐字”，到点中止，并把已经查到的捞回来。
+                if _now - st["ts"] > QSTALL_SEC:
+                    st["err"] = "卡住"
+                    return _items_from_buf(buf), (
+                        "卡住：连续 %d 秒没有新输出（多半被淘宝拦了/要验证码）——已中止。"
+                        "已查到的先留着；过一会儿再跑，或把「每批数量」调小。" % QSTALL_SEC)
+                continue
+            if _raw is None:
                 break
+            line = _raw.rstrip()
+            if not line:
+                continue
+            if line.startswith("{"):
+                tail = line
+                continue
+            buf.append(line)
+            _q_log(line)
+            st["ts"] = time.time()
+            # 形如「[料号] 类型 | id=… | 说明」——只认本批料号，[锁]/[登录] 那类不计
+            if line.startswith("[") and "]" in line:
+                _lh = line[1:line.index("]")]
+                if _lh in want:
+                    st["done"] = st["done"] + 1
+                    st["cur"] = _lh
+                    st["type"] = line[line.index("]") + 1:].strip().split("|")[0].strip()
+            _q_write(st)
+        try:
+            p.wait(timeout=30)
+        except Exception:
+            return [], "分流子进程收尾超时"
         if not tail:
-            return [], ("子进程无结果: " + ((out[-150:] or err[-150:]).strip() or "(空输出)"))
+            _o = "\n".join(buf[-8:])
+            return [], ("子进程无结果: " + (_o[-150:].strip() or "(空输出)"))
         d = json.loads(tail)
         if not d.get("ok"):
             return [], d.get("error") or "未知错误"
         return d.get("items") or [], ""
-    except subprocess.TimeoutExpired:
-        return [], "分流子进程超时(600s)"
     except Exception as e:
         return [], "分流异常: %s" % str(e)[:100]
+    finally:
+        st["running"] = False
+        st["ts"] = time.time()
+        _q_write(st)
+        try:
+            if p is not None and p.poll() is None:
+                # kill() 只杀它自己 → 它起的 playwright 驱动和 Chrome 会变孤儿，
+                # 继续占着 profile（下一个批就起不来）。要按进程树杀。
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)],
+                               capture_output=True, timeout=20)
+        except Exception:
+            pass
 
 # ── 阶段 → 现成脚本（调用层）────────────────────
 #    脚本都吃「表格」不吃参数（表头要有 料号 列）→ 先落临时表，再子进程调（内核线程里别起 playwright）
@@ -492,12 +669,64 @@ def handle(action, qs):
         except Exception:
             pass
         return {"ok": True, "lh": lh, "audit": res}
+    if action == "query-progress":
+        # 分流进度（面板 1s 轮询）：done/total + 当前品 + 多久没新输出
+        st = _q_read()
+        if not st:
+            return {"ok": True, "running": False, "total": 0, "done": 0,
+                    "cur": "", "type": "", "age_sec": 0, "elapsed_sec": 0}
+        _now = time.time()
+        try:
+            _age = int(_now - os.path.getmtime(QSTATE_FP))
+        except Exception:
+            _age = 0
+        out = dict(st)
+        out["ok"] = True
+        out["age_sec"] = _age
+        out["elapsed_sec"] = int(_now - st["start"]) if st.get("start") else 0
+        return out
+    if action == "query-stop":
+        # 停就停干净：设计上同一时刻只该有一个批，但异常时可能并存——而状态文件
+        # 只记得最后写进去的那个 pid。只杀它的话，另一个批的浏览器会跟着塌（共用
+        # 同一个 profile），不如把在跑的 _classify_one 全收掉。
+        _pids = []
+        st = _q_read()
+        if st.get("pid"):
+            _pids.append(int(st["pid"]))
+        try:
+            _r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                                 "(Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+                                 "Where-Object { $_.CommandLine -like '*_classify_one*' }).ProcessId"],
+                                capture_output=True, text=True, timeout=25)
+            for _ln in (_r.stdout or "").splitlines():
+                _ln = _ln.strip()
+                if _ln.isdigit():
+                    _pids.append(int(_ln))
+        except Exception:
+            pass
+        _pids = sorted(set(_pids))
+        if not _pids:
+            return {"ok": True, "msg": "当前没有在跑的分流"}
+        for _k in _pids:
+            try:
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(_k)],
+                               capture_output=True, timeout=30)
+            except Exception:
+                pass
+        st["running"] = False
+        st["err"] = "用户停止"
+        st["pid"] = ""
+        st["ts"] = time.time()
+        _q_write(st)
+        return {"ok": True, "msg": "已停止 %d 个批（pid %s）" % (
+            len(_pids), ",".join(str(x) for x in _pids))}
     if action == "classify":
         lhs = qs.get("lhs", "").split(",") if qs.get("lhs") else []
         if not lhs:
             return {"ok": False, "error": "需要 lhs"}
         items, err = classify_batch(lhs)
-        if err:
+        # err 有值但 items 也非空 = 卡住/超时被中途中止：已查到的照常落库回面板，别白跑
+        if err and not items:
             return {"ok": False, "error": err}
         # 分流结果落 state（type/id/title）——否则前端每次审核都要重查
         try:
@@ -531,6 +760,8 @@ def handle(action, qs):
             items = _merged
         except Exception:
             pass
+        if err:
+            return {"ok": True, "items": items, "warn": err}
         return {"ok": True, "items": items}
 
     def _batch_busy():
@@ -565,7 +796,7 @@ def handle(action, qs):
             errf = logf.replace(".log", "_err.log")
             subprocess.Popen([rt, "-X", "utf8", "-u", rb], cwd=SCRIPTS,
                              stdout=open(logf, "a", encoding="utf-8"), stderr=open(errf, "a", encoding="utf-8"))
-            return {"ok": True, "msg": "送修批已启动（%d 品标送修）——AI 修图约 2-3 分/品，完成自动落素材并标待复检（日志 runtime/repair.log）" % n}
+            return {"ok": True, "msg": "送修批已启动：**全库 %d 个**品标送修（不是面板当前列表那几个）——AI 修图约 2-3 分/品，完成自动落素材并标待复检（日志 runtime/repair.log）" % n}
         except Exception as e:
             return {"ok": False, "error": str(e)[:80]}
     if action == "src-src":
@@ -586,13 +817,13 @@ def handle(action, qs):
             errf = logf.replace(".log", "_err.log")
             subprocess.Popen([rt, "-X", "utf8", "-u", sb], cwd=SCRIPTS,
                              stdout=open(logf, "a", encoding="utf-8"), stderr=open(errf, "a", encoding="utf-8"))
-            return {"ok": True, "msg": "换源批已启动（%d 品标换源）——TE官网/立创找干净源，完成标待复检（日志 repair.log）" % n}
+            return {"ok": True, "msg": "换源批已启动：**全库 %d 个**品标换源（不是面板当前列表那几个）——TE官网/立创找干净源，完成标待复检（日志 repair.log）" % n}
         except Exception as e:
             return {"ok": False, "error": str(e)[:80]}
     if action == "audit-ref":
         """审核参考现场重查：lh → {ref, orig}（audit 在途品取白底待复检/换源图）"""
         try:
-            lh = q.get("lh", "").strip()
+            lh = qs.get("lh", "").strip()
             st = load_state()
             audit = (st.get("items", {}).get(lh, {}) or {}).get("audit", "")
             return {"ok": True, "lh": lh, "audit": audit,
@@ -731,7 +962,9 @@ def handle(action, qs):
             _tip = ""
             if _failN:
                 # 低分图停在素材格是设计（人工审核的意义）——面板要说清怎么往下走
-                _tip = "｜有 %d 个停在「需人工确认」（多为图库低分图）：勾「强制重做」用它，或去「人工审核」标「换源/送修」" % _failN
+                _tip = ("｜有 %d 个停在「需人工确认」（多为图库低分图——低分图不许自动放行）："
+                        "去「人工审核」标「换源」（外部找干净源，不需参考图）或「送修」（AI 洗水印，需一张参考图）。"
+                        "注意：「强制重做」只管重跑已生成的图，不是「允许用低分图」——别拿它当解药。" % _failN)
             return {"ok": True, "items": _items,
                     "msg": "%s：%s%s%s" % ("AI 补全" if _ai else "本地一条龙", "  ".join(_notes),
                             ("｜仍缺：" + "；".join("%s→%s" % (m["lh"], ",".join(m["缺列表"])) for m in _bad[:6]))

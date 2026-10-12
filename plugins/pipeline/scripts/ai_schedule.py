@@ -85,19 +85,49 @@ def upload_asset(img_path):
         return json.loads(r.read().decode("utf-8"))
 
 
-def submit(message, asset_ids, model="seedream_5.0"):
-    """默认 seedream_5.0（= 网页版 UI 的“5.0 Lite”，**实测不花积分**）
-    必须放 general_agent_settings.image_model；放顶层会被服务端静默忽略→走默认 4.0（花积分）
-    白名单：seedream_5.0(=Lite 免费) / seedream_5.0_pro / seedream_4.3 / nova2 / nova_pro / seedream_4.5 / seedream_4.1 / seedream_4
-    网页版的 doubao-seedream-5-0-lite-* 是另一条通道，skill API 不收"""
-    body = {"message": message, "asset_ids": asset_ids,
-            "general_agent_settings": {"image_model": model}}
-    d = api(XYQ_BASE + "/api/biz/v1/skill/submit_run", body)
-    run = d.get("run", {})
-    return run.get("thread_id", ""), run.get("run_id", "")
+_AGENT = None
+
+
+def _agent():
+    """懒起一个 agent 通道客户端（页面内 fetch，带 profile 登录态，起一次复用）。
+
+    为什么非改不可：skill 通道（Bearer KEY）**只收 seedream_5.0_pro**——按张花积分；
+    agent 通道收 seedream_5.0（=5.0 Lite，实测 0 积分）。送修/素材/白底这些
+    批量活儿全从这个 submit 出去，走错门就是按张烧钱。
+    上传参考图仍走 skill（它给的 pippit_asset_id 正是 agent 门要的）——两条通道拼起来。
+    """
+    global _AGENT
+    if _AGENT is None:
+        from _xyq_api import XyqClient
+        _AGENT = XyqClient(headless=True).open()
+    return _AGENT
+
+
+def submit(message, asset_ids, model=None):
+    """默认 None → seedream_5.0（Lite，免费，走 agent 通道）。
+    要精细版得**显式**传 model="seedream_5.0_pro"（花积分，走 skill 通道）。"""
+    if model and "pro" in model:
+        body = {"message": message, "asset_ids": asset_ids,
+                "general_agent_settings": {"image_model": model}}
+        d = api(XYQ_BASE + "/api/biz/v1/skill/submit_run", body)
+        run = d.get("run", {})
+        return run.get("thread_id", ""), run.get("run_id", "")
+    c = _agent()
+    return c.submit(message, image_model="seedream_5.0",
+                    ref_asset_id=(asset_ids[0] if asset_ids else ""))
 
 
 def poll(thread_id, run_id, timeout=600):
+    """取产物：走 agent 通道的 SSE 订阅（skill 通道没这条路）。
+    失败时不抛，返回空列表——调用方按“没拿到产物”处理。"""
+    try:
+        return _agent().wait_result(thread_id, run_id, timeout=timeout)
+    except Exception as e:
+        print("[poll] agent 取结果异常:", str(e)[:120])
+        return []
+
+
+def _poll_legacy(thread_id, run_id, timeout=600):
     """轮询直到完成，返回产物 URL 列表"""
     start = time.time()
     while time.time() - start < timeout:
@@ -195,8 +225,10 @@ def generate(lh, img, usage, out):
     names = {"cover": "封面", "clean": "清理图", "white": "白底图", "detail": "详情图",
              "main2": "主图2", "main3": "主图3", "main4": "主图4", "main5": "主图5"}
     saved = []
+    # 料号可能含 /（如 ZE05-12DS-HU/R）——落盘名必须安全化，否则 / 被当路径分隔符→目录不存在
+    _safe = (lh or "").replace("/", "-").replace("\\", "-")
     for i, u in enumerate(urls, 1):
-        dest = os.path.join(out, "%s_%s%s.png" % (lh, names[usage], "_%d" % i if len(urls) > 1 else ""))
+        dest = os.path.join(out, "%s_%s%s.png" % (_safe, names[usage], "_%d" % i if len(urls) > 1 else ""))
         tmp = dest + ".tmp"
         try:
             n = download(u, tmp)
@@ -211,6 +243,11 @@ def generate(lh, img, usage, out):
             # 只检测不处理：绝不本地 flood fill（浅灰背景和浅色金属边缘灰度接近，处理会吃掉产品细节）
             # 非纯白的落盘标"待复核"（原样保留——人工/重跑，不碰像素）
             try:
+                # make_white 在「推广一键跑」，不在插件目录——子进程里得显式加路径，
+                # 否则报 No module named 'make_white'，整个质检环节被悄默地吞掉
+                _tg = getattr(paths, "TG_ROOT", "")
+                if _tg and _tg not in sys.path:
+                    sys.path.insert(0, _tg)
                 import make_white as _mw
                 from PIL import Image as _PIL
                 _w, _h = _PIL.open(tmp).size

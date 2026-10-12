@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;padding:10px;font-family:system-ui,"Microsoft YaHei";font-size:13px;background:transparent;color:var(--text,#333)}
+.bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+input,select,textarea,button{font-size:13px;padding:5px 8px;border-radius:6px;border:.5px solid var(--border,#ccc);background:var(--bg-card,#fff);color:inherit;box-sizing:border-box}
+button{cursor:pointer;border-color:var(--accent,#4a7cf7)}
+button:disabled{opacity:.5;cursor:default}
+.ghost{border-color:var(--border,#ccc)}
+#st{font-size:12px;color:var(--text-l,#888);margin-bottom:6px}
+#out{max-width:100%;border-radius:8px;margin-top:6px}
+.hint{font-size:11px;color:var(--text-m,#aaa);margin-top:6px;line-height:1.6}
+.sec{border:.5px solid var(--border,#ddd);border-radius:8px;padding:8px;margin-bottom:8px}
+.sec h4{margin:0 0 6px;font-size:12px;font-weight:600;color:var(--text-l,#888)}
+#tplBox{display:none}
+#tplText{width:100%;height:260px;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.5;resize:vertical}
+.f{display:flex;gap:6px;flex-wrap:wrap}
+.f label{font-size:11px;color:var(--text-l,#888);display:flex;flex-direction:column;gap:2px}
+.f input{width:130px}
+</style></head><body>
+
+<div class="sec">
+  <h4>生成</h4>
+  <div class="bar">
+    <input id="lh" placeholder="料号，如 0462-201-16141" style="width:180px">
+    <select id="tpl"></select>
+    <select id="model">
+      <option value="seedream_5.0">Lite（免费）</option>
+      <option value="seedream_5.0_pro">Pro（花积分）</option>
+    </select>
+    <button class="ghost" onclick="doRender()">看提示词</button>
+    <button id="gb" onclick="doGen()">生成主图</button>
+  </div>
+  <div class="f">
+    <label>标题覆盖<input id="f_title" placeholder="如 DEUTSCH"></label>
+    <label>品牌覆盖<input id="f_brand" placeholder="如 矢崎"></label>
+    <label>品类覆盖<input id="f_cat" placeholder="如 保险丝"></label>
+  </div>
+  <div class="hint">留空=按属性清单自动填。「标题」决定画面上的大字，非泰科品牌记得自己填。</div>
+</div>
+
+<div class="sec">
+  <h4>模板 <button class="ghost" style="font-size:11px;padding:2px 8px" onclick="toggleTpl()">编辑 / 查看</button>
+      <button class="ghost" style="font-size:11px;padding:2px 8px" onclick="newTpl()">新建</button></h4>
+  <div id="tplBox">
+    <input id="tplName" placeholder="模板文件名，如 主图_芯片版.md" style="width:260px;margin-bottom:6px">
+    <textarea id="tplText" spellcheck="false"></textarea>
+    <div style="margin-top:6px"><button onclick="saveTpl()">保存</button>
+       <span class="hint" style="margin-left:8px">占位符：{料号} {品牌} {品牌英文} {品类} {品类要点} {标题} {规格行} {尺寸} {接口类型} {场景}</span></div>
+  </div>
+</div>
+
+<div id="st">准备就绪</div>
+<pre id="pv" style="display:none;background:var(--bg-card,#f7f4ec);border:.5px solid var(--border,#ddd);border-radius:6px;padding:8px;white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto"></pre>
+<img id="out" style="display:none">
+
+<script>
+const P = "/api/plg/xyq-img/";
+const $ = s => document.querySelector(s);
+async function loadTpls(){
+  const d = await fetch(P+"info").then(r=>r.json());
+  if(d && d.templates){
+    const cur = $("#tpl").value;
+    $("#tpl").innerHTML = d.templates.map(t=>'<option>'+t+'</option>').join("");
+    if(cur && d.templates.indexOf(cur)>=0) $("#tpl").value = cur;
+  }
+}
+loadTpls();
+function opt(){
+  return {tpl:$("#tpl").value, model:$("#model").value, lh:$("#lh").value.trim(),
+          标题:$("#f_title").value.trim(), 品牌:$("#f_brand").value.trim(), 品类:$("#f_cat").value.trim()};
+}
+async function doRender(){
+  const o = opt(); if(!o.lh){ alert("先填料号"); return; }
+  $("#st").textContent = "渲染中…";
+  const d = await fetch(P+"render?"+new URLSearchParams(o)).then(r=>r.json());
+  if(!d.ok){ $("#st").textContent = "✗ "+(d.error||""); return; }
+  $("#pv").style.display="block"; $("#pv").textContent = d.prompt;
+  $("#st").textContent = "参考图：" + (d.ref ? d.ref.split("\\").pop() : "没找到！（素材目录里没有图）");
+}
+async function doGen(){
+  const o = opt(); if(!o.lh){ alert("先填料号"); return; }
+  $("#gb").disabled = true;
+  $("#st").textContent = "生成中…（约 1-2 分钟，走免费 Lite）";
+  try{
+    const d = await fetch(P+"generate?"+new URLSearchParams(o)).then(r=>r.json());
+    if(!d.ok){ $("#st").textContent = "✗ "+(d.error||""); return; }
+    $("#st").textContent = d.msg + (d.fields ? ("  ｜标题=" + (d.fields.标题||"—")) : "");
+    $("#out").src = "/api/file?p="+encodeURIComponent(d.out)+"&t="+Date.now();
+    $("#out").style.display = "block";
+  }catch(e){ $("#st").textContent = "✗ "+e.message; }
+  finally{ $("#gb").disabled = false; }
+}
+function toggleTpl(){
+  const b = $("#tplBox");
+  if(b.style.display === "block"){ b.style.display = "none"; return; }
+  b.style.display = "block";
+  const n = $("#tpl").value; $("#tplName").value = n;
+  fetch(P+"tpl-get?name="+encodeURIComponent(n)).then(r=>r.json()).then(d=>{
+    $("#tplText").value = d.ok ? d.text : ("读不到：" + (d.error||""));
+  });
+}
+function newTpl(){
+  $("#tplName").value = "新模板.md";
+  $("#tplText").value = "【主体】把参考图里的【{品类}】精细抠出（去底）。\n{品类要点}\n\n【文字铁律】图上出现的每一处文字都必须逐字一致，不得增减、不得改写。\n\n【尺寸】{尺寸}。只输出 1 张图。\n";
+  $("#tplBox").style.display = "block";
+}
+async function saveTpl(){
+  const name = $("#tplName").value.trim();
+  if(!name){ alert("填个模板名"); return; }
+  $("#st").textContent = "保存中…";
+  const r = await fetch(P+"tpl-save", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name:name, text:$("#tplText").value})});
+  const d = await r.json().catch(()=>({}));
+  $("#st").textContent = d.ok ? ("已保存：" + d.name) : ("✗ " + (d.error||"保存失败"));
+  await loadTpls();
+  if(d.ok) $("#tpl").value = d.name;
+}
+</script></body></html>

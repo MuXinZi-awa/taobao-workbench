@@ -23,7 +23,8 @@ LOG_FP = os.path.join(SD, "repair.log")
 TMP = os.path.join(SD, "_tmp")
 ST_FP = os.path.join(SD, "repair_state.json")
 USAGE = os.environ.get("REPAIR_USAGE", "clean")
-CONC = 3
+CONC = 1  # 并发只能 1：每个线程开自己的 Chrome，而 chrome_profile 同时只容一个
+          # （并发 3 实测必撞 Target page/browser has been closed）
 
 sys.path.insert(0, SD)
 from ai_schedule import generate, KEY
@@ -46,11 +47,37 @@ def save_st():
     except Exception:
         pass
 
+GAL_DIRS = [r"F:\连接图图库\CY连接器图片", r"F:\连接图图库\千金有货图片", r"F:\连接图图库\连接器"]
+
+
+def _seed_from_gallery(lh, d):
+    """目录空时的借材源：从图库捞一张落盘，供人工审核/送修。
+    落盘名带「_参考源_待审核」——审核看得到，也不冒充成品。"""
+    import glob as _g
+    hits = []
+    for gd in GAL_DIRS:
+        if os.path.isdir(gd):
+            hits += _g.glob(os.path.join(gd, "**", "*%s*" % lh), recursive=True)
+    hits = [h for h in hits if h.lower().endswith((".png", ".jpg", ".jpeg"))
+            and os.path.getsize(h) > 8000]
+    if not hits:
+        return ""
+    # CY 图（无水印）优先，其次文件名最短（最可能是干净单品图）
+    hits.sort(key=lambda p: (0 if "CY" in p else 1, len(os.path.basename(p))))
+    dst = os.path.join(d, "%s_参考源_待审核.png" % lh)
+    try:
+        shutil.copy(hits[0], dst)
+    except Exception:
+        return ""
+    wlog("· %s 目录空——图库借材源已落盘（供审核/送修）" % lh)
+    return dst
+
+
 def ref_img(lh):
     """送修参考 = 审核预览同一张（封面/主图1 原图——审核啥送修啥，勿自己换）"""
     d = os.path.join(SUCAI, lh)
     if not os.path.isdir(d):
-        return ""
+        os.makedirs(d, exist_ok=True)
     names = sorted(os.listdir(d))
     for pat in ("%s_主图1", "%s_封面", "%s_主图"):
         for n in names:
@@ -66,7 +93,8 @@ def ref_img(lh):
           and n.lower().endswith((".png", ".jpg", ".jpeg"))]
     if _c:
         return os.path.join(d, sorted(_c)[-1])          # 最新一张
-    return ""
+    # 兜底2：目录确实没可用图 → 图库借一张落盘（否则送修永远"无参考图—跳过"）
+    return _seed_from_gallery(lh, d)
 
 def mark_state(lh, audit, note=""):
     try:
@@ -95,13 +123,15 @@ def repair_one(lh):
         os.makedirs(TMP, exist_ok=True)
         saved = generate(lh, ref, USAGE, TMP)
         if saved:
-            d = os.path.join(SUCAI, lh)
+            # 料号含 / 时会变成路径分隔符（ZE05-12DS-HU/R）——目录与文件名一律安全化
+            _safe = (lh or "").replace("/", "-").replace("\\", "-")
+            d = os.path.join(SUCAI, _safe)
             os.makedirs(d, exist_ok=True)
             ts = datetime.datetime.now().strftime("%H%M%S")
             moved = []
             for sf in saved:
                 if os.path.isfile(sf) and os.path.getsize(sf) > 5000:
-                    dest = os.path.join(d, "%s_白底_待复检%s.png" % (lh, ts))
+                    dest = os.path.join(d, "%s_白底_待复检%s.png" % (_safe, ts))
                     shutil.move(sf, dest)
                     moved.append(os.path.basename(dest))
             if moved:
@@ -146,8 +176,10 @@ def main():
         STATE_R["msg"] = "缺 KEY"
         save_st()
         return
-    with ThreadPoolExecutor(max_workers=CONC) as ex:
-        list(ex.map(repair_one, lhs))
+    # 主线程串行：Playwright Sync API 不能在 ThreadPoolExecutor 线程里跑
+    # （报 "Sync API inside the asyncio loop"；同一 profile 也不能多开 Chrome）
+    for lh in lhs:
+        repair_one(lh)
     STATE_R["msg"] = "完成 done=%d fail=%d" % (STATE_R["done"], STATE_R["fail"])
     save_st()
     try:

@@ -1,0 +1,9 @@
+{
+  "id": "xyq-img",
+  "name": "AI 主图",
+  "icon": "🖼",
+  "panel": "panel.html",
+  "desc": "小云雀免费生图：料号 + 模板（品牌/料号/属性自动填）+ 参考图 → 3:4 主图。走 Seedream 5.0 Lite，不花积分。",
+  "log": "xyq_img.log",
+  "version": "0.1.0"
+}

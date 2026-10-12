@@ -170,12 +170,19 @@ class MtopClient:
         self._refresh_token()
         if not self.token:
             raise RuntimeError("无 _m_h5_tk——需重新登录")
+        # fetch 必须带超时：淘宝对个别料号会一直不回话（正常品 0.5s 就回），
+        # 没超时的话这一个调用就无限等，一个品能把整批拖死。
         resp = self.page.evaluate(
             """async (a) => {
-                const r = await fetch(a.u, {method: 'POST', credentials: 'include',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: a.b});
-                return await r.text();
-            }""", {"u": url, "b": body})
+                const c = new AbortController();
+                const t = setTimeout(() => c.abort(), a.ms);
+                try {
+                    const r = await fetch(a.u, {method: 'POST', credentials: 'include',
+                        signal: c.signal,
+                        headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: a.b});
+                    return await r.text();
+                } finally { clearTimeout(t); }
+            }""", {"u": url, "b": body, "ms": 45000})
         return json.loads(resp)
 
     def search_items(self, kw, page=1, page_size=20):
@@ -239,6 +246,71 @@ class MtopClient:
                 "scoreLabel": diag.get("scoreLabel"),
             })
         return out, "SUCCESS"
+
+    def search_and_dual(self, kw, page_size=20):
+        """一次搜索同时拿到：搜到的商品 + 双百信息。
+        search_items 与 check_dual 打的是同一个接口、同一份数据，分两次说明白是白花
+        一次请求——而淘宝正是按“一段时间内的请求量”拦人的。"""
+        data = {
+            "url": "/taobao/manager/table.htm",
+            "jsonBody": json.dumps({"tab": "on_sale", "pagination": {"current": 1, "pageSize": page_size},
+                                    "filtertab": "", "filter": {"queryTitle": kw}, "table": {}},
+                                   separators=(",", ":"), ensure_ascii=False),
+        }
+        d = self.call("mtop.taobao.sell.pc.manage.async", data)
+        ret = (d.get("ret") or [""])[0]
+        if "SUCCESS" not in ret:
+            return [], ret
+        inner = json.loads(d["data"]["result"])
+        rows = (inner.get("data") or {}).get("table", {}).get("dataSource") or []
+        out = []
+        for r in rows:
+            diag = r.get("diagnoseInfoV3") or {}
+            desc = r.get("itemDesc") or {}
+            title = ""
+            for x in (desc.get("desc") or []):
+                if x.get("text"):
+                    title = x["text"]
+                    break
+            price = ""
+            pv = r.get("managerPrice") or {}
+            if isinstance(pv, dict):
+                price = pv.get("currentPrice", "")
+            out.append({
+                "itemId": str(r.get("itemId", "")), "title": str(title), "price": str(price),
+                "link": "https://item.taobao.com/item.htm?id=%s" % r.get("itemId", ""),
+                "dual": diag.get("scoreLabel") == "流量加速中",
+                "basicScore": diag.get("basicScore"),
+                "scoreLabel": diag.get("scoreLabel"),
+            })
+        return out, "SUCCESS"
+
+    def revive(self):
+        """被拦时重载卖家中心页：把验证态/软拦刷掉，顺便重拿 _m_h5_tk。
+        返回 token 是否拿到手（拿到才算活过来）。"""
+        try:
+            self.page.goto(SELL_URL, timeout=60000, wait_until="domcontentloaded")
+            self.page.wait_for_timeout(2000)
+            self._login()
+            self.page.wait_for_timeout(1500)
+            self._refresh_token()
+            return bool(self.token)
+        except Exception:
+            return False
+
+    def revive(self):
+        """被拦/页面被关时重开浏览器。
+        注意：不能只刷新页面——错误若是“Target page, context or browser has been closed”，
+        说明页面/context 已经没了，刷新也没地方刷；整个重来才有效。"""
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            self.open(headless=True)
+            return bool(self.token)
+        except Exception:
+            return False
 
     def close(self):
         try:

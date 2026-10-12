@@ -1139,15 +1139,15 @@ function adConfirm(){
  var need=AD.items.filter(function(x){return !x.skip;});
  var total=need.length, marked=0;
  need.forEach(function(it){ if(AD.marks[it.lh]) marked++; });
- if(marked<total&&!confirm('还有 '+(total-marked)+' 个未标记——确定提交？（未标默认不处理）')) return;
+ /* 不用 confirm：WebView 里弹框可能被拦，而且一点“取消”就“点了没反应”。未标记数随消息给面板。 */
  var stats={放行:0,送修:0,换源:0};
  AD.items.forEach(function(it){ var m=AD.marks[it.lh]; if(m) stats[m]=(stats[m]||0)+1; });
- try{ var ifr=document.querySelector('#wsBody iframe'); if(ifr) ifr.contentWindow.postMessage({type:'wb-audit-done',stats:stats,total:total},'*'); }catch(e){}
+ try{ var ifr=document.querySelector('#wsBody iframe'); if(ifr) ifr.contentWindow.postMessage({type:'wb-audit-done',stats:stats,total:total,unmarked:total-marked},'*'); }catch(e){}
  var f=document.getElementById('auditMode'); if(f) f.style.display='none';
  var pb=document.getElementById('prevBody'); if(pb) pb.style.display='';
  var pn=document.getElementById('prevName'); if(pn) pn.textContent='预览';
  switchView('ws');
- alert('审核提交：放行 '+stats['放行']+' · 送修 '+stats['送修']+' · 换源 '+stats['换源']+'（'+(total-marked)+' 未标、'+AD.items.filter(function(x){return x.skip;}).length+' 双百跳过）');
+ /* 结果由面板显示（审核提交：放行 X …）；不用 alert——WebView 里可能不弹，徒增“没反应” */
 }
 </script>
 </body>
