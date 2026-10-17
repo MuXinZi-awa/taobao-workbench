@@ -805,7 +805,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 q = urllib.parse.parse_qs(p.split("?", 1)[1])
                 fp = q.get("p", [""])[0]
                 try:
-                    import fitz
+                    try:
+                        import pymupdf as fitz
+                    except ImportError:
+                        import fitz
                     doc = fitz.open(fp)
                     n = doc.page_count
                     doc.close()
@@ -819,7 +822,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 fp = q.get("p", [""])[0]
                 n = int(q.get("n", ["0"])[0] or 0)
                 try:
-                    import fitz
+                    try:
+                        import pymupdf as fitz
+                    except ImportError:
+                        import fitz
                     doc = fitz.open(fp)
                     if n >= doc.page_count:
                         doc.close()

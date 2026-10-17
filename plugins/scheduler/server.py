@@ -262,14 +262,24 @@ def upload(params):
 
 
 def auto_campaigns(account_mid=""):
-    """自动取该账号「未满( count<500 )」的计划 ID —— 供 promo_batch 留空时用"""
+    """自动取该账号「未满(count<500)」的计划 ID —— 供 promo_batch 留空时用。
+    读状态库（与「刷新容量」同源）；json 已停更，读它拿不到新加的计划组。"""
+    try:
+        import state_db
+        rows = state_db.get_plans(account_mid) or {}
+        ids = [k for k, v in rows.items()
+               if str(k).isdigit() and (v.get("count") or 0) < 500]
+        if ids:
+            return ",".join(ids)
+    except Exception:
+        pass
     fp = os.path.join(TG, "runtime", ("plan_state_%s.json" % account_mid) if account_mid else "plan_state.json")
     if not os.path.isfile(fp):
         fp = os.path.join(TG, "runtime", "plan_state.json")
     try:
         d = json.load(io.open(fp, encoding="utf-8"))
         ids = [k for k, v in d.items()
-               if (v.get("count") is not None and int(v.get("count") or 0) < 500)]
+               if str(k).isdigit() and v.get("count") is not None and int(v.get("count") or 0) < 500]
         return ",".join(ids)
     except Exception:
         return ""

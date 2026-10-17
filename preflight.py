@@ -126,7 +126,8 @@ def check(here, port=None, running=False):
         add("paths", "外部目录", "warn", "读路径配置失败：%s" % str(e)[:80],
             "打开 设置 → 通用 看一眼路径项")
 
-    # 插件用的解释器：决定「点下去能不能跑起来」（打包后壳自己不能当解释器）    try:
+    # 插件用的解释器：决定「点下去能不能跑起来」（打包后壳自己不能当解释器）
+    try:
         import sys
         sys.path.insert(0, here)
         import paths as _p

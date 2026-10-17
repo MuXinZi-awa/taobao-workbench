@@ -48,3 +48,10 @@ _build_wb/
 data/
 *.db
 *.db.bak_*
+
+# 快照/备份（本地回退用，不入库）
+*.bak_*
+*.bak-*
+# 运行态文件（登录状态等，不该入库）
+plugins/tg-monitor/login_state.json
+

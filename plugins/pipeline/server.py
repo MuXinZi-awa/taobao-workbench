@@ -488,15 +488,29 @@ def _mid():
 
 
 def auto_campaigns():
-    """取该账号「未满( count<500 )」的计划 ID —— 与 scheduler/server.py 的 auto_campaigns 同源
-    （读 runtime/plan_state_<mid>.json；那份由推广批的容量预检实时落盘——不写死计划 ID）"""
-    fp = os.path.join(TG, "runtime", ("plan_state_%s.json" % _mid()) if _mid() else "plan_state.json")
+    """取该账号「未满(count<500)」的计划 ID。
+    读状态库 state_db —— 与 tg-monitor 的「刷新容量」同源（那条链写库）。
+    反直觉：json 已停更，只剩 9-22 的旧数据；读 json 会永远拿不到新加的计划组，
+    还会把历史残留（如"10计划"）当成可投计划。非数字键一律过滤——那不是计划 ID。"""
+    mid = _mid()
+    try:
+        import state_db
+        rows = state_db.get_plans(mid) or {}
+        ids = [k for k, v in rows.items()
+               if str(k).isdigit() and (v.get("count") or 0) < 500]
+        if ids:
+            return ",".join(ids)
+    except Exception:
+        pass
+    # 回退：老 json（库读不到时别让推广直接断掉）
+    fp = os.path.join(TG, "runtime", ("plan_state_%s.json" % mid) if mid else "plan_state.json")
     if not os.path.isfile(fp):
         fp = os.path.join(TG, "runtime", "plan_state.json")
     try:
         d = json.load(io.open(fp, encoding="utf-8"))
         return ",".join([k for k, v in d.items()
-                         if v.get("count") is not None and int(v.get("count") or 0) < 500])
+                         if str(k).isdigit() and v.get("count") is not None
+                         and int(v.get("count") or 0) < 500])
     except Exception:
         return ""
 
@@ -1015,14 +1029,70 @@ def handle(action, qs):
         if key == "pub":
             if not lhs:
                 return {"ok": False, "error": "缺 lhs"}
+            # 动手前先复核线上（重跑分流 → 覆盖 state 的 type/id）。
+            # 反直觉：state 会过时——分流查的时候线上没货、后来货上了，面板仍当它"新品-待上架"，
+            # 于是走新建 → 同型号两个品（1016 实测：33 个"新品"里 13 个线上已有货）。
+            # 复核失败不阻断，但必须留痕——用旧 type 跑下去要看得见。
+            _recheck = ""
+            # confirmed=1：人工已确认「这批确实是新品，线上没有它」（如 W3S/W2S 这种
+            # 被同系列料号搅乱的历史品）——跳过复核。**只认显式传参**：不传就照常复核，
+            # 闸的意义是防脚本自己猜，不是防人拍板。
+            _confirmed = str(qs.get("confirmed") or "").strip() in ("1", "true", "yes")
+            try:
+                if _confirmed:
+                    _recheck = "⚠ 已人工确认：跳过复核（直接按 state 分流）"
+                else:
+                    _rr = handle("classify", {"lhs": ",".join(lhs)})
+                    if _rr.get("ok"):
+                        _recheck = "上品前复核 %d 品（type/id 已按线上重判）" % len(_rr.get("items") or [])
+                    else:
+                        _recheck = "上品前复核失败：%s" % str(_rr.get("error"))[:60]
+                        _wlog("上品前复核未完成：" + _recheck)
+            except Exception as _e:
+                _recheck = "上品前复核异常：%s" % str(_e)[:60]
+                _wlog(_recheck)
             tmap = _types_of(lhs)
             new = [x for x in lhs if "新品" in tmap.get(x, "")]
-            old = [x for x in lhs if "需优化" in tmap.get(x, "")]
+            # force 时「双百跳过」的品也要进编辑队列：它们分数没问题，但素材可能是错的
+            # （1017 W3S 实锤：双百状态下要换图，不分流就永远改不到）
+            _force_now = str(qs.get("force") or "").strip() in ("1", "true", "yes")
+            # force 时把「双百跳过 / 查询存疑但有 id」的品也送进编辑队列：
+            # 它们分数没问题（或只是刚上架、搜索还没索引到），但素材可能是错的；
+            # 有 id 就能编辑（可撤销）——这是换图的唯一路（1017 W3S 实锤）。
+            _st_items = load_state().get("items") or {}
+            _forceable = []
+            if _force_now:
+                for _x in lhs:
+                    _t = tmap.get(_x, "")
+                    if ("双百" in _t or "存疑" in _t) and ((_st_items.get(_x) or {}).get("id")):
+                        _forceable.append(_x)
+            old = [x for x in lhs if "需优化" in tmap.get(x, "")] + \
+                  [x for x in _forceable if "需优化" not in tmap.get(x, "")]
             skip = [x for x in lhs if (x not in new) and (x not in old)]
             # 预演：勾「预演不提交」→ 透传 --no-submit（两个脚本都支持）
             _dry = str((qs.get("dry") or "")).strip() in ("1", "true", "yes")
+            # 强制编辑：跳过双百检测（补传素材用）。反直觉：商品已双百但图/视频是错的时，
+            # 不 force 就永远被“已优化”跳过——错素材会一直挂到线上（1017 修 W3S-1939-P012 时踩到）。
+            _force = str((qs.get("force") or "")).strip() in ("1", "true", "yes")
             _extra = ["--no-submit"] if _dry else []
+            if _force:
+                _extra.append("--force")
             notes = ["预演模式（不提交）"] if _dry else []
+            if _force:
+                notes.append("强制编辑（跳过双百检测）")
+            if _recheck:
+                notes.append(_recheck)
+            # 保守闸：复核判「新品」但 state 里还留着淘宝 ID = 自相矛盾。
+            # 为什么：卖家中心的在售搜索会漏掉已有商品（1016 实测：买家页能打开、编辑页显示双百，
+            # 搜索却搜不到）——而「新建」不可撤销，会变出同型号两个品。不确定时往可撤销那侧倒。
+            _conf = [x for x in new if ((load_state().get("items") or {}).get(x) or {}).get("id")]
+            if _conf:
+                new = [x for x in new if x not in _conf]
+                # 判新品但有旧 id：搜索漏了已有商品（W6）。**不新建**——但也不该阁着：
+                # 用旧 id 走编辑（可撤销），比“两边都不做”或“新建出重复品”都稳。
+                old = old + [x for x in _conf if x not in old]
+                notes.append("⚠ %d 品判新品但 state 留着旧 id（搜索漏了已有商品）——按旧 id 走编辑：%s"
+                             % (len(_conf), ",".join(_conf[:6])))
             if skip:
                 notes.append("跳过 %d 个（type 未定/双百跳过）：%s" % (len(skip), ",".join(skip[:6])))
             # 实现可切：脚本(UI) / 接口(API)。默认脚本——接口版目前只能到「照镜子」

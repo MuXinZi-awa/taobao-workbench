@@ -4,7 +4,7 @@
 为什么要锁：和推广/采集/送修共用同一把浏览器锁（同一 profile 同时只能一个 Chrome）
 用法：python _classify_one.py 料号1,料号2,...   → stdout 最后一行是 JSON
 """
-import sys, os, io, json, time, random
+import sys, os, io, json, time, random, re
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
@@ -16,6 +16,31 @@ except Exception:
     pass
 
 from _mtop_api import MtopClient, PROFILE_DIR
+
+
+def _is_ascii_alnum(c):
+    """只把 ASCII 字母数字当“粘在一起”——中文的 str.isalnum() 也是 True，
+    但“器W3S”里前面那个字不是粘住的标识符字符，不能因此判不中。"""
+    return bool(c) and c.isascii() and c.isalnum()
+
+
+def _exact_in(lh, title):
+    """料号是否作为**独立标识**出现在标题里。
+    反直觉：不能去掉横线做子串——`W3S` 会命中 `W3S-1939-P012`，
+    也会命中 `AW3S`（图库里这确实是五个不同产品，分开存的）。
+    规则：后面不能紧跟「-/_ + 字母数字」（那是更长的料号），
+    前面不能紧贴 ASCII 字母数字（那是另一个料号的一部分）。
+    """
+    t = title or ""
+    if not lh or not t:
+        return False
+    pat = re.escape(lh) + r"(?![\-_][A-Za-z0-9])"
+    for m in re.finditer(pat, t, re.I):
+        s = m.start()
+        if s > 0 and _is_ascii_alnum(t[s - 1]):
+            continue
+        return True
+    return False
 
 
 def _out(obj):
@@ -119,11 +144,16 @@ def main():
             if rows:
                 hit = None
                 for r in rows:
-                    t = str(r.get("title", ""))
-                    if _lh.replace("-", "").lower() in t.replace("-", "").lower():
+                    if _exact_in(_lh, str(r.get("title", ""))):
                         hit = r
                         break
-                hit = hit or rows[0]
+                if hit is None:
+                    # 搜到结果但没有一条标题写的是这个料号：要么短料号撞上长料号
+                    # （W3S vs W3S-1939-P012），要么标题压根不含料号。**不猜**——
+                    # 猜错就会把 A 的素材/属性改到 B 的商品上（1016 实锤 W3S）。
+                    it["type"] = "查询存疑"
+                    it["note"] = "搜到 %d 条但标题无精确命中" % len(rows)
+                    return it
                 it["id"] = str(hit.get("itemId", ""))
                 it["title"] = str(hit.get("title", ""))[:40]
                 sl = str(hit.get("scoreLabel") or "")
