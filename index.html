@@ -41,6 +41,22 @@ body { font-family:var(--font-ui); background:var(--bg); margin:0; color:var(--t
 .pane.active { display:flex; flex-direction:column; }
 #logPane { padding:0 10px 8px; }
 .logbox { flex:1; background:var(--card); border:.5px solid var(--border); border-radius:var(--r); padding:10px 12px; font-family:var(--font-mono); font-size:0.9rem; color:var(--text-l); overflow-y:auto; white-space:pre-wrap; line-height:1.7; }
+.lgrow { display:flex; gap:7px; padding:1px 4px; border-radius:4px; font-family:var(--font-mono); white-space:pre-wrap; word-break:break-all; }
+.lgrow:hover { background:rgba(128,128,128,.10); }
+.lgrow .lgt { flex:none; color:var(--text-m); }
+.lgrow .lgtag { flex:none; color:var(--accent); opacity:.9; }
+.lgrow .lgtag::after { content:''; }
+.lgrow .lgm { flex:1; min-width:0; }
+.lgrow.lv-warn { color:#8A6A16; background:rgba(214,168,60,.14); }
+.lgrow.lv-err { color:#B03A2E; background:rgba(200,60,50,.14); font-weight:600; }
+.lgrow.lv-ok { color:#2F7D4F; }
+.lgrow.lv-debug { color:var(--text-m); opacity:.7; }
+.lgrow mark { background:rgba(255,200,0,.45); color:inherit; padding:0 1px; border-radius:2px; }
+.lgchip { cursor:pointer; padding:1px 7px; border:.5px solid var(--border); border-radius:20px; user-select:none; }
+.lgchip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+body[data-theme="saber"] .lgrow.lv-err { color:#F08A7E; }
+body[data-theme="saber"] .lgrow.lv-warn { color:#E0BE6A; }
+body[data-theme="saber"] .lgrow.lv-ok { color:#7FC79B; }
 #prevPane { padding:0 10px 8px; }
 .prevhead { display:flex; align-items:center; padding:3px 4px; font-size:0.88rem; color:var(--text-l); flex-shrink:0; }
 #wsBody { position:relative; overflow:hidden; }
@@ -272,7 +288,7 @@ window.addEventListener('error', function(e){
   <div class="col-side"><div class="cap">已装插件</div><div id="plugins"></div></div>
   <div class="col-main">
     <div class="viewtab"><div class="vt active" data-v="ws" onclick="switchView('ws')">工作区</div><div class="vt" data-v="log" onclick="switchView('log')">运行日志</div><div class="vt" data-v="prev" onclick="switchView('prev')">预览</div></div>
-    <div class="pane" id="logPane"><div class="prevhead"><span style="font-size:12px;color:var(--text-l)">运行日志</span><span style="margin-left:8px;font-size:11px;color:var(--text-m)" id="logf">tg_panel.log（推广批操作）</span><span style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:10px;color:var(--text-m)"><button class="iconbtn" id="logPauseBtn" onclick="logPause()" style="width:auto;padding:0 6px;font-size:10px" title="暂停/继续刷新">⏸</button><button class="iconbtn" onclick="logOpenAll()" style="width:auto;padding:0 6px;font-size:10px" title="显示全部日志">全部</button>自动跟随</span></span></div><div class="logbox" id="log" style="font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;overflow:auto;padding:8px 12px;line-height:1.5">加载日志…</div></div>
+    <div class="pane" id="logPane"><div class="prevhead" style="gap:6px;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-l)">运行日志</span><span style="font-size:11px;color:var(--text-m)" id="logf">pipeline.log</span><span id="logCnt" style="font-size:10px;color:var(--text-m)"></span><span style="margin-left:auto;display:flex;gap:5px;align-items:center;font-size:10px;color:var(--text-m);flex-wrap:wrap"><span class="lgchip on" data-lv="all" onclick="logLv('all')" title="信息以上（不含扫描调试行）">全部</span><span class="lgchip" data-lv="warn" onclick="logLv('warn')" title="只看警告和错误">警告+</span><span class="lgchip" data-lv="err" onclick="logLv('err')" title="只看错误">仅错误</span><span class="lgchip" data-lv="debug" onclick="logLv('debug')" title="含扫描等调试行">含调试</span><input id="logQ" placeholder="搜料号/关键字" oninput="logView()" style="width:118px;padding:2px 6px;font-size:10px;border:.5px solid var(--border);border-radius:6px;background:var(--card);color:var(--text-l);font-family:inherit;outline:none"><button class="iconbtn" id="logPauseBtn" onclick="logPause()" style="width:auto;padding:0 6px;font-size:10px" title="暂停/继续刷新">⏸</button><button class="iconbtn" id="logAllBtn" onclick="logOpenAll()" style="width:auto;padding:0 6px;font-size:10px" title="尾300 行 / 全部">尾300</button><button class="iconbtn" id="logCopyBtn" onclick="logCopy()" style="width:auto;padding:0 6px;font-size:10px" title="复制当前日志">复制</button></span></div><div class="logbox" id="log" style="font-size:11px;line-height:1.5;padding:6px 8px">加载日志…</div></div>
     <div class="pane active" id="wsPane"><div class="prevhead"><span id="wsName">插件工作区</span></div><div id="wsEmpty" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-m);font-size:12px">点左侧插件打开它的工作面板</div><div class="prevbody" id="wsBody" style="padding:4px"></div></div>
     <div class="pane" id="prevPane">
   <div id="auditMode" style="display:none;flex-direction:column;flex:1;min-height:0">
@@ -544,21 +560,50 @@ function showPlugin(pl){
   c.style.display='block';
   var e=document.getElementById('wsEmpty'); if(e) e.style.display='none';
 }
-let logFile_='tg_panel.log', logTimer=null;
+let logFile_='pipeline.log', logTimer=null, logLines_=[], logLv_='all';
+var logPaused=false, logAll=false;
+const LOG_LV_ICH = {debug:0, info:1, ok:1, warn:2, err:3};
+/* 行格式：[时间] [级别] [阶段] 消息；旧日志没有级别，按普通行渲染（只有两段才算旧格式不能乱拆） */
+function logParse(line){
+ const m=/^\[(\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\]\s*(?:\[(DEBUG|INFO|OK|WARN|ERR)\])?\s*(?:\[([^\]]{1,14})\])?\s?([\s\S]*)$/.exec(line);
+ if(!m) return {t:'',lv:'',tag:'',msg:line};
+ const map={DEBUG:'debug',INFO:'info',OK:'ok',WARN:'warn',ERR:'err'};
+ return {t:m[1], lv:map[m[2]||'']||'', tag:m[3]||'', msg:m[4]||''};
+}
 function logRefresh(){ const box=document.getElementById('log'); if(!box) return;
  fetch(API+'/api/logtail?f='+encodeURIComponent(logFile_)+(logAll?'&all=1':'')).then(r=>r.json()).then(d=>{
-  if(d.ok){ const atBottom=(box.scrollTop+box.clientHeight>=box.scrollHeight-40);
-   box.innerHTML=(d.lines||[]).map(esc).join('\n')||'（空日志）';
-   if(atBottom||logAll) box.scrollTop=box.scrollHeight; }
+  if(d.ok){ logLines_=d.lines||[]; logView(); }
  }).catch(()=>{}); }
-var logPaused=false, logAll=false;
+function logLv(v){ logLv_=v; document.querySelectorAll('.lgchip').forEach(x=>x.classList.toggle('on',x.dataset.lv===v)); logView(); }
+function logView(){ const box=document.getElementById('log'); if(!box) return;
+ const qEl=document.getElementById('logQ'); const q=(qEl&&qEl.value||'').trim(); const ql=q.toLowerCase();
+ const minv = logLv_==='warn'?2 : logLv_==='err'?3 : (logLv_==='debug'?0:1);
+ const re = ql ? new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi') : null;
+ const lvOk = p => (LOG_LV_ICH[p.lv]===undefined? 1 : LOG_LV_ICH[p.lv]) >= minv;
+ let warnN=0, errN=0, shown=0; const out=[];
+ logLines_.forEach(function(line){
+  const p=logParse(line); if(p.lv==='warn')warnN++; if(p.lv==='err')errN++;
+  if(!lvOk(p)) return; if(ql && line.toLowerCase().indexOf(ql)<0) return;
+  shown++;
+  let msg=esc(p.msg); if(re) msg=msg.replace(re,'<mark>$1</mark>');
+  out.push('<div class="lgrow '+(p.lv?'lv-'+p.lv:'')+'">'+(p.t?'<span class="lgt">'+esc(p.t)+'</span>':'')+(p.tag?'<span class="lgtag">'+esc(p.tag)+'</span>':'')+'<span class="lgm">'+msg+'</span></div>');
+ });
+ const atBottom=(box.scrollTop+box.clientHeight>=box.scrollHeight-40);
+ box.innerHTML=out.join('')||'<div style="color:var(--text-m)">（无匹配日志）</div>';
+ if(atBottom||logAll) box.scrollTop=box.scrollHeight;
+ const cnt=document.getElementById('logCnt');
+ if(cnt) cnt.textContent=(shown===logLines_.length? shown+' 行' : '显示 '+shown+' / '+logLines_.length+' 行')+' · 警告 '+warnN+' · 错误 '+errN;
+}
 function logPause(){ logPaused=!logPaused;
  var b=document.getElementById('logPauseBtn'); if(b) b.textContent=logPaused?'▶':'⏸';
  if(logPaused&&logTimer){ clearInterval(logTimer); logTimer=null; }
  else if(!logPaused&&!logTimer){ logTimer=setInterval(logRefresh,3000); logRefresh(); } }
 function logOpenAll(){ logAll=!logAll;
- var lf=document.getElementById('logf'); if(lf) lf.textContent=logFile_+(logAll?'（全部）':'');
+ var b=document.getElementById('logAllBtn'); if(b) b.textContent=logAll?'全部':'尾300';
  logRefresh(); }
+function logCopy(){ const t=logLines_.join('\n');
+ if(!navigator.clipboard) return; navigator.clipboard.writeText(t).then(function(){
+  const b=document.getElementById('logCopyBtn'); if(!b) return; const old=b.textContent; b.textContent='已复制'; setTimeout(()=>b.textContent=old,1200); }).catch(()=>{}); }
 function logFileSel(f){ logFile_=f; var lf=document.getElementById('logf'); if(lf) lf.textContent=f+'（'+(curPlugin?curPlugin.name:'')+'）'; }
 function logFile(f){ logFileSel(f); logRefresh(); }
 function switchView(v){ document.querySelectorAll('.vt').forEach(x=>x.classList.toggle('active',x.dataset.v===v));

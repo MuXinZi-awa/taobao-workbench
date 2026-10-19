@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """流水线插件 server：状态读取（只读调用层）"""
-import json, os, io, sys, csv, subprocess, time
+import json, os, io, sys, csv, subprocess, time, threading, queue
 
 import sys as _sys
 _d = os.path.dirname(os.path.abspath(__file__))
@@ -168,7 +168,8 @@ def scan_batch(lhs):
             "上次审核时间": (_an.get(lh) or {}).get("at", ""),
         })
     try:
-        _wlog("流水线扫描 %d 品: %s" % (len(items), " | ".join("%s=%s" % (i["lh"], i["素材"][:16]) for i in items[:10])))
+        _wlog("扫描 %d 品：%s" % (len(items), " | ".join("%s=%s" % (i["lh"], i["素材"][:40]) for i in items[:20])),
+              level="debug", tag="扫描")
     except Exception:
         pass
     return items
@@ -214,11 +215,49 @@ def _maybe_rotate():
         pass
 
 
-def _wlog(msg):
+_LVL = {"debug": "DEBUG", "info": "INFO", "ok": "OK", "warn": "WARN", "err": "ERR"}
+
+
+def _dbg_recent(msg, secs=8):
+    """debug 行去重：插件模块每次请求都重新 exec_module，进程内变量存不住，
+    所以拿日志尾行比对。只对 DEBUG 生效——info 以上就算重复也可能是真事件（连续两次复核失败）。
+    """
+    try:
+        import re as _re
+        sz = os.path.getsize(_LOG_FP)
+        if not sz:
+            return False
+        with io.open(_LOG_FP, "rb") as f:
+            f.seek(max(0, sz - 900))
+            tail = f.read().decode("utf-8", "replace")
+        lines = [x for x in tail.splitlines() if x.strip()]
+        if not lines:
+            return False
+        m = _re.match(r"^\[(\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] \[DEBUG\](?: \[[^\]]{1,14}\])? (.*)$", lines[-1])
+        if not m or m.group(2) != msg:
+            return False
+        t = _dt.datetime.strptime("%d-%s" % (_dt.date.today().year, m.group(1)), "%Y-%m-%d %H:%M:%S")
+        return (time.time() - t.timestamp()) < secs
+    except Exception:
+        return False
+
+
+def _wlog(msg, level="info", tag=""):
+    """写运行日志。前缀固定为「[时间] [级别] [阶段] 消息」，前端按前缀着色和过滤；
+    没有前缀的旧行前端当普通行渲染，所以前缀只许加不许改。
+
+    debug 级同内容 8 秒内只写一次：面板刷新会反复触发扫描，不去重的话日志全被扫描行淹掉、
+    真正的失败夹在中间看不见（1017 实测 200 行里 190 行是扫描）。
+    """
     _maybe_rotate()
+    if level == "debug" and _dbg_recent(msg):
+        return
+    head = "[%s] [%s]" % (_dt.datetime.now().strftime("%m-%d %H:%M:%S"), _LVL.get(level, "INFO"))
+    if tag:
+        head += " [%s]" % tag
     try:
         with io.open(_LOG_FP, "a", encoding="utf-8") as f:
-            f.write("[%s] %s\n" % (_dt.datetime.now().strftime("%m-%d %H:%M:%S"), msg))
+            f.write("%s %s\n" % (head, msg))
     except Exception:
         pass
 
@@ -551,30 +590,118 @@ def _entry_alert():
         return ""
 
 
-def _run_script(script, args, timeout=3600):
-    """子进程跑现成脚本（照 _classify_one 范式）→ (ok, 末行输出）"""
+_LOG_STEP_PREFIX = ("[发品]", "[上品]", "[新品]", "[上传]", "[素材]", "[送修]", "[推广]", "[入口自检]", "[提交]")
+_LOG_STEP_KW = ("选类目", "品牌", "标题", "上传", "图片", "主图", "白底", "详情", "视频", "属性",
+                "提交", "完成", "失败", "错误", "跳过", "⚠", "验证码", "过码",
+                "价格", "库存", "销售", "SKU")
+
+
+def _is_step_line(s):
+    """子进程的哪一行值得进运行日志。
+
+    全转写会把一个品几十行刷屏（上传/填属性每步一行），人根本翻不过来；
+    只留“发品/上传/属性/提交/结果”这类节点，才能一眼看出卡在哪一步。
+    """
+    if not s or len(s) > 200:
+        return False
+    if s.startswith(_LOG_STEP_PREFIX):
+        return True
+    return any(k in s for k in _LOG_STEP_KW)
+
+
+def _run_script(script, args, timeout=3600, tag=""):
+    """子进程跑现成脚本 → (ok, 末行输出)。
+
+    输出必须边跑边落盘：capture_output 会把整段吞在内存里，跑一小时的阶段期间面板只有
+    一个数字进度条，用户在日志里什么也看不到，出问题也翻不到当时那一行。
+
+    三路信息同时走：
+      - 全量输出 → runtime/stage_out.log（事后查）
+      - 关键步骤行 → 运行日志（tag 标阶段，如 [上品] 已选类目）
+      - runtime/progress.json 变化 → 一行一个品（第几个/当前料号/成败计数）
+    """
     if not os.path.isfile(script):
         return False, "缺少脚本: %s" % os.path.basename(script)
+    cmd = [RT if os.path.isfile(RT) else _py(), "-X", "utf8", "-u", script] + [str(a) for a in args]
+    log_fp = os.path.join(TG, "runtime", "stage_out.log")
     try:
-        r = subprocess.run([RT if os.path.isfile(RT) else _py(), "-X", "utf8", "-u", script] + [str(a) for a in args],
-                           cwd=os.path.dirname(script), capture_output=True, timeout=timeout)
-        out = (r.stdout or b"").decode("utf-8", "replace")
-        err = (r.stderr or b"").decode("utf-8", "replace")
-        # 全量输出落盘——脚本的关键判断（上传/提交）只打在 stdout，不存就没法事后查
+        p = subprocess.Popen(cmd, cwd=os.path.dirname(script), stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                             errors="replace", bufsize=1)
+    except Exception as e:
+        return False, "子进程启动失败: %s" % str(e)[:120]
+
+    q = queue.Queue()
+
+    def _drain():
         try:
-            with io.open(os.path.join(TG, "runtime", "stage_out.log"), "a", encoding="utf-8") as _f:
-                _f.write("\n=== %s %s rc=%s ===\n%s\n%s\n" % (
-                    _dt.datetime.now().strftime("%m-%d %H:%M:%S"),
-                    os.path.basename(script), r.returncode, out[-8000:], err[-2000:]))
+            for _line in p.stdout:
+                q.put(_line)
         except Exception:
             pass
-        txt = out if out.strip() else err
-        tail = [x for x in txt.strip().splitlines() if x.strip()]
-        return (r.returncode == 0), (tail[-1][:160] if tail else "(无输出)")
-    except subprocess.TimeoutExpired:
+        q.put(None)
+
+    threading.Thread(target=_drain, daemon=True).start()
+
+    prg_fp = os.path.join(TG, "runtime", "progress.json")
+    chunks = []
+    seen = None
+    t0 = time.time()
+    last_prg = 0.0
+    timed_out = False
+    while True:
+        try:
+            line = q.get(timeout=1)
+        except queue.Empty:
+            line = ""
+        if line is None:
+            break
+        if line:
+            chunks.append(line)
+            s = line.strip()
+            if tag and _is_step_line(s):
+                _wlog(s[:180],
+                      level="err" if any(k in s for k in ("失败", "错误", "⚠")) else "info",
+                      tag=tag)
+        now = time.time()
+        if now - t0 > timeout:
+            timed_out = True
+            try:
+                p.kill()
+            except Exception:
+                pass
+            break
+        if now - last_prg >= 2:
+            last_prg = now
+            try:
+                with io.open(prg_fp, encoding="utf-8") as _f:
+                    prg = json.load(_f)
+                upd = (_dt.datetime.strptime(prg.get("updated") or "", "%Y-%m-%d %H:%M:%S")
+                       if prg.get("updated") else None)
+                fresh = bool(upd) and (_dt.datetime.now() - upd).total_seconds() < 120
+                sig = (prg.get("kind"), prg.get("done"), prg.get("total"), prg.get("current"))
+                if fresh and sig != seen:
+                    seen = sig
+                    _wlog("%s %s/%s · 当前 %s · 成功%s 跳过%s 失败%s" % (
+                        prg.get("kind") or "跑批", prg.get("done"), prg.get("total"),
+                        prg.get("current") or "—", prg.get("ok"), prg.get("skip"), prg.get("fail")),
+                        level="warn" if prg.get("fail") else "info", tag="进度")
+            except Exception:
+                pass
+
+    out = "".join(x for x in chunks if x)
+    rc = p.returncode
+    try:
+        with io.open(log_fp, "a", encoding="utf-8") as _f:
+            _f.write("\n=== %s %s rc=%s ===\n%s\n" % (
+                _dt.datetime.now().strftime("%m-%d %H:%M:%S"),
+                os.path.basename(script), rc, out[-8000:]))
+    except Exception:
+        pass
+    if timed_out:
         return False, "子进程超时（%d 秒）" % timeout
-    except Exception as e:
-        return False, "子进程异常: %s" % str(e)[:120]
+    tail = [x for x in out.strip().splitlines() if x.strip()]
+    return (rc == 0), (tail[-1][:160] if tail else "(无输出)")
 
 
 def _types_of(lhs):
@@ -679,7 +806,8 @@ def handle(action, qs):
         except Exception:
             pass
         try:
-            _wlog("审核 %s => %s%s" % (lh, res, ("：" + note[:30]) if note else ""))
+            _wlog("审核 %s → %s%s" % (lh, res, ("：" + note[:120]) if note else ""),
+                  level="ok" if res == "放行" else "warn", tag="审核")
         except Exception:
             pass
         return {"ok": True, "lh": lh, "audit": res}
@@ -760,6 +888,13 @@ def handle(action, qs):
                 if it.get("type") and it["type"] != "查询异常":
                     rec["type_time"] = _dt.datetime.now().strftime("%m-%d %H:%M:%S")
             save_state(st)
+        except Exception:
+            pass
+        try:
+            from collections import Counter as _Cnt
+            _c = _Cnt((it.get("type") or "未定") for it in items)
+            _wlog("分流 %d 品：%s" % (len(items), " · ".join("%s %d" % (k, v) for k, v in _c.most_common())),
+                  level="ok", tag="分流")
         except Exception:
             pass
         # _classify_one 只回 {lh,id,title,type,dual,note}，没有素材/审核/推广列——
@@ -995,6 +1130,10 @@ def handle(action, qs):
                     _notes.append("%s%s" % (_lh, "✓" if _ok else "✗"))
             _items = scan_batch(lhs)
             _bad = [x for x in _items if x.get("缺列表")]
+            _wlog("素材 %d 品：齐 %d · 缺 %d%s" % (
+                len(_items), len(_items) - len(_bad), len(_bad),
+                ("（" + "；".join("%s→%s" % (m["lh"], ",".join(m["缺列表"])) for m in _bad[:6]) + "）") if _bad else ""),
+                level="warn" if _bad else "ok", tag="素材")
             _failN = sum(1 for n in _notes if str(n).endswith("✗"))
             _tip = ""
             if _failN:
@@ -1012,7 +1151,8 @@ def handle(action, qs):
             if not lhs:
                 return {"ok": False, "error": "缺 lhs"}
             fp = _write_tmp("attrs.csv", [[x] for x in lhs], ["料号"])
-            ok, tail = _run_script(os.path.join(TG, "fetch_attrs.py"), [fp, len(lhs)], timeout=3600)
+            ok, tail = _run_script(os.path.join(TG, "fetch_attrs.py"), [fp, len(lhs)],
+                                   timeout=3600, tag="属性")
             return {"ok": ok, "items": scan_batch(lhs), "msg": tail,
                     "error": None if ok else ("属性爬取失败：" + tail)}
         if key == "sort":
@@ -1023,6 +1163,8 @@ def handle(action, qs):
             # 落位后校验齐全：封面/详情图/视频/规格书
             items = scan_batch(lhs)
             _bad = [x for x in items if x.get("缺列表")]
+            _wlog("整理 %d 品，齐备 %d · 仍缺 %d" % (len(items), len(items) - len(_bad), len(_bad)),
+                  level="warn" if _bad else "ok", tag="整理")
             _chk = "齐全 ✓" if not _bad else "缺：" + "；".join("%s→%s" % (x["lh"], ",".join(x["缺列表"])) for x in _bad[:8])
             return {"ok": ok, "items": items, "msg": "%s｜齐全校验：%s" % (tail, _chk),
                     "error": None if ok else ("整理失败：" + tail)}
@@ -1047,10 +1189,10 @@ def handle(action, qs):
                         _recheck = "上品前复核 %d 品（type/id 已按线上重判）" % len(_rr.get("items") or [])
                     else:
                         _recheck = "上品前复核失败：%s" % str(_rr.get("error"))[:60]
-                        _wlog("上品前复核未完成：" + _recheck)
+                        _wlog("上品前复核未完成：" + _recheck, level="err", tag="复核")
             except Exception as _e:
                 _recheck = "上品前复核异常：%s" % str(_e)[:60]
-                _wlog(_recheck)
+                _wlog(_recheck, level="err", tag="复核")
             tmap = _types_of(lhs)
             new = [x for x in lhs if "新品" in tmap.get(x, "")]
             # force 时「双百跳过」的品也要进编辑队列：它们分数没问题，但素材可能是错的
@@ -1122,7 +1264,7 @@ def handle(action, qs):
             _oks = []
             if new:
                 ok, tail = _run_script(os.path.join(TG, "_xinpin_shangpin.py"),
-                                       ["--only", ",".join(new)] + _extra, timeout=7200)
+                                       ["--only", ",".join(new)] + _extra, timeout=7200, tag="上品")
                 _oks.append(ok)
                 notes.append("新品上品 %d 个 → %s（%s）" % (len(new), "ok" if ok else "失败", tail))
             if old:
@@ -1133,7 +1275,8 @@ def handle(action, qs):
                     # _batch_optimize.load_targets 读第 1 列=料号、第 4 列=淘宝ID
                     fp = _write_tmp("opt.csv", [[lh, "", "", iid] for lh, iid in pairs],
                                     ["料号", "标题", "类型", "淘宝ID"])
-                    ok, tail = _run_script(os.path.join(TG, "_batch_optimize.py"), [fp] + _extra, timeout=7200)
+                    ok, tail = _run_script(os.path.join(TG, "_batch_optimize.py"), [fp] + _extra,
+                                           timeout=7200, tag="优化")
                     _oks.append(ok)
                     notes.append("老品优化 %d 个 → %s（%s）" % (len(old), "ok" if ok else "失败", tail))
             _allok = all(_oks) if _oks else True
@@ -1154,7 +1297,7 @@ def handle(action, qs):
             fp = _write_tmp("tuiguang.csv", [[lh, iid] for lh, iid in pairs], ["料号", "淘宝ID"])
             ok, tail = _run_script(os.path.join(TG, "tuiguang_auto.py"),
                                    ["--excel", fp, "--limit", len(pairs),
-                                    "--campaigns", camps, "--no-pop"], timeout=7200)
+                                    "--campaigns", camps, "--no-pop"], timeout=7200, tag="推广")
             return {"ok": ok, "items": scan_batch(lhs),
                     "msg": "推广 %d 品（计划 %s）：%s" % (len(pairs), camps, tail),
                     "error": None if ok else ("推广失败：" + tail)}
