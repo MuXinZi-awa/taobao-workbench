@@ -771,6 +771,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 q = urllib.parse.parse_qs(p.split("?", 1)[1])
                 fn = q.get("f", ["tg_panel.log"])[0]
                 log_root = paths.TG_RUNTIME
+                # 多店铺隔离：流水线日志按活动账号分文件（pipeline_<memberID>.log）。
+                # 面板传的仍是插件 manifest 里的 pipeline.log，文件名让插件自己算——
+                # 否则切完连接读的还是老账号那个文件。插件不在/算不出来就照旧读 pipeline.log。
+                if os.path.basename(fn) == "pipeline.log":
+                    try:
+                        _lr = call_plugin("pipeline", "logfile", {})
+                        if isinstance(_lr, dict) and _lr.get("ok") and _lr.get("name"):
+                            fn = os.path.basename(str(_lr["name"]))
+                    except Exception:
+                        pass
                 fp2 = os.path.join(log_root, os.path.basename(fn))
                 all_mode = q.get("all", ["0"])[0] == "1"
                 if os.path.isfile(fp2):

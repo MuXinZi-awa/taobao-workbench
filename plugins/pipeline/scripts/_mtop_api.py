@@ -18,21 +18,14 @@ import urllib.parse
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.abspath(__file__))
-
-_d = os.path.dirname(os.path.abspath(__file__))
-while not os.path.isfile(os.path.join(_d, "paths.py")) and os.path.dirname(_d) != _d:
-    _d = os.path.dirname(_d)
-if _d not in sys.path:
-    sys.path.insert(0, _d)
-import paths
 def _profile_dir():
     """登录态 profile：跟随**激活的店铺连接**（多账号隔离）；取不到回退 .profile"""
     try:
-        _wb = paths.ROOT
+        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
         if _wb not in sys.path:
             sys.path.insert(0, _wb)
         # acct_profile.py 在「推广一键跑」——不把它加进 sys.path 会 import 失败并静默回退 .profile（=没登录态）
-        for _cand in (paths.TG_ROOT, BASE):
+        for _cand in (r"C:\Users\jdt-pty\Desktop\推广一键跑", BASE):
             if os.path.isdir(_cand) and _cand not in sys.path:
                 sys.path.insert(0, _cand)
         import acct_profile
@@ -53,7 +46,7 @@ SELL_URL = "https://myseller.taobao.com/home.htm/SellManage/on_sale?current=1&pa
 def _cred():
     try:
         import sys as _s
-        _wb = paths.ROOT
+        _wb = r"C:\Users\jdt-pty\Desktop\OH-WorkSpace\工具\workbench"
         if _wb not in _s.path:
             _s.path.insert(0, _wb)
         import conn_store
@@ -63,15 +56,17 @@ def _cred():
     except Exception:
         pass
     raise RuntimeError(
-        "未取到淘宝凭据：请在工作台「连接导航」添加并激活店铺连接。"
-        "（已不再内置默认账号密码：兜底默认值会随源码进入版本历史）")
+        "未取到淘宝凭据：请在连接库配置并激活店铺连接（连接导航 / config.json）。"
+        "（已不再内置默认账号密码）")
 
 
 ACCOUNT, PASSWORD = _cred()
 
 
 def find_chrome():
-    for p in paths.CHROME_CANDIDATES:
+    for p in (r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+              r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+              r"C:\Users\jdt-pty\AppData\Local\Google\Chrome\Application\chrome.exe"):
         if os.path.isfile(p):
             return p
     return None
@@ -88,14 +83,39 @@ class MtopClient:
         os.makedirs(RUNTIME_DIR, exist_ok=True)
 
     def open(self, headless=False):
-        """headless=True：无头启动（登录态探测等静默场景——不弹窗）"""
+        """headless=True：无头启动（登录态探测等静默场景——不弹窗）
+        CDP 优先：梓帆手开的 Chrome（--remote-debugging-port）持着登录态，连上去用它；
+        连不上才自起浏览器。不靠环境变量传递——工作台起子进程不传 env。
+        """
         from playwright.sync_api import sync_playwright
         self.p = sync_playwright().start()
-        self.ctx = self.p.chromium.launch_persistent_context(
-            self.PROFILE, executable_path=self.CHROME, headless=headless,
-            viewport={"width": 1400, "height": 900}, locale="zh-CN",
-            args=["--disable-blink-features=AutomationControlled"])
-        self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
+        self._cdp = (os.environ.get('HANA_CDP') or '').strip() or 'http://127.0.0.1:9222'
+        self._by_cdp = False
+        try:
+            _br = self.p.chromium.connect_over_cdp(self._cdp)
+            self.ctx = _br.contexts[0] if _br.contexts else _br.new_context()
+            self._by_cdp = True
+            print("[mtop] 已连 CDP %s（复用现有窗口）" % self._cdp)
+        except Exception as _e:
+            print("[mtop] CDP 不可用（%s），退回自起浏览器" % str(_e)[:50])
+            try:
+                self.ctx = self.p.chromium.launch_persistent_context(
+                    self.PROFILE, executable_path=self.CHROME, headless=headless,
+                    viewport={"width": 1400, "height": 900}, locale="zh-CN",
+                    ignore_default_args=['--password-store=basic', '--use-mock-keychain'],
+                    args=["--disable-blink-features=AutomationControlled"])
+            except Exception:
+                # 起不来必须把 playwright 收干净——否则同进程后续 sync_playwright() 会被污染
+                try:
+                    self.p.stop()
+                except Exception:
+                    pass
+                raise
+        # CDP 模式下别碰梓帆在看的标签，新开一个
+        if self._by_cdp:
+            self.page = self.ctx.new_page()
+        else:
+            self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
         self.page.goto(SELL_URL, timeout=60000, wait_until="domcontentloaded")
         self.page.wait_for_timeout(3000)
         self._login()
@@ -170,19 +190,12 @@ class MtopClient:
         self._refresh_token()
         if not self.token:
             raise RuntimeError("无 _m_h5_tk——需重新登录")
-        # fetch 必须带超时：淘宝对个别料号会一直不回话（正常品 0.5s 就回），
-        # 没超时的话这一个调用就无限等，一个品能把整批拖死。
         resp = self.page.evaluate(
             """async (a) => {
-                const c = new AbortController();
-                const t = setTimeout(() => c.abort(), a.ms);
-                try {
-                    const r = await fetch(a.u, {method: 'POST', credentials: 'include',
-                        signal: c.signal,
-                        headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: a.b});
-                    return await r.text();
-                } finally { clearTimeout(t); }
-            }""", {"u": url, "b": body, "ms": 45000})
+                const r = await fetch(a.u, {method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: a.b});
+                return await r.text();
+            }""", {"u": url, "b": body})
         return json.loads(resp)
 
     def search_items(self, kw, page=1, page_size=20):
@@ -249,8 +262,8 @@ class MtopClient:
 
     def search_and_dual(self, kw, page_size=20):
         """一次搜索同时拿到：搜到的商品 + 双百信息。
-        search_items 与 check_dual 打的是同一个接口、同一份数据，分两次说明白是白花
-        一次请求——而淘宝正是按“一段时间内的请求量”拦人的。"""
+        search_items 与 check_dual 打的是同一个接口、同一份数据，分两次是白花一次请求——
+        淘宝正是按“一段时间内的请求量”拦人的。_classify_one 依赖这个方法。"""
         data = {
             "url": "/taobao/manager/table.htm",
             "jsonBody": json.dumps({"tab": "on_sale", "pagination": {"current": 1, "pageSize": page_size},
@@ -286,8 +299,16 @@ class MtopClient:
         return out, "SUCCESS"
 
     def revive(self):
-        """被拦时重载卖家中心页：把验证态/软拦刷掉，顺便重拿 _m_h5_tk。
-        返回 token 是否拿到手（拿到才算活过来）。"""
+        """被拦/页面被关时救活。
+        CDP 模式下只重载自己开的标签页——**绝不 close() 梓帆的浏览器**（那是他在用的窗口）。"""
+        if getattr(self, "_by_cdp", False):
+            try:
+                self.page.goto(SELL_URL, timeout=60000, wait_until="domcontentloaded")
+                self.page.wait_for_timeout(2500)
+                self._refresh_token()
+                return bool(self.token)
+            except Exception:
+                return False
         try:
             self.page.goto(SELL_URL, timeout=60000, wait_until="domcontentloaded")
             self.page.wait_for_timeout(2000)
@@ -296,12 +317,8 @@ class MtopClient:
             self._refresh_token()
             return bool(self.token)
         except Exception:
-            return False
-
-    def revive(self):
-        """被拦/页面被关时重开浏览器。
-        注意：不能只刷新页面——错误若是“Target page, context or browser has been closed”，
-        说明页面/context 已经没了，刷新也没地方刷；整个重来才有效。"""
+            pass
+        # 页面/context 真没了才整体重来
         try:
             self.close()
         except Exception:
@@ -313,8 +330,12 @@ class MtopClient:
             return False
 
     def close(self):
+        # CDP 模式下 ctx 是梓帆的浏览器——关它等于关他的窗口，只关自己开的标签
         try:
-            if self.ctx:
+            if getattr(self, '_by_cdp', False):
+                if self.page:
+                    self.page.close()
+            elif self.ctx:
                 self.ctx.close()
         except Exception:
             pass

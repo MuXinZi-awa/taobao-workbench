@@ -1,0 +1,11 @@
+{
+  "id": "order-report",
+  "name": "订单看板",
+  "version": "0.3.0",
+  "desc": "已卖出宝贝：状态分布 + 最近订单列表（订单号/时间/商品/单价/数量/实收/交易状态/买家）与订单详情（收货信息/支付方式/发货状态），按 待付款→待发货→已发货→已签收→已完成 追踪环节；只读不改单",
+  "panel": "panel.html",
+  "entry": "panel.html",
+  "has_server": true,
+  "icon": "📦",
+  "log": "order_report.log"
+}

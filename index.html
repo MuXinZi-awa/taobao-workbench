@@ -572,7 +572,10 @@ function logParse(line){
 }
 function logRefresh(){ const box=document.getElementById('log'); if(!box) return;
  fetch(API+'/api/logtail?f='+encodeURIComponent(logFile_)+(logAll?'&all=1':'')).then(r=>r.json()).then(d=>{
-  if(d.ok){ logLines_=d.lines||[]; logView(); }
+  if(d.ok){ logLines_=d.lines||[]; logView();
+   /* 文件名跟着后端实际读的那个（多店铺：pipeline_<memberID>.log）——不然标签在“说谎” */
+   if(d.name){ const lf=document.getElementById('logf'); if(lf&&lf.getAttribute('data-f')!==d.name){ lf.setAttribute('data-f',d.name); lf.textContent=d.name+'（'+(curPlugin?curPlugin.name:'')+'）'; } }
+  }
  }).catch(()=>{}); }
 function logLv(v){ logLv_=v; document.querySelectorAll('.lgchip').forEach(x=>x.classList.toggle('on',x.dataset.lv===v)); logView(); }
 function logView(){ const box=document.getElementById('log'); if(!box) return;

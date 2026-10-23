@@ -27,6 +27,14 @@ HB = os.path.join(DATA, "scheduler_heartbeat.json")
 
 # ── 动作注册表：label(显示) / cmd(命令) / args(参数模板，{key} 用 params 填充) / kind
 ACTIONS = {
+    "order_snapshot": {
+        "label": "订单 · 昨日快照入库（T+1）",
+        "kind": "script",
+        # 采集与入库逻辑在 order-report 插件里，这里只做一次 HTTP 调用，不重写一套
+        "script": os.path.join(TG, "order_snapshot.py"),
+        "args": [],
+        "params": [{"key": "account", "label": "关联账号", "type": "account", "default": ""}],
+    },
     "report_full": {
         "label": "报表 · 全量采集",
         "kind": "script",

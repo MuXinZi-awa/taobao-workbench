@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>订单看板</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif;
+         background:#f6f7f9; color:#1f2328; }
+  .bar { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .bar h2 { margin:0; font-size:16px; font-weight:600; }
+  .spacer { flex:1; }
+  button { padding:7px 16px; border:1px solid #d0d7de; background:#fff; border-radius:6px;
+           cursor:pointer; font-size:13px; }
+  button:hover { background:#f3f4f6; }
+  button:disabled { opacity:.55; cursor:default; }
+  button.primary { background:#2563eb; color:#fff; border-color:#2563eb; }
+  button.primary:hover { background:#1d4ed8; }
+  button.sm { padding:4px 10px; font-size:12px; }
+  .dates { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+  .dates button { padding:5px 14px; font-size:12px; border-radius:20px; }
+  .dates button.on { background:#111827; color:#fff; border-color:#111827; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); gap:10px; margin-bottom:16px; }
+  .card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; }
+  .card .k { color:#6b7280; font-size:12px; margin-bottom:6px; }
+  .card .v { font-size:24px; font-weight:600; letter-spacing:-.5px; }
+  .card.hot { border-color:#fca5a5; background:#fef2f2; }
+  .card.hot .v { color:#dc2626; }
+  .card.first { border-color:#93c5fd; background:#eff6ff; }
+  .card.first .v { color:#1d4ed8; }
+  .card .v .na { font-size:18px; color:#9ca3af; font-weight:400; }
+  .panel { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .panel h3 { margin:0 0 10px; font-size:13px; color:#374151; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .panel h3 .cnt { font-weight:400; color:#6b7280; font-size:12px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:8px; }
+  .tab { padding:4px 10px; background:#f3f4f6; border-radius:20px; font-size:12px; color:#374151; }
+  .tab b { color:#111827; margin-left:4px; }
+  .muted { color:#9ca3af; font-size:12px; }
+  .err { color:#b91c1c; background:#fef2f2; border:1px solid #fecaca; padding:10px 12px;
+         border-radius:8px; font-size:13px; margin-bottom:12px; }
+  .warn { color:#92400e; background:#fffbeb; border:1px solid #fde68a; padding:10px 12px;
+          border-radius:8px; font-size:13px; margin-bottom:12px; }
+  pre { margin:0; white-space:pre-wrap; word-break:break-all; font-size:12px; color:#4b5563; }
+  details > summary { cursor:pointer; font-size:13px; color:#374151; font-weight:600; }
+  details { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:12px 16px; margin-bottom:14px; }
+  details .inner { padding-top:10px; }
+
+  /* ---- 订单表 ---- */
+  .ordwrap { background:#fff; border:1px solid #e5e7eb; border-radius:10px; margin-bottom:14px; overflow:hidden; }
+  .ordhead { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid #eef0f2; }
+  .ordhead h3 { margin:0; font-size:13px; font-weight:600; color:#374151; }
+  .scroll { max-height:460px; overflow:auto; }
+  table.ord { width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.ord th { position:sticky; top:0; background:#fafbfc; text-align:left; font-weight:600;
+                 color:#6b7280; padding:8px 10px; border-bottom:1px solid #eef0f2; white-space:nowrap; z-index:2; }
+  table.ord td { padding:9px 10px; border-bottom:1px solid #f3f4f6; vertical-align:top; }
+  table.ord tr.row { cursor:pointer; }
+  table.ord tr.row:hover { background:#f8fafc; }
+  table.ord tr.row.sel { background:#eff6ff; }
+  .ono { font-family:ui-monospace,Consolas,monospace; font-size:12px; color:#374151; white-space:nowrap; }
+  .ttl { max-width:280px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box;
+         -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.45; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11.5px;
+           white-space:nowrap; border:1px solid transparent; }
+  .b-gray  { background:#f3f4f6; color:#4b5563; border-color:#e5e7eb; }
+  .b-yellow{ background:#fffbeb; color:#b45309; border-color:#fde68a; }
+  .b-blue  { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+  .b-cyan  { background:#ecfeff; color:#0e7490; border-color:#a5f3fc; }
+  .b-green { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+  .b-red   { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+  .steps { display:flex; gap:3px; align-items:center; margin-top:4px; }
+  .steps i { width:12px; height:3px; border-radius:2px; background:#e5e7eb; display:block; }
+  .steps i.on { background:#2563eb; }
+  .steps i.done { background:#93c5fd; }
+
+  /* ---- 详情 ---- */
+  .dt { display:grid; grid-template-columns:96px 1fr; gap:6px 12px; font-size:13px; }
+  .dt .k { color:#6b7280; }
+  .dt .v { color:#111827; word-break:break-all; }
+  .dt .v.na { color:#9ca3af; }
+  .kv-note { font-size:11.5px; color:#9ca3af; margin-top:2px; }
+  .goods-list { margin:6px 0 0; padding-left:16px; font-size:12.5px; color:#374151; }
+  .goods-list li { margin:2px 0; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <h2>📦 订单看板</h2>
+    <span class="muted" id="ts">未采集</span>
+    <span class="spacer"></span>
+    <button id="btn" class="primary">刷新</button>
+  </div>
+
+  <div class="dates" id="dates">
+    <button data-date="current" class="on">当前页（全部）</button>
+    <button data-date="today">今天</button>
+    <button data-date="yesterday">昨天</button>
+    <button data-date="7d">近 7 天</button>
+  </div>
+
+  <div id="err"></div>
+  <div class="cards" id="cards"></div>
+
+  <div class="ordwrap">
+    <div class="ordhead">
+      <h3>最近订单</h3>
+      <span class="muted" id="ordCnt">—</span>
+      <span class="spacer"></span>
+      <span class="muted" id="ordTs"></span>
+    </div>
+    <div class="scroll" id="ordBox"><div class="muted" style="padding:14px 16px">点「刷新」采集订单列表</div></div>
+  </div>
+
+  <div class="panel" id="detailBox" style="display:none"></div>
+
+  <details>
+    <summary>诊断（状态标签 / 日期控件 / 采集过程 / 正文片段）</summary>
+    <div class="inner">
+      <div class="panel" style="margin-bottom:10px">
+        <h3>页面上的全部状态标签</h3>
+        <div class="tabs" id="tabs"><span class="muted">—</span></div>
+      </div>
+      <div class="panel" style="margin-bottom:10px">
+        <h3>日期控件（真实 DOM，只读）</h3>
+        <div class="tabs" id="dateCtl"><span class="muted">—</span></div>
+      </div>
+      <div class="panel" style="margin-bottom:10px">
+        <h3>采集过程</h3>
+        <ul class="stages" id="stages" style="margin:0;padding-left:18px;font-size:12px;color:#6b7280"><li class="muted">—</li></ul>
+      </div>
+      <div class="panel" style="margin-bottom:0">
+        <h3>页面正文片段（核对用）</h3>
+        <pre id="head">—</pre>
+      </div>
+    </div>
+  </details>
+
+<script>
+const $ = id => document.getElementById(id);
+const API = '/api/plg/order-report/';
+
+// 业务优先级：待发货最要紧，放第一张。
+const PRIORITY = ['待发货', '即将超时', '发货已超时', '退款中', '已发货', '已完成', '已成功', '确认中', '待付款', '已关闭'];
+const HOT = ['待发货', '即将超时', '发货已超时', '退款中'];
+
+// 环节 → 颜色 / 进度位置。待付款灰、待发货黄、退款中红、已完成绿（梓帆点的四个色）。
+const STAGE_STYLE = {
+  '待付款': {cls:'b-gray',   step:1},
+  '待发货': {cls:'b-yellow', step:2},
+  '已发货': {cls:'b-blue',   step:3},
+  '已签收': {cls:'b-cyan',   step:4},
+  '已完成': {cls:'b-green',  step:5},
+  '退款中': {cls:'b-red',    step:0},
+  '已关闭': {cls:'b-gray',   step:0}
+};
+const STEPS = ['待付款', '待发货', '已发货', '已签收', '已完成'];
+
+let curDate = 'current';
+let orders = [];
+let selNo = '';
+
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function sortCounts(list){
+  const rank = n => { const i = PRIORITY.indexOf(n); return i < 0 ? 999 : i; };
+  return list.map((c,i)=>({...c,_i:i}))
+             .sort((a,b)=> rank(a.name) - rank(b.name) || a._i - b._i)
+             .map(({_i, ...c})=>c);
+}
+
+function stepBar(stage){
+  const st = STAGE_STYLE[stage];
+  if (!st || !st.step) return '';
+  return '<div class="steps">' + STEPS.map((s,i)=>
+      '<i class="' + (i+1 < st.step ? 'done' : (i+1 === st.step ? 'on' : '')) + '"></i>').join('') + '</div>';
+}
+
+function stageBadge(stage, raw){
+  const st = STAGE_STYLE[stage] || {cls:'b-gray'};
+  const label = stage || '未知';
+  const tip = raw && raw !== stage ? ' title="原始：' + esc(raw) + '"' : '';
+  return '<span class="badge ' + st.cls + '"' + tip + '>' + esc(label) + '</span>';
+}
+
+function renderOrders(){
+  if (!orders.length){ $('ordBox').innerHTML = '<div class="muted" style="padding:14px 16px">没读到订单</div>';
+                       $('ordCnt').textContent = '0 单'; return; }
+  $('ordCnt').textContent = orders.length + ' 单';
+  const rows = orders.map(o => {
+    const noship = o.qty ? o.qty + ' 件' : '—';
+    return '<tr class="row' + (o.orderNo && o.orderNo === selNo ? ' sel' : '') +
+      '" data-no="' + esc(o.orderNo) + '">' +
+      '<td class="ono">' + esc((o.createdAt||'').replace(/^\d{4}-/,'')) + '</td>' +
+      '<td class="ono">' + esc(o.orderNo || '—') + '</td>' +
+      '<td><div class="ttl" title="' + esc(o.goodsRaw || o.goods || '') + '">' + esc(o.goods || '—') + '</div></td>' +
+      '<td class="num">' + (o.price ? '¥' + esc(o.price) : '—') + '</td>' +
+      '<td class="num">' + esc(o.qty || '—') + '</td>' +
+      '<td class="num">' + (o.paid ? '¥' + esc(o.paid) : '—') + '</td>' +
+      '<td>' + stageBadge(o.stage, [o.tradeStatus, o.fulfillStatus].filter(Boolean).join(' / ')) + stepBar(o.stage) + '</td>' +
+      '<td>' + esc(o.buyer || '—') + '</td>' +
+      '</tr>';
+  }).join('');
+  $('ordBox').innerHTML =
+    '<table class="ord"><thead><tr>' +
+    '<th>下单时间</th><th>订单号</th><th>商品</th><th class="num">单价</th>' +
+    '<th class="num">数量</th><th class="num">实收</th><th>环节</th><th>买家</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function showDetail(o, d){
+  const f = (d && d.fields) || {};
+  const miss = new Set((d && d.missing) || []);
+  const cell = (v, note) => v
+    ? '<div class="v">' + esc(v) + (note ? '<div class="kv-note">' + esc(note) + '</div>' : '') + '</div>'
+    : '<div class="v na">读不到' + (note ? '<div class="kv-note">' + esc(note) + '</div>' : '') + '</div>';
+
+  const goods = (d && d.row && d.row.goods) ? d.row.goods : (o && o.goods);
+  // 一个订单多件商品时，列表里就有 items，直接列成明细
+  const items = ((d && d.row && d.row.items) || (o && o.items) || []);
+  const goodsList = items.length > 1
+    ? '<ul class="goods-list">' + items.map(x => '<li>' + esc(x.goods || '—')
+        + (x.price ? ' · ¥' + esc(x.price) : '') + (x.qty ? ' × ' + esc(x.qty) : '')
+        + (x.trade ? ' · ' + esc(x.trade) : '') + '</li>').join('') + '</ul>'
+    : '';
+  const html =
+    '<h3>订单详情 <span class="ono">' + esc((o && o.orderNo) || (d && d.orderNo) || '') + '</span>' +
+    '<span class="spacer" style="flex:1"></span>' +
+    '<button class="sm" id="btnClose">收起</button></h3>' +
+    '<div class="dt">' +
+      '<div class="k">下单时间</div><div class="v">' + esc((o && o.createdAt) || (f.createdAt) || '—') + '</div>' +
+      '<div class="k">订单号</div><div class="v ono">' + esc((o && o.orderNo) || (d && d.orderNo) || '—') + '</div>' +
+      '<div class="k">买家昵称</div>' + cell((o && o.buyer) || f.buyer, '页面上是脱敏名就照实显示') +
+      '<div class="k">商品</div><div class="v">' + esc(goods || '—') + goodsList + '</div>' +
+      '<div class="k">单价 / 数量</div><div class="v">' + esc(((o && o.price) ? '¥' + o.price : '—')) + ' / ' + esc((o && o.qty) || '—') + '</div>' +
+      '<div class="k">实收</div><div class="v">' + esc((o && o.paid) ? '¥' + o.paid : (f.paid || '—')) + '</div>' +
+      '<div class="k">交易状态</div><div class="v">' + esc((o && o.tradeStatus) || '—') + '</div>' +
+      '<div class="k">履约/售后</div><div class="v">' + esc((o && o.fulfillStatus) || '—') + '</div>' +
+      '<div class="k">详情页状态</div>' + cell(f.orderState, '详情页「订单状态」行') +
+      '<div class="k">商家实收</div>' + cell(f.sellerPaid, '不含快递费') +
+      '<div class="k">环节</div><div class="v">' + stageBadge((o && o.stage), '') + stepBar((o && o.stage)) + '</div>' +
+      '<div class="k">收货人</div>' + cell(f.receiver, miss.has('receiver') ? '详情页没读到' : '') +
+      '<div class="k">联系电话</div>' + cell(f.phone, miss.has('phone') ? '详情页没读到（脱敏号也照实显示）' : '') +
+      '<div class="k">收货地址</div>' + cell(f.address, miss.has('address') ? '详情页没读到' : '') +
+      '<div class="k">支付方式</div>' + cell(f.pay || (o && o.pay),
+          f.pay ? '' : ((o && o.pay) ? '取自列表' : '详情页没读到')) +
+      '<div class="k">发货 / 物流</div>' + cell(f.ship, miss.has('ship') ? '详情页没读到' : '') +
+      '<div class="k">买家留言</div>' + cell(f.note, '没留言就是空') +
+    '</div>' +
+    (d && d.fetchedAt ? '<div class="kv-note">详情抓取于 ' + esc(d.fetchedAt) + (d.url ? ' · ' + esc(d.url) : '') + '</div>' : '') +
+    (d && d.note ? '<div class="kv-note">采集说明：' + esc(d.note) + '</div>' : '') +
+    ((d && d.stages && d.stages.length) ? '<details style="margin-top:10px;border:0;padding:0"><summary style="font-size:12px;color:#6b7280">详情采集过程</summary><ul style="margin:6px 0 0;padding-left:18px;font-size:12px;color:#6b7280">' +
+        d.stages.map(s=>'<li>'+esc(s)+'</li>').join('') + '</ul></details>' : '');
+  const box = $('detailBox');
+  box.style.display = 'block';
+  box.innerHTML = html;
+  const c = $('btnClose');
+  if (c) c.onclick = () => { box.style.display = 'none'; };
+}
+
+async function openDetail(orderNo){
+  const o = orders.find(x => x.orderNo === orderNo) || {orderNo: orderNo};
+  selNo = orderNo;
+  renderOrders();
+  showDetail(o, null);
+  const box = $('detailBox');
+  box.querySelector('h3').innerHTML += '<span class="muted" id="dtState"> 抓取中…（要起浏览器，约 40 秒）</span>';
+  try{
+    const r = await fetch(API + 'detail?orderNo=' + encodeURIComponent(orderNo)).then(x=>x.json());
+    const d = r.data || {};
+    if (!r.ok) { $('dtState') && ($('dtState').textContent = ' 抓取失败：' + (r.error || '')); }
+    showDetail(o, d);
+  }catch(e){
+    $('dtState') && ($('dtState').textContent = ' 请求失败：' + e.message);
+  }
+}
+
+function paint(r){
+  const d = r.data || {};
+  if (d.needLogin) {
+    const wu = d.warmup || {};
+    $('err').innerHTML = '<div class="warn">订单页没等到状态 tab。<br>'
+      + '落地：' + esc(d.url || '—') + '<br>'
+      + '预热商品页：' + (wu.ok ? '通' : '也落在登录页') + (wu.url ? '（' + esc(wu.url) + '）' : '') + '<br>'
+      + '<b>先别急着判登录失效</b>——headless、冷启动深链、同一账号短时间多次开窗都会落登录页。</div>';
+  } else if(!r.ok){
+    $('err').innerHTML = '<div class="err">' + esc(r.error || '采集失败') + '</div>';
+  } else {
+    $('err').innerHTML = '';
+  }
+
+  const counts = sortCounts(d.counts || []);
+  $('cards').innerHTML = counts.length
+    ? counts.map(c => {
+        const isFirst = c.name === '待发货';
+        const cls = ['card',
+                     !isFirst && HOT.includes(c.name) && c.n > 0 ? 'hot' : '',
+                     isFirst ? 'first' : ''].filter(Boolean).join(' ');
+        const v = (c.n === null || c.n === undefined)
+          ? '<span class="na" title="页面没有显示这个状态的计数">—</span>' : c.n;
+        return '<div class="'+cls+'"><div class="k">'+esc(c.name)+'</div><div class="v">'+v+'</div></div>';
+      }).join('')
+    : '<div class="muted">没有读到计数</div>';
+
+  const dt = d.date || {};
+  if (dt.requested && dt.requested !== 'current') {
+    const hint = dt.applied
+      ? '日期筛选已应用（' + esc(dt.note || '') + '）。卡片仍是当前页状态分布，日单量 → ' + (dt.total == null ? '—' : dt.total) + ' 单'
+      : '日期筛选没应用上：' + esc(dt.note || '未取到') + '（卡片是当前页数据）';
+    $('err').innerHTML += '<div class="' + (dt.applied ? 'warn' : 'err') + '">' + hint + '</div>';
+  }
+
+  if (d.orders) {
+    orders = d.orders;
+    renderOrders();
+    if (d.ordersStale) $('ordTs').textContent = '新采集失败，这是 ' + d.ordersStale + ' 的缓存';
+  }
+  const om = d.orderMeta || {};
+  $('ordCnt').textContent = (orders.length ? orders.length + ' 单' : '0 单')
+    + (om.note ? ' · ' + om.note : '')
+    + (om.pager && om.pager.total ? ' · 页面共 ' + om.pager.total + ' 单' : '');
+  $('ts').textContent = (d.fetchedAt || new Date().toLocaleTimeString('zh-CN')) + ' 采集';
+  if (d.fetchedAt) $('ordTs').textContent = d.fetchedAt + ' 采集';
+
+  $('dateCtl').innerHTML = (d.dateProbe && d.dateProbe.length)
+    ? d.dateProbe.map(x => '<span class="tab">'+esc(x.label)
+        + (x.inputs && x.inputs.length ? '<b>' + esc(x.inputs.map(i=>i.ph||'?').join(' / ')) + '</b>' : '')
+        + '</span>').join('') : '<span class="muted">—</span>';
+  $('stages').innerHTML = (d.stages && d.stages.length)
+    ? d.stages.map(s=>'<li>'+esc(s)+'</li>').join('') : '<li class="muted">—</li>';
+  $('tabs').innerHTML = (d.tabs && d.tabs.length)
+    ? d.tabs.map(t=>'<span class="tab">'+esc(t)+'</span>').join('') : '<span class="muted">—</span>';
+  $('head').textContent = d.bodyHead || '—';
+}
+
+async function load(dateKey){
+  curDate = dateKey || curDate;
+  [...$('dates').querySelectorAll('button')].forEach(b=>b.classList.toggle('on', b.dataset.date===curDate));
+  const btn = $('btn');
+  btn.disabled = true; btn.textContent = '采集中…';
+  $('err').innerHTML = '';
+  try{
+    const r = await fetch(API + 'overview?date=' + encodeURIComponent(curDate)).then(x=>x.json());
+    paint(r);
+  }catch(e){
+    $('err').innerHTML = '<div class="err">请求失败：'+esc(e.message)+'</div>';
+  }finally{
+    btn.disabled = false; btn.textContent = '刷新';
+  }
+}
+
+// 先渲染缓存（不启动浏览器），点刷新才真采集
+async function boot(){
+  try{
+    const r = await fetch(API + 'orders').then(x=>x.json());
+    const d = (r && r.data) || {};
+    if (d.orders && d.orders.length){
+      orders = d.orders;
+      renderOrders();
+      $('ordCnt').textContent = orders.length + ' 单（缓存）';
+      $('ordTs').textContent = (d.fetchedAt || '') + ' 的缓存';
+    }
+  }catch(e){}
+}
+
+$('btn').onclick = () => load(curDate);
+$('dates').onclick = e => {
+  const b = e.target.closest('button');
+  if (b && !b.disabled) load(b.dataset.date);
+};
+$('ordBox').onclick = e => {
+  const tr = e.target.closest('tr.row');
+  if (!tr) return;
+  const no = tr.dataset.no;
+  if (!no) { $('err').innerHTML = '<div class="warn">这一行没读到订单号，打不开详情。</div>'; return; }
+  openDetail(no);
+};
+boot();
+</script>
+</body>
+</html>

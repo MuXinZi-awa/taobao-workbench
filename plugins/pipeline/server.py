@@ -175,25 +175,52 @@ def scan_batch(lhs):
     return items
 
 import datetime as _dt
-_LOG_FP = os.path.join(paths.TG_RUNTIME, "pipeline.log")
 
 
-_rot_day = None
+def _log_fp():
+    """当前活动店铺的运行日志路径：`pipeline_<memberID>.log`（多店铺隔离）。
+
+    **必须每次现算，不能在模块级算一次存起来**：插件模块每个请求都重新 exec，
+    而面板切连接是在运行中发生的——存成常量的话切完还往老账号的文件里写（1017 三个店混一个文件的由来）。
+    memberID 从连接表拿（conn_store.active_of("taobao")）；取不到（没配连接/库读不到）
+    就退回 `pipeline.log`——不报错、不丢日志。
+    """
+    mid = ""
+    try:
+        mid = str((_acct() or {}).get("member_id") or "").strip()
+    except Exception:
+        mid = ""
+    mid = "".join(c for c in mid if c.isalnum() or c in "-_")
+    if not mid:
+        return os.path.join(paths.TG_RUNTIME, "pipeline.log")
+    return os.path.join(paths.TG_RUNTIME, "pipeline_%s.log" % mid)
+
+
+def _log_name():
+    """日志文件名（面板/内核读日志用——与 _log_fp() 同源，不许各自拼）"""
+    return os.path.basename(_log_fp())
+
+
+_rot_day = {}
 
 
 def _maybe_rotate():
-    """按天归档：日志文件日期≠今天 → 改名加日期保留"""
+    """按天归档：日志文件日期≠今天 → 改名加日期保留（按账号各自归档、各自清理）"""
     import datetime as _dt2, os as _os2
-    global _rot_day
+    try:
+        fp = _log_fp()
+    except Exception:
+        return
     try:
         today = _dt2.date.today()
-        if _rot_day == today:
+        if _rot_day.get(fp) == today:
             return
-        if _os2.path.isfile(_LOG_FP):
-            m = _dt2.date.fromtimestamp(_os2.path.getmtime(_LOG_FP))
+        if _os2.path.isfile(fp):
+            m = _dt2.date.fromtimestamp(_os2.path.getmtime(fp))
             if m != today:
-                _os2.rename(_LOG_FP, _LOG_FP.replace(".log", "_%s.log" % m.strftime("%Y%m%d")))
-        _rot_day = today
+                _base = fp[:-4] if fp.endswith(".log") else fp
+                _os2.rename(fp, "%s_%s.log" % (_base, m.strftime("%Y%m%d")))
+        _rot_day[fp] = today
     except Exception:
         pass
     # 清理：超期归档删除（保留天数 log_keep_days.json 默认 30）
@@ -204,7 +231,7 @@ def _maybe_rotate():
             _kd = int(open(paths.LOG_KEEP_DAYS, encoding="utf-8").read().strip())
         except Exception:
             pass
-        _base = _LOG_FP.replace(".log", "")
+        _base = fp[:-4] if fp.endswith(".log") else fp
         for _f in _g3.glob(_base + "_*.log"):
             if _t3.time() - os.path.getmtime(_f) > _kd * 86400:
                 try:
@@ -224,10 +251,11 @@ def _dbg_recent(msg, secs=8):
     """
     try:
         import re as _re
-        sz = os.path.getsize(_LOG_FP)
+        _fp = _log_fp()          # 跟当前活动账号走：去重看的是本账号的尾行
+        sz = os.path.getsize(_fp)
         if not sz:
             return False
-        with io.open(_LOG_FP, "rb") as f:
+        with io.open(_fp, "rb") as f:
             f.seek(max(0, sz - 900))
             tail = f.read().decode("utf-8", "replace")
         lines = [x for x in tail.splitlines() if x.strip()]
@@ -256,7 +284,7 @@ def _wlog(msg, level="info", tag=""):
     if tag:
         head += " [%s]" % tag
     try:
-        with io.open(_LOG_FP, "a", encoding="utf-8") as f:
+        with io.open(_log_fp(), "a", encoding="utf-8") as f:
             f.write("%s %s\n" % (head, msg))
     except Exception:
         pass
@@ -690,6 +718,13 @@ def _run_script(script, args, timeout=3600, tag=""):
                 pass
 
     out = "".join(x for x in chunks if x)
+    # rc 必须等子进程真退出再读：drain 线程先吐 None 就 break 时 p.returncode 还是 None，
+    # 而 None != 0 → 会把“成功1”判成失败（1021 W3S-P012 实测）。
+    # 只补一个 wait，不改“rc 非零即失败”这个判据。
+    try:
+        p.wait(timeout=60)
+    except Exception:
+        pass
     rc = p.returncode
     try:
         with io.open(log_fp, "a", encoding="utf-8") as _f:
@@ -713,6 +748,33 @@ def _types_of(lhs):
 def _ids_of(lhs):
     st = load_state()
     return [(lh, str((st["items"].get(lh) or {}).get("id") or "").strip()) for lh in lhs]
+
+
+def _shop_id_check(ids):
+    """核 itemId 是否真属于当前登录店 → {ok, shop, found, missing, error}
+
+    为什么需要：state.json 是全局单文件、**没有店铺字段**，两个店共用。里面记的 type/itemId
+    可能是别家店的——按 state 走编辑，会拿主店的 itemId 去开本店编辑页，不报错、日志还写"分流完成"。
+    实现走推广一键跑的 _shop_has_ids.py（全店在售清单比对，带 30 分钟缓存）；
+    **不用 queryItemId**：二店实测不生效，拿确定在售的 id 查返回空行。
+    """
+    ids = [str(x).strip() for x in (ids or []) if str(x).strip()]
+    if not ids:
+        return {"ok": 0, "error": "没有 id 可核", "missing": [], "found": []}
+    fp = os.path.join(paths.TG_RUNTIME, "_shop_ids_check.json")
+    try:
+        if os.path.exists(fp):
+            os.remove(fp)
+    except Exception:
+        pass
+    try:
+        _run_script(os.path.join(TG, "_shop_has_ids.py"), [",".join(ids)], timeout=1200)
+    except Exception as e:
+        return {"ok": 0, "error": "核店脚本异常：%s" % str(e)[:60], "missing": [], "found": []}
+    try:
+        return json.load(io.open(fp, encoding="utf-8"))
+    except Exception as e:
+        return {"ok": 0, "error": "读核店结果失败：%s" % str(e)[:60], "missing": [], "found": []}
 
 
 # ── 面板设置（存 state.json 顶层 settings）──────────────────────────
@@ -782,6 +844,13 @@ def handle(action, qs):
     if action == "acct":
         _a = _acct()
         return {"ok": True, "account": {"name": _a.get("name") or "", "member_id": _a.get("member_id") or ""}}
+    if action == "logfile":
+        # 当前活动账号的日志文件名（面板/内核读日志用）——动态算，切连接后立刻跟着变
+        try:
+            return {"ok": True, "name": _log_name(), "path": _log_fp(),
+                    "member_id": str((_acct() or {}).get("member_id") or "")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:80]}
     if action == "scan":
         lhs = qs.get("lhs", "").split(",") if qs.get("lhs") else []
         return {"ok": True, "items": scan_batch(lhs)}
@@ -1235,7 +1304,67 @@ def handle(action, qs):
                 old = old + [x for x in _conf if x not in old]
                 notes.append("⚠ %d 品判新品但 state 留着旧 id（搜索漏了已有商品）——按旧 id 走编辑：%s"
                              % (len(_conf), ",".join(_conf[:6])))
+            # ── 店铺维度防线（1023 立）──────────────────────────────────────────
+            # state 没有店铺字段 → 里面记的 itemId 可能是别家店的。上品前拿本店在售清单核一遍：
+            # 有 id 但本店查无此商品 → 判「本地有 ID、本店没有」→ 改走新建，不拿别家 id 去编辑。
+            if old:
+                _chk = None
+                try:
+                    _chk = _shop_id_check([iid for _lh, iid in _ids_of(old) if iid])
+                except Exception as _e:
+                    _chk = {"ok": 0, "error": str(_e)[:60]}
+                if _chk and _chk.get("ok"):
+                    _miss = set(_chk.get("missing") or [])
+                    _moved = [lh for lh, iid in _ids_of(old) if iid in _miss]
+                    if _moved:
+                        old = [lh for lh in old if lh not in _moved]
+                        new = new + [lh for lh in _moved if lh not in new]
+                        notes.append("⚠ %d 品 state 有 ID 但本店在售查无此商品——改走新建：%s"
+                                     % (len(_moved), ",".join(_moved[:6])))
+                        try:
+                            _wlog("店铺防线：%d 品 state 有 ID 但本店（%s）查无，改走新建：%s"
+                                  % (len(_moved), _chk.get("shop") or "?", ",".join(_moved[:8])),
+                                  level="warn", tag="复核")
+                        except Exception:
+                            pass
+                    else:
+                        notes.append("店铺防线：%d 品 id 均属本店（%s，在售 %s）"
+                                     % (len(old), _chk.get("shop") or "?", _chk.get("total")))
+                else:
+                    notes.append("⚠ 店铺防线未生效（%s）——按 state 分流，注意跨店 ID"
+                                 % ((_chk or {}).get("error") or "未知"))
+                    try:
+                        _wlog("店铺防线未生效：%s" % ((_chk or {}).get("error") or "未知"),
+                              level="err", tag="复核")
+                    except Exception:
+                        pass
             if skip:
+                # 1023 补：防线原来只护 old（编辑队列），漏了 skip。
+                # 反直觉：type=「老品-双百跳过」的品会被归进 skip，而它们往往正是
+                #   「主店上过、本店没上」的那批——不管它，整批直接静默不见。
+                # 判据同 old：state 有 id 但本店在售查无 → 拉回新建。
+                _sk_ids = [(lh, iid) for lh, iid in _ids_of(skip) if iid]
+                if _sk_ids:
+                    try:
+                        _chk2 = _shop_id_check([iid for _lh, iid in _sk_ids])
+                    except Exception as _e2:
+                        _chk2 = {"ok": 0, "error": str(_e2)[:60]}
+                    if _chk2.get("ok"):
+                        _miss2 = set(_chk2.get("missing") or [])
+                        _moved2 = [lh for lh, iid in _sk_ids if iid in _miss2]
+                        if _moved2:
+                            skip = [lh for lh in skip if lh not in _moved2]
+                            new = new + [lh for lh in _moved2 if lh not in new]
+                            notes.append("⚠ %d 品 type 是双百跳过、但本店在售查无此 ID——拉回新建：%s"
+                                         % (len(_moved2), ",".join(_moved2[:6])))
+                            try:
+                                _wlog("店铺防线(skip)：%d 品拉回新建：%s"
+                                      % (len(_moved2), ",".join(_moved2[:8])), level="warn", tag="复核")
+                            except Exception:
+                                pass
+                    else:
+                        notes.append("⚠ skip 段防线未生效（%s）——这 %d 品会跳过"
+                                     % ((_chk2 or {}).get("error") or "未知", len(_sk_ids)))
                 notes.append("跳过 %d 个（type 未定/双百跳过）：%s" % (len(skip), ",".join(skip[:6])))
             # 实现可切：脚本(UI) / 接口(API)。默认脚本——接口版目前只能到「照镜子」
             _impl = (qs.get("impl") or "").strip() or str(get_settings().get("pub_impl") or "script")

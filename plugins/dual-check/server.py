@@ -20,25 +20,53 @@ RT = paths.TG_PYTHON
 
 
 import datetime as _dt
-_LOG_FP = os.path.join(paths.TG_RUNTIME, "dual_check.log")
 
 
-_rot_day = None
+def _log_fp():
+    """当前活动店铺的运行日志路径：`dual_check_<memberID>.log`（多店铺隔离）。
+
+    **必须每次现算，不能在模块级算一次存起来**：插件模块每个请求都重新 exec，
+    而面板切连接是在运行中发生的——存成常量的话切完还往老账号的文件里写
+    （pipeline 插件 1017 三个店混一个文件是这么来的，这里原来同病）。
+    memberID 从连接表拿（conn_store.active_of("taobao")）；取不到（没配连接/库读不到）
+    就退回 `dual_check.log`——不报错、不丢日志。
+    """
+    mid = ""
+    try:
+        mid = str((_acct() or {}).get("member_id") or "").strip()
+    except Exception:
+        mid = ""
+    mid = "".join(c for c in mid if c.isalnum() or c in "-_")
+    if not mid:
+        return os.path.join(paths.TG_RUNTIME, "dual_check.log")
+    return os.path.join(paths.TG_RUNTIME, "dual_check_%s.log" % mid)
+
+
+def _log_name():
+    """日志文件名（面板/内核读日志用——与 _log_fp() 同源，不许各自拼）"""
+    return os.path.basename(_log_fp())
+
+
+_rot_day = {}
 
 
 def _maybe_rotate():
-    """按天归档：日志文件日期≠今天 → 改名加日期保留"""
+    """按天归档：日志文件日期≠今天 → 改名加日期保留（按账号各自归档、各自清理）"""
     import datetime as _dt2, os as _os2
-    global _rot_day
+    try:
+        fp = _log_fp()
+    except Exception:
+        return
     try:
         today = _dt2.date.today()
-        if _rot_day == today:
+        if _rot_day.get(fp) == today:
             return
-        if _os2.path.isfile(_LOG_FP):
-            m = _dt2.date.fromtimestamp(_os2.path.getmtime(_LOG_FP))
+        if _os2.path.isfile(fp):
+            m = _dt2.date.fromtimestamp(_os2.path.getmtime(fp))
             if m != today:
-                _os2.rename(_LOG_FP, _LOG_FP.replace(".log", "_%s.log" % m.strftime("%Y%m%d")))
-        _rot_day = today
+                _base = fp[:-4] if fp.endswith(".log") else fp
+                _os2.rename(fp, "%s_%s.log" % (_base, m.strftime("%Y%m%d")))
+        _rot_day[fp] = today
     except Exception:
         pass
     # 清理：超期归档删除（保留天数 log_keep_days.json 默认 30）
@@ -49,7 +77,7 @@ def _maybe_rotate():
             _kd = int(open(paths.LOG_KEEP_DAYS, encoding="utf-8").read().strip())
         except Exception:
             pass
-        _base = _LOG_FP.replace(".log", "")
+        _base = fp[:-4] if fp.endswith(".log") else fp
         for _f in _g3.glob(_base + "_*.log"):
             if _t3.time() - os.path.getmtime(_f) > _kd * 86400:
                 try:
@@ -63,7 +91,7 @@ def _maybe_rotate():
 def _wlog(msg):
     _maybe_rotate()
     try:
-        with open(_LOG_FP, "a", encoding="utf-8") as f:
+        with open(_log_fp(), "a", encoding="utf-8") as f:
             f.write("[%s] %s\n" % (_dt.datetime.now().strftime("%m-%d %H:%M:%S"), msg))
     except Exception as _e:
         pass
@@ -82,10 +110,49 @@ def _acct():
         return {}
 
 
+def _batch_impl(lhs):
+    """批量查双百——在独立线程里跑（见 batch action 注释）。"""
+    import sys
+    sys.path.insert(0, TG)
+    from _mtop_api import MtopClient
+    results = []
+    mc = MtopClient().open()
+    try:
+        for lh in lhs:
+            try:
+                out, _ = mc.check_dual(lh)
+                if out:
+                    f = out[0]
+                    dual = f.get("scoreLabel") == "流量加速中"
+                    results.append({"lh": lh, "dual": dual,
+                                    "result": f.get("scoreLabel", "") or ("已双百" if dual else "未双百")})
+                else:
+                    results.append({"lh": lh, "dual": False, "result": "未搜到"})
+            except Exception as e:
+                results.append({"lh": lh, "dual": False, "result": "异常:%s" % str(e)[:40]})
+        try:
+            _wlog("查双百 共%d品: %s" % (len(lhs), " | ".join("%s=%s" % (r["lh"], r["result"][:20]) for r in results)))
+        except Exception:
+            pass
+    finally:
+        try:
+            mc.close()
+        except Exception:
+            pass
+    return {"ok": True, "results": results}
+
+
 def handle(action, params):
     if action == "acct":
         _a = _acct()
         return {"ok": True, "account": {"name": _a.get("name") or "", "member_id": _a.get("member_id") or ""}}
+    if action == "logfile":
+        # 当前活动账号的日志文件名（面板/内核读日志用）——动态算，切连接后立刻跟着变
+        try:
+            return {"ok": True, "name": _log_name(), "path": _log_fp(),
+                    "member_id": str((_acct() or {}).get("member_id") or "")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:80]}
     if action == "check":
         lh = (params.get("lh") or "").strip()
         tid = (params.get("tid") or "").strip()
@@ -141,39 +208,30 @@ def handle(action, params):
             return {"ok": False, "error": str(e)[:80]}
     if action == "batch":
         # 单 client 循环查多料号（省每料号起浏览器——_mtop_api 一次 open）
+        # 1022：必须跑在独立线程。工作台是 async 框架，插件在事件循环线程里直接
+        # 调同步 Playwright 会报 `name 'base_events' is not defined`（playwright 内部
+        # 也要起 asyncio 事件循环，与宿主冲突），整批 74 品会全报“批量失败”。
         lhs = [x.strip() for x in (params.get("lhs") or "").split(",") if x.strip()]
         if not lhs:
             return {"ok": False, "error": "需要 lhs（逗号分隔料号）"}
-        results = []
         try:
-            import sys
-            sys.path.insert(0, TG)
-            from _mtop_api import MtopClient
-            mc = MtopClient().open()
-            try:
-                for lh in lhs:
-                    try:
-                        out, _ = mc.check_dual(lh)
-                        if out:
-                            f = out[0]
-                            dual = f.get("scoreLabel") == "流量加速中"
-                            results.append({"lh": lh, "dual": dual,
-                                            "result": f.get("scoreLabel", "") or ("已双百" if dual else "未双百")})
-                        else:
-                            results.append({"lh": lh, "dual": False, "result": "未搜到"})
-                    except Exception as e:
-                        results.append({"lh": lh, "dual": False, "result": "异常:%s" % str(e)[:40]})
-                # 每品结果落日志（工作流日志——老 opt_server 风格）
+            import threading
+            _box = {"r": None, "e": None}
+
+            def _runner():
                 try:
-                    _wlog("查双百 共%d品: %s" % (len(lhs), " | ".join("%s=%s" % (r["lh"], r["result"][:20]) for r in results)))
-                except Exception:
-                    pass
-            finally:
-                try:
-                    mc.close()
-                except Exception:
-                    pass
-            return {"ok": True, "results": results}
+                    _box["r"] = _batch_impl(lhs)
+                except Exception as _e:
+                    _box["e"] = _e
+
+            _t = threading.Thread(target=_runner, daemon=True)
+            _t.start()
+            _t.join(timeout=1800)
+            if _t.is_alive():
+                return {"ok": False, "error": "批量超时（1800s）——可能登录态或搜索被拦"}
+            if _box["e"] is not None:
+                return {"ok": False, "error": "批量失败: %s" % str(_box["e"])[:100]}
+            return _box["r"]
         except Exception as e:
             return {"ok": False, "error": "批量失败: %s" % str(e)[:100]}
     return {"ok": False, "error": "未知 action: %s" % action}
