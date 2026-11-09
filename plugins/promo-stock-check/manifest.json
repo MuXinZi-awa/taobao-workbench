@@ -1,0 +1,11 @@
+{
+  "id": "promo-stock-check",
+  "name": "推广库存巡检",
+  "version": "0.1.0",
+  "desc": "拉 ERP 在手 + 万相台全部计划单元，按料号对撞：在手 0 且在推的建议停投，有库存但已暂停的建议启用，ERP 查无此号的单列。只出表不自动执行，执行需手点确认",
+  "panel": "panel.html",
+  "entry": "panel.html",
+  "has_server": true,
+  "icon": "\ud83d\udd0d",
+  "log": "promo_stock_check.log"
+}

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>推广库存巡检</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; padding:14px 16px; font:13px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+         color:#222; background:#fff; }
+  h2 { font-size:15px; margin:0 0 4px; font-weight:600; }
+  .sub { color:#888; font-size:12px; margin-bottom:10px; }
+  .acct { display:inline-block; padding:3px 10px; border-radius:14px; background:#eef2ff;
+          color:#3730a3; font-size:12px; margin-bottom:10px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  button { padding:7px 14px; border:1px solid #d0d4dc; background:#fff; border-radius:6px;
+           cursor:pointer; font-size:13px; color:#222; }
+  button:hover:not(:disabled) { background:#f4f6fa; border-color:#9aa3b2; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
+  button.primary:hover:not(:disabled) { background:#1d4ed8; }
+  button.danger { background:#dc2626; border-color:#dc2626; color:#fff; }
+  button.danger:hover:not(:disabled) { background:#b91c1c; }
+  button.go { background:#16a34a; border-color:#16a34a; color:#fff; }
+  button.go:hover:not(:disabled) { background:#15803d; }
+  .stat { display:flex; gap:18px; flex-wrap:wrap; margin:12px 0; padding:12px 14px;
+          background:#f7f8fa; border-radius:8px; font-size:12px; }
+  .stat b { display:block; font-size:20px; font-weight:600; color:#111; line-height:1.2; }
+  .stat span { color:#888; }
+  .stat .warn b { color:#dc2626; }
+  .stat .ok b { color:#16a34a; }
+  .tabs { display:flex; gap:6px; margin:14px 0 8px; border-bottom:1px solid #e5e7eb; }
+  .tabs div { padding:7px 14px; cursor:pointer; border-bottom:2px solid transparent; color:#666; font-size:13px; }
+  .tabs div.on { border-bottom-color:#2563eb; color:#2563eb; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th,td { padding:6px 8px; text-align:left; border-bottom:1px solid #eef0f3; }
+  th { background:#f7f8fa; font-weight:600; color:#555; position:sticky; top:0; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .wrap { max-height:calc(100vh - 380px); overflow:auto; border:1px solid #eef0f3; border-radius:6px; }
+  .empty { padding:28px; text-align:center; color:#aaa; }
+  .msg { padding:8px 12px; border-radius:6px; font-size:12px; margin-bottom:10px; display:none;
+         white-space:pre-wrap; }
+  .msg.show { display:block; }
+  .msg.err { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+  .msg.info { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+  .msg.ok { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+  .prog { font:11px/1.5 Consolas,Monaco,monospace; background:#111; color:#9fe8a0;
+          padding:8px 10px; border-radius:6px; max-height:120px; overflow:auto;
+          white-space:pre-wrap; margin-bottom:10px; display:none; }
+  .note { font-size:11px; color:#999; margin-top:10px; line-height:1.7; }
+</style>
+</head>
+<body>
+
+<h2>推广库存巡检</h2>
+<div class="sub">ERP 在手 × 万相台单元 → 没库存的停、有库存的启用</div>
+<div class="acct" id="acct">正在读连接…</div>
+
+<div class="bar">
+  <button onclick="loadStatus()">连接状态</button>
+  <button class="primary" onclick="doPull()" id="btnPull">① 拉数据 + 出表</button>
+  <button onclick="doCheck()" id="btnCheck">② 重算</button>
+  <button class="danger" onclick="doPause()" id="btnPause">③ 执行停投</button>
+  <button class="go" onclick="doEnable()" id="btnEnable">④ 执行启用</button>
+</div>
+
+<div id="msg" class="msg"></div>
+<div id="prog" class="prog"></div>
+
+<div class="stat" id="stat" style="display:none">
+  <div><b id="s-total">—</b><span>单元总数</span></div>
+  <div><b id="s-start">—</b><span>正在推广</span></div>
+  <div><b id="s-pause">—</b><span>已暂停</span></div>
+  <div class="warn"><b id="s-topause">—</b><span>该停（在手0且在推）</span></div>
+  <div class="ok"><b id="s-toenable">—</b><span>该开（有货但已停）</span></div>
+  <div><b id="s-unknown">—</b><span>认不出料号</span></div>
+</div>
+
+<div class="tabs" id="tabs" style="display:none">
+  <div class="on" data-k="toPause">该停</div>
+  <div data-k="toEnable">该开</div>
+  <div data-k="unknown">认不出</div>
+</div>
+
+<div class="wrap" id="wrap">
+  <div class="empty">还没数据。先点「① 拉数据」，再点「② 出表」。</div>
+</div>
+
+<div class="note">
+  · 拉数据会自动接着出表，不用再点一次<br>
+  · 停投/启用按 40 个一批（超过会静默失败，页面说成功但实际没生效）<br>
+  · 每次执行后都会用接口读回状态，只有真变了才算成功<br>
+  · 「认不出料号」那批只在表里看，不会被执行<br>
+  · 数据按当前连接的 member_id 分开存，切号后自动读对应那份
+</div>
+
+<script>
+var CUR = null, TAB = 'toPause', POLL = null;
+
+function msg(t, kind) {
+  var m = document.getElementById('msg');
+  m.className = 'msg show ' + (kind || 'info');
+  m.textContent = t;
+  if (kind === 'ok') setTimeout(function(){ if (m.textContent === t) m.className = 'msg'; }, 8000);
+}
+function showProg(lines) {
+  var p = document.getElementById('prog');
+  if (!lines || !lines.length) { p.style.display = 'none'; return; }
+  p.style.display = 'block';
+  p.textContent = lines.join('\n');
+}
+
+function api(action, qs) {
+  var u = '/api/plg/promo-stock-check/' + action + (qs ? '?' + qs : '');
+  return fetch(u, { method: 'POST' }).then(function(r){ return r.json(); });
+}
+
+function busy(on) {
+  ['btnPull','btnCheck','btnPause','btnEnable'].forEach(function(id){
+    var b = document.getElementById(id);
+    if (on) b.setAttribute('data-was', b.disabled ? '1' : '0');
+    b.disabled = on ? true : (b.getAttribute('data-was') === '1');
+  });
+}
+
+function loadStatus() {
+  api('status').then(function(j){
+    if (!j.ok) { msg(j.error || '失败', 'err'); return; }
+    document.getElementById('acct').textContent =
+      (j.connName || '?') + ' · member_id ' + (j.memberId || '?');
+    var t = 'CDP（浏览器）' + (j.cdp ? '已连接 ' + j.cdpInfo : '❌ 没连上：' + j.cdpInfo)
+          + ' ｜ ERP 数据' + (j.erpFile ? '在' : '缺');
+    if (j.cached && j.cached.units) t += ' ｜ 缓存 ' + j.cached.units + ' 单元（' + j.cached.ts + '）';
+    msg(t, j.cdp ? 'info' : 'err');
+  }).catch(function(e){ msg('请求失败：' + e, 'err'); });
+}
+
+function doPull() {
+  msg('正在拉全部计划单元，约 60-120 秒…\n拉完会自动出表，不用再点。');
+  busy(true);
+  api('pull').then(function(j){
+    if (!j.ok) {
+      busy(false);
+      msg('拉取失败：' + (j.error || '') + (j.tail ? '\n' + j.tail : ''), 'err');
+      return;
+    }
+    var m = j.meta || {}, n = Object.keys(m).length;
+    msg('拉到 ' + j.units + ' 个单元（' + n + ' 个计划），正在出表…', 'info');
+    // 拉完直接出表，少一次点击，也不会被弹窗消失动画干扰成「好像没拉到」
+    api('check').then(function(c){
+      busy(false);
+      if (!c.ok) { msg('拉到了 ' + j.units + ' 个单元，但出表失败：' + (c.error || ''), 'err'); return; }
+      showResult(c);
+      msg('完成：' + j.units + ' 个单元 / ' + n + ' 个计划\n' +
+          '该停 ' + c.toPause + ' ｜ 该开 ' + c.toEnable + ' ｜ 认不出 ' + c.unknown, 'ok');
+    }).catch(function(e){ busy(false); msg('拉到数据了，但出表请求失败：' + e, 'err'); });
+  }).catch(function(e){ busy(false); msg('请求失败：' + e, 'err'); });
+}
+
+function showResult(j) {
+  CUR = j;
+  document.getElementById('stat').style.display = 'flex';
+  document.getElementById('tabs').style.display = 'flex';
+  document.getElementById('s-total').textContent = j.total;
+  document.getElementById('s-start').textContent = j.started;
+  document.getElementById('s-pause').textContent = j.paused;
+  document.getElementById('s-topause').textContent = j.toPause;
+  document.getElementById('s-toenable').textContent = j.toEnable;
+  document.getElementById('s-unknown').textContent = j.unknown;
+  render();
+}
+
+function doCheck() {
+  api('check').then(function(j){
+    if (!j.ok) { msg(j.error || '失败', 'err'); return; }
+    showResult(j);
+    msg('对撞完成（数据 ' + (j.pulledAt || '?') + '）\n该停 ' + j.toPause +
+        ' ｜ 该开 ' + j.toEnable + ' ｜ 认不出 ' + j.unknown, 'ok');
+  }).catch(function(e){ msg('请求失败：' + e, 'err'); });
+}
+
+function render() {
+  var wrap = document.getElementById('wrap');
+  if (!CUR) return;
+  var rows = (CUR.detail || {})[TAB] || [];
+  if (!rows.length) { wrap.innerHTML = '<div class="empty">这一类没有数据</div>'; return; }
+  var h = '<table><thead><tr><th>单元ID</th><th>计划ID</th><th>料号</th><th>标题</th><th class="num">ERP在手</th><th>状态</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    var st = r.status === 'start' ? '推广中' : (r.status === 'pause' ? '已暂停' : (r.status || '—'));
+    var n = (r.stock === null || r.stock === undefined) ? '—' : r.stock;
+    h += '<tr><td>' + (r.unitId || '') + '</td><td>' + (r.campaignId || '') + '</td><td>' +
+         (r.code || '—') + '</td><td>' + (r.title || '').slice(0, 40) + '</td><td class="num">' +
+         n + '</td><td>' + st + '</td></tr>';
+  });
+  h += '</tbody></table>';
+  wrap.innerHTML = h;
+}
+
+document.getElementById('tabs').addEventListener('click', function(e){
+  var d = e.target.closest('[data-k]');
+  if (!d) return;
+  TAB = d.getAttribute('data-k');
+  [].forEach.call(this.children, function(c){ c.classList.toggle('on', c === d); });
+  render();
+});
+
+function startPoll(action, label) {
+  if (POLL) clearInterval(POLL);
+  var n = 0;
+  POLL = setInterval(function(){
+    n++;
+    api('progress').then(function(j){
+      if (!j.ok) return;
+      var p = (j.progress || {})[action];
+      if (p) showProg(p.tail);
+      if (n > 90) { clearInterval(POLL); POLL = null; }
+    }).catch(function(){});
+  }, 5000);
+}
+
+function run(action, label) {
+  api(action).then(function(j){
+    if (!j.ok) { msg((j.error || '失败') + (j.tail ? '\n' + j.tail : ''), 'err'); return; }
+    if (!j.requested) { msg(j.msg || '没有要处理的', 'info'); return; }
+    msg(label + '已启动（pid ' + j.pid + '，' + j.requested + ' 个），进度见下方黑框。' +
+        '跑完再点「② 出表」看新状态。', 'info');
+    startPoll(action, label);
+  }).catch(function(e){ msg('请求失败：' + e, 'err'); });
+}
+
+function doPause() {
+  if (!CUR || !CUR.toPause) { msg('先点「② 出表」看看该停多少', 'err'); return; }
+  if (!confirm('要停 ' + CUR.toPause + ' 个单元的推广？\n\n这会真的停掉投放，停完会逐个读回验证。')) return;
+  run('pause', '停投');
+}
+
+function doEnable() {
+  if (!CUR || !CUR.toEnable) { msg('先点「② 出表」看看该开多少', 'err'); return; }
+  if (!confirm('要启用 ' + CUR.toEnable + ' 个单元（有库存但已暂停）？\n\n这会真的恢复投放、开始花钱。')) return;
+  run('enable', '启用');
+}
+
+loadStatus();
+setInterval(function(){
+  if (document.getElementById('acct').textContent.indexOf('正在读') >= 0) loadStatus();
+}, 3000);
+</script>
+</body>
+</html>

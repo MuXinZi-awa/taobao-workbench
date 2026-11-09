@@ -823,6 +823,12 @@ def item_fields_def():
 
 # ── 流水线阶段定义（数据驱动；改 desc 不影响前端）────────────────────
 STAGES = [
+    {"key": "onsale",    "label": "全量在售",  "ready": True,
+     "desc": "全店在售全量枚举（分页+每页重试 4 次+跟接口 total 对账）——判本店有没有，只认这个，不认关键词搜"},
+    {"key": "dupcheck",  "label": "店铺查重",  "ready": True,
+     "desc": "给定料号清单 × 全量在售 → 已有（带 id/双百）/ 可上 / 待人工（落 CSV）"},
+    {"key": "triage",    "label": "店铺分流",  "ready": True,
+     "desc": "指定清单 × 全量在售 → A 双百 / B 需优化 / C 新品 / D 忽略（落 CSV）"},
     {"key": "query",     "label": "查询",      "ready": True,
      "desc": "按料号搜商品 + 查双百 → 定 type（新品-待上架 / 老品-需优化 / 老品-双百跳过）"},
     {"key": "attrs",     "label": "属性",      "ready": True,
@@ -1177,6 +1183,58 @@ def handle(action, qs):
         if not st["ready"]:
             return {"ok": False, "ready": False,
                     "error": "「%s」还没接血肉（骨架已就位）｜计划调用：%s" % (st["label"], st["desc"])}
+        if key == "onsale":
+            # 全店在售全量枚举（只读）：判「本店有没有」的**唯一**可信依据。
+            # 按料号搜会漏（卖家中心搜索漏已在售商品，1016 实测）→ 不许拿 query 阶段的
+            # keyword 结果当「没上架」。
+            _mid_now = _mid()
+            _ps = str(qs.get("page_size") or "50").strip()
+            _mp = str(qs.get("max_pages") or "20").strip()
+            _rs = ["--resume"] if str(qs.get("resume") or "").strip() in ("1", "true", "yes") else []
+            ok, tail = _run_script(os.path.join(SCRIPTS, "_onsale_enum.py"),
+                                   [_mid_now, _ps, _mp] + _rs, timeout=3600)
+            _meta = {}
+            try:
+                _meta = (json.load(io.open(os.path.join(SCRIPTS, "runtime", "onsale_enum.json"),
+                                           encoding="utf-8")) or {}).get("meta") or {}
+            except Exception:
+                pass
+            _wlog("全量在售：抓 %s / 声明 %s（complete=%s）%s"
+                  % (_meta.get("count"), _meta.get("declared"), _meta.get("complete"),
+                     ("｜⚠ " + _meta["error"]) if _meta.get("error") else ""),
+                  level="warn" if _meta.get("error") else "ok", tag="全量")
+            return {"ok": ok and bool(_meta.get("ok")), "meta": _meta, "msg": tail,
+                    "error": None if ok else ("全量枚举失败：" + str(_meta.get("error") or tail))}
+        if key == "dupcheck":
+            _in = str(qs.get("in") or "").strip()
+            _out = str(qs.get("out") or "").strip()
+            ok, tail = _run_script(os.path.join(SCRIPTS, "_shop_dupcheck.py"),
+                                   [x for x in (_in, _out) if x], timeout=900, tag="查重")
+            _sum = {}
+            try:
+                _sum = json.loads([x for x in (tail or "").splitlines()
+                                   if x.strip().startswith("{")][-1])
+            except Exception:
+                _sum = {}
+            _wlog("[查重] %s" % (", ".join("%s %s" % (k, v) for k, v in
+                                       (_sum.get("counts") or {}).items()) or str(tail)[:120]),
+                  level="ok" if ok else "err", tag="查重")
+            return {"ok": ok, "summary": _sum, "msg": tail,
+                    "error": None if ok else ("查重失败：" + str(tail)[:200])}
+        if key == "triage":
+            ok, tail = _run_script(os.path.join(SCRIPTS, "_shop_triage.py"), [],
+                                   timeout=900, tag="分流")
+            _sum = {}
+            try:
+                _sum = json.loads([x for x in (tail or "").splitlines()
+                                   if x.strip().startswith("{")][-1])
+            except Exception:
+                _sum = {}
+            _wlog("店铺分流：%s" % (", ".join("%s %s" % (k, v) for k, v in
+                                        (_sum.get("counts") or {}).items()) or tail[:120]),
+                  level="ok" if ok else "err", tag="分流")
+            return {"ok": ok, "summary": _sum, "msg": tail,
+                    "error": None if ok else ("分流失败：" + str(tail)[:200])}
         if key == "query":
             return handle("classify", {"lhs": ",".join(lhs)})
         if key == "material":

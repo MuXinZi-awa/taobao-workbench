@@ -190,12 +190,19 @@ class MtopClient:
         self._refresh_token()
         if not self.token:
             raise RuntimeError("无 _m_h5_tk——需重新登录")
+        # fetch 必须带超时：淘宝对个别料号会一直不回话（正常品 0.5s 就回），
+        # 没超时的话这一个调用就无限等，一个品能把整批拖死。（1026 从线上版回并）
         resp = self.page.evaluate(
             """async (a) => {
-                const r = await fetch(a.u, {method: 'POST', credentials: 'include',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: a.b});
-                return await r.text();
-            }""", {"u": url, "b": body})
+                const c = new AbortController();
+                const t = setTimeout(() => c.abort(), a.ms);
+                try {
+                    const r = await fetch(a.u, {method: 'POST', credentials: 'include',
+                        signal: c.signal,
+                        headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: a.b});
+                    return await r.text();
+                } finally { clearTimeout(t); }
+            }""", {"u": url, "b": body, "ms": 45000})
         return json.loads(resp)
 
     def search_items(self, kw, page=1, page_size=20):

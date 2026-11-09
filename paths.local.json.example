@@ -1,0 +1,26 @@
+{
+  "_说明": "工作台路径本地覆盖。不进版本控制。只写需要改的键；未写的走默认推导（相对程序位置）。",
+  "_环境变量": "也可用环境变量覆盖：WB_ROOT / WB_RUNTIME / WB_CACHE / WB_STATE / WB_MAT_ROOT / WB_DATA / WB_PRODUCT / WB_TG_ROOT / WB_TG_RUNTIME / WB_CHROME",
+  "root": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\工作台（双击启动）",
+  "runtime": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\工作台（双击启动）\\runtime",
+  "cache": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\工作台（双击启动）\\cache",
+  "webview_data": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\工作台（双击启动）\\data\\webview_data",
+  "db": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\办公室工作\\数据\\workbench.db",
+  "conn_db": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\办公室工作\\数据\\conn.db",
+  "port": 8900,
+  "open_qty": "3000000",
+  "state": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\工作台（双击启动）\\plugins\\pipeline\\state.json",
+  "mat_root": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\办公室工作\\素材\\产品素材",
+  "data": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\办公室工作\\数据",
+  "product": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\办公室工作\\素材\\产品素材",
+  "desk": "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace",
+  "tg_root": "C:\\Users\\jdt-pty\\Desktop\\推广一键跑",
+  "tg_runtime": "C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime",
+  "python": "C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\runtime\\python.exe",
+  "chrome": "C:\\Users\\jdt-pty\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe",
+  "key_files": [
+    "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\xyq_key.txt",
+    "C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace\\工具\\xyq_key.txt",
+    "C:\\Users\\jdt-pty\\Desktop\\推广一键跑\\xyq_key.txt"
+  ]
+}

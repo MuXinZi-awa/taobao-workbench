@@ -647,10 +647,10 @@ async function renderConnList(){
    return '<div class="plug-item" style="margin-bottom:6px">'
     +'<div style="flex:1;min-width:0"><div class="pn">'+esc(x.name||'(未命名)')+' <span class="pv">'+t+(x.active?' · 已激活':'')+'</span></div>'
     +'<div class="pd">'+esc(x.username||'')+(x.url?' · '+esc(x.url):'')+(x.dbname?' · '+esc(x.dbname):'')+'</div></div>'
-    +'<span class="cf-act" data-act="act" data-id="'+esc(String(x.id))+'" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">激活</span>'
-    +'<span class="cf-act" data-act="test" data-id="'+esc(String(x.id))+'" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">测试</span>'
-    +'<span class="cf-act" data-act="edit" data-id="'+esc(String(x.id))+'" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">编辑</span>'
-    +'<span class="cf-act" data-act="del" data-id="'+esc(String(x.id))+'" style="cursor:pointer;font-size:11px;color:#b04a3a;margin-left:6px">删</span>'
+    +'<span class="cf-act" onclick="connAct('+Number(x.id)+')" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">激活</span>'
+    +'<span class="cf-act" onclick="connTest('+Number(x.id)+')" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">测试</span>'
+    +'<span class="cf-act" onclick="connEdit('+Number(x.id)+')" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">编辑</span>'
+    +'<span class="cf-act" onclick="connDel('+Number(x.id)+')" style="cursor:pointer;font-size:11px;color:#b04a3a;margin-left:6px">删</span>'
     +'</div>';
   }).join('');
   // 别把数据拼进内联 onclick——统一 dataset + addEventListener
@@ -661,7 +661,7 @@ async function renderConnList(){
  }
  renderConnForm();
 }
-let CONN_EDIT=null;
+var CONN_EDIT=null;   // 必须 var：内联 onclick/onchange 引用它，let 不挂 window，内联处理器找不到会抛 ReferenceError
 function renderConnForm(){
  const f=document.getElementById('connForm'); if(!f)return;
  if(CONN_EDIT) f.innerHTML=connFormHtml(CONN_EDIT);
@@ -692,8 +692,8 @@ function connFormHtml(d){
    +row('备注','cfNote',d.note,'');
  }
  body+='<div class="cbtns"><button class="ghost" onclick="CONN_EDIT=null;renderConnForm()">取消</button>'
-  +(d.id?'<button class="ghost" data-conf="reveal" data-id="'+esc(String(d.id)) +'">显示密码</button>':'')
-  +'<button data-conf="save" data-id="'+esc(String(d.id||0)) +'">保存</button></div>'
+  +(d.id?'<button class="ghost" onclick="connReveal('+Number(d.id||0)+')">显示密码</button>':'')
+  +'<button onclick="connSave('+Number(d.id||0)+')">保存</button></div>'
   +'<div id="cfMsg" style="font-size:12px;color:var(--text-m);margin-top:8px;text-align:right"></div>';
  return '<div class="conn-form">'+body+'</div>';
 }
