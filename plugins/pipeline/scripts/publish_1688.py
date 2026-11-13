@@ -181,17 +181,57 @@ def pick_category(page, kw, expect_path):
         raise Stop('类目「%s」没有可点结果: %s' % (kw, clicked))
     page.wait_for_timeout(2000)
 
-    # 校验：已选路径必须等于期望
-    path = page.evaluate("""() => {
-        const bc = Array.from(document.querySelectorAll('*'))
-            .filter(e => e.children.length === 0)
-            .map(e => (e.textContent || '').replace(/\\s+/g, '').trim())
-            .filter(t => t && t.length < 30 && t.indexOf('>') >= 0);
-        return bc.join(' | ');
-    }""")
+    def _path():
+        return page.evaluate("""() => {
+            const bc = Array.from(document.querySelectorAll('*'))
+                .filter(e => e.children.length === 0)
+                .map(e => (e.textContent || '').replace(/\\s+/g, '').trim())
+                .filter(t => t && t.length < 30 && t.indexOf('>') >= 0);
+            return bc.join(' | ');
+        }""")
+
+    path = _path()
     log('[2] 已选路径: %s' % (path or '(未读到)'))
+
+    # 不匹配就换下一个候选：页面状态残留时，第一个同名项往往不是目标类目
     if expect_path and expect_path not in (path or ''):
-        raise Stop('类目路径不符：期望含「%s」，实际 %r' % (expect_path, path))
+        log('    首个候选路径不符，逐个换候选')
+        ok = False
+        n = page.evaluate("""(kw) => {
+            const cands = [];
+            document.querySelectorAll('*').forEach(e => {
+                if (e.children.length > 0) return;
+                const t = (e.textContent || '').replace(/\\s+/g, '').trim();
+                if (t !== kw) return;
+                const r = e.getBoundingClientRect();
+                if (r.width < 20 || r.height < 8) return;
+                cands.push(r.y);
+            });
+            return cands.length;
+        }""", kw)
+        for i in range(1, min(n, 6)):
+            page.evaluate("""([kw, idx]) => {
+                const cands = [];
+                document.querySelectorAll('*').forEach(e => {
+                    if (e.children.length > 0) return;
+                    const t = (e.textContent || '').replace(/\\s+/g, '').trim();
+                    if (t !== kw) return;
+                    const r = e.getBoundingClientRect();
+                    if (r.width < 20 || r.height < 8) return;
+                    cands.push({y: r.y, el: e});
+                });
+                cands.sort((a, b) => a.y - b.y);
+                if (cands[idx]) cands[idx].el.click();
+            }""", [kw, i])
+            page.wait_for_timeout(1500)
+            path = _path()
+            log('    候选 %d → %s' % (i, (path or '')[:70]))
+            if expect_path and expect_path in (path or ''):
+                ok = True
+                break
+        if not ok:
+            raise Stop('类目路径不符：期望含「%s」，试了 %d 个候选都不对，最后 %r'
+                       % (expect_path, min(n, 6), (path or '')[:80]))
     log('    ✓ 路径匹配')
 
     # 点击前先记住已有页面：浏览器里长期挂着旧编辑页（URL 也含 publish.htm 但带 id=），
@@ -378,6 +418,122 @@ def import_sku_excel(page, xlsx):
     return st
 
 
+# ────────────────────────── 阶段 4：报价与件重尺 ──────────────────────────
+
+def fill_price_and_weight(page, skus):
+    """逐行填批发价 / 可售数量 / 件重尺。
+
+    两个关键教训：
+    1. **必须逐行，不能用「批量设置」**——梓帆明确说过：多个 SKU 批量设价格会乱
+       （两个型号本来价不同，批量会把它们设成同一个值）。列头那个「批量设置」是给
+       “所有 SKU 同价”场景用的，这里不用。
+    2. **next-table 把表头和数据拆成两个 <table>**：
+         .next-table-header-inner table  → 只有 thead
+         .next-table-body table         → 才是 tbody 数据行
+       直接遍历 document.querySelectorAll('table') 找含「批发价」的表，拿到的是表头那半，
+       tbody tr 永远是 0——看起来像「报价表没生成」，实际行一直在那里。
+    """
+    if not skus:
+        return {}
+    log('[9] 填报价与件重尺（逐行）')
+    data = [{
+        'price': str(s.get('price', '')), 'qty': str(s.get('qty', '')),
+        'l': str(s.get('长', '')), 'w': str(s.get('宽', '')),
+        'h': str(s.get('高', '')), 'g': str(s.get('重量', '')),
+    } for s in skus]
+
+    r = page.evaluate("""(data) => {
+        const boxes = Array.from(document.querySelectorAll('.next-table'));
+        const findBox = (kw) => boxes.find(box => {
+            const head = box.querySelector('.next-table-header-inner table');
+            if (!head) return null;
+            const ths = Array.from(head.querySelectorAll('th')).map(x => (x.innerText || '').replace(/\\s+/g, '').trim());
+            return ths.some(h => h.indexOf(kw) >= 0);
+        });
+        const setV = (inp, v) => {
+            if (!inp || v === '') return false;
+            inp.focus();
+            const d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+            d.set.call(inp, String(v));
+            inp.dispatchEvent(new Event('input', {bubbles: true}));
+            inp.dispatchEvent(new Event('change', {bubbles: true}));
+            inp.dispatchEvent(new Event('blur', {bubbles: true}));
+            return true;
+        };
+        const out = {price: 0, ship: 0, priceRows: -1, shipRows: -1};
+
+        const pb = findBox('批发价');
+        if (pb) {
+            const body = pb.querySelector('.next-table-body table');
+            const rows = body ? Array.from(body.querySelectorAll('tbody tr')) : [];
+            out.priceRows = rows.length;
+            rows.forEach((tr, i) => {
+                const d = data[i]; const tds = tr.querySelectorAll('td');
+                if (!d) return;
+                if (tds[2] && tds[2].querySelector('input')) {
+                    if (setV(tds[2].querySelector('input'), d.price)) out.price++;
+                }
+                if (tds[3] && tds[3].querySelector('input')) {
+                    if (setV(tds[3].querySelector('input'), d.qty)) out.price++;
+                }
+            });
+        }
+
+        const sb = findBox('长(cm)');
+        if (sb) {
+            const body = sb.querySelector('.next-table-body table');
+            const rows = body ? Array.from(body.querySelectorAll('tbody tr')) : [];
+            out.shipRows = rows.length;
+            rows.forEach((tr, i) => {
+                const d = data[i]; const tds = tr.querySelectorAll('td');
+                if (!d) return;
+                [[2, d.l], [3, d.w], [4, d.h], [6, d.g]].forEach(([ci, v]) => {
+                    const inp = tds[ci] ? tds[ci].querySelector('input') : null;
+                    if (setV(inp, v)) out.ship++;
+                });
+            });
+        }
+        return out;
+    }""", data)
+    log('    报价表 %s 行、件重尺表 %s 行；写入报价格 %d 个、件重尺格 %d 个'
+        % (r.get('priceRows'), r.get('shipRows'), r['price'], r['ship']))
+    if (r.get('priceRows') or 0) <= 0:
+        raise Stop('报价表没有数据行（next-table 取错表头/表体？）')
+
+    page.wait_for_timeout(1200)
+    back = page.evaluate("""() => {
+        const boxes = Array.from(document.querySelectorAll('.next-table'));
+        const findBox = (kw) => boxes.find(box => {
+            const head = box.querySelector('.next-table-header-inner table');
+            if (!head) return null;
+            const ths = Array.from(head.querySelectorAll('th')).map(x => (x.innerText || '').replace(/\\s+/g, '').trim());
+            return ths.some(h => h.indexOf(kw) >= 0);
+        });
+        const dump = (box) => {
+            if (!box) return null;
+            const body = box.querySelector('.next-table-body table');
+            return body ? Array.from(body.querySelectorAll('tbody tr')).map(tr =>
+                Array.from(tr.querySelectorAll('td')).map(td => {
+                    const i = td.querySelector('input');
+                    return i ? (i.value || '') : (td.innerText || '').replace(/\\s+/g, '').slice(0, 10);
+                })) : null;
+        };
+        return {price: dump(findBox('批发价')), ship: dump(findBox('长(cm)'))};
+    }""")
+    for i, row in enumerate(back.get('price') or []):
+        log('    报价 r%d: %s' % (i, ' | '.join(x for x in row if x)))
+    for i, row in enumerate(back.get('ship') or []):
+        log('    件重尺 r%d: %s' % (i, ' | '.join(x for x in row if x)))
+
+    # 校验：批发价必须逐行对得上（批量设错的前兆就是价全一样）
+    prices = [(row[2] if len(row) > 2 else '') for row in (back.get('price') or [])]
+    want = [d['price'] for d in data if d['price']]
+    if want and prices != want:
+        raise Stop('批发价读回不符：期望 %s，实际 %s（检查是否误用了批量设置）' % (want, prices))
+    log('    ✓ 批发价逐行核对一致: %s' % prices)
+    return back
+
+
 # ────────────────────────── 诊断 ──────────────────────────
 
 def diagnostics(page):
@@ -436,9 +592,12 @@ def main():
         else:
             log('[6] 跳过多 SKU 导入（找不到 %s）' % xlsx)
 
-        log('[8] 诊断: %s' % diagnostics(pub))
+        fill_price_and_weight(pub, spec.get('skus') or [])
+
+        log('[10] 诊断: %s' % diagnostics(pub))
         log('')
-        log('第 1-3 段完成（类目 / 基础信息 / SKU 导入）。销售信息与媒体尚未实现。')
+        log('第 1-4 段完成（类目 / 基础信息 / SKU 导入 / 报价件重尺）。')
+        log('待做：发货时间、主图、SKU 图、图文详情、视频、提交。')
         return 0
 
 
