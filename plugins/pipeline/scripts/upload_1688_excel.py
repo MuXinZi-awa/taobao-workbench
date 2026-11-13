@@ -14,7 +14,9 @@ def _wb_ws_root():
             if _base not in _s.path:
                 _s.path.insert(0, _base)
             import paths as _p
-            return os.path.dirname(os.path.dirname(_p.get("mat_root")))
+            _mr = _p.get("mat_root")
+            # mat_root = <WS>\\办公室工作\\素材\\产品素材 → 上溯三级才到 <WS>
+            return os.path.dirname(os.path.dirname(os.path.dirname(_mr)))
     _x = _here
     for _ in range(6):
         if os.path.isdir(os.path.join(_x, "办公室工作")):
