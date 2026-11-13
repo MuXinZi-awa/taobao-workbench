@@ -37,6 +37,61 @@ CDP = os.environ.get('HANA_CDP') or 'http://127.0.0.1:9222'
 SELECT_URL = 'https://offer-new.1688.com/select.htm'
 
 
+# ── workbench 路径兼容层（换机器只改 paths.local.json）──
+def _wb_paths():
+    """找 workbench 的 paths.py。本脚本可能在工程目录，也可能在插件 scripts 下。"""
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _cands = []
+    _ev = os.environ.get('WB_ROOT')
+    if _ev:
+        _cands.append(_ev)
+    _x = _here
+    for _ in range(6):
+        _cands.append(_x)
+        _pd = os.path.dirname(_x)
+        if _pd == _x:
+            break
+        _x = _pd
+    for _base in (_here, os.path.dirname(_here)):
+        _cands.append(os.path.join(_base, 'OH-WorkSpace', '工具', 'workbench'))
+        _cands.append(os.path.join(_base, '工具', 'workbench'))
+    for _c in _cands:
+        try:
+            if _c and os.path.isfile(os.path.join(_c, 'paths.py')):
+                if _c not in sys.path:
+                    sys.path.insert(0, _c)
+                import paths as _p
+                return _p
+        except Exception:
+            continue
+    return None
+
+
+def _xuzhi_path():
+    """拍前须知图（详情图最后一张，货号无关，全店共用）。
+
+    坑：之前用 `__file__` 上溯两层拼 `素材/模板/...`，得到 `_工程_新品素材\\素材\\模板`
+    根本不存。而兜底用的 `_wb_paths()` 在这个文件里压根没定义——
+    NameError 被 `except` 吞了，于是详情图静默少插一张，日志里看不出来。
+    """
+    cands = []
+    try:
+        _p = _wb_paths()
+        if _p:
+            _mr = _p.get('mat_root')          # <WS>\办公室工作\素材\产品素材
+            if _mr:
+                _mat = os.path.dirname(_mr)   # <WS>\办公室工作\素材
+                cands.append(os.path.join(_mat, '模板', 'paigian_xuzhi_1600.png'))
+                cands.append(os.path.join(_mat, '模板', 'paigian_xuzhi.png'))
+    except Exception:
+        pass
+    cands.append(r'C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\模板\paigian_xuzhi_1600.png')
+    for c in cands:
+        if c and os.path.isfile(c):
+            return c
+    return ''
+
+
 class Stop(Exception):
     """任何一步对不上就抛这个——停手比带错继续安全"""
 
@@ -954,16 +1009,12 @@ def main():
 
             # 图文详情：参数图 + 拍前须知
             details = list(media.get('detail') or [])
-            xz = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                              '素材', '模板', 'paigian_xuzhi_1600.png')
-            if not os.path.isfile(xz):
-                try:
-                    _p = _wb_paths()
-                    xz = os.path.join(os.path.dirname(os.path.dirname(_p.get('mat_root'))), '素材', '模板', 'paigian_xuzhi_1600.png')
-                except Exception:
-                    pass
-            if os.path.isfile(xz):
+            xz = _xuzhi_path()
+            if xz:
                 details.append(xz)
+                log('    拍前须知: %s' % os.path.basename(xz))
+            else:
+                log('    ⚠ 没找到拍前须知图（详情会少一张）')
             try:
                 fill_detail_images(pub, details)
             except Stop as e:
