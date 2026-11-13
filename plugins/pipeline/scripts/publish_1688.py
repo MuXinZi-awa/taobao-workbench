@@ -812,6 +812,22 @@ def fill_detail_images(page, imgs):
     log('    TinyMCE 模型: 长度 %s，图片 %s 张' % (st.get('len'), st.get('imgs')))
     if (st.get('imgs') or 0) < 1:
         raise Stop('详情图插了 %d 次，但 TinyMCE 模型里没有图' % done)
+
+    # 关键：这个页面的校验是**静态**的，不热更新——
+    # 图插完了但「请填写图文详情」还挂在上面，因为没人触发重新校验。
+    # 梓帆原话：「上传完之后不点其他地方他不会消失」。
+    # 所以插完必须主动 point 一下别处触发 blur。
+    page.evaluate("""() => {
+        const inp = Array.from(document.querySelectorAll('input')).find(e =>
+            (e.placeholder || '').indexOf('建议使用通俗的产品名称') >= 0);
+        if (inp) { inp.focus(); inp.blur(); }
+    }""")
+    page.wait_for_timeout(2500)
+    _d = diagnostics(page)
+    if any('图文详情' in x for x in _d):
+        log('    ⚠ blur 后诊断仍在: %s' % _d)
+    else:
+        log('    ✓ 「请填写图文详情」已消失')
     return done
 
 
