@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<!-- 模板：PPTC 自恢复保险丝详情图（分类专用，不与电位器/TVS/TBU 混用） -->
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{width:1200px;background:#fff;font-family:"Microsoft YaHei","Segoe UI",sans-serif;color:#1d1d1f;}
+  .sec{padding:56px 64px;}
+  .hero{background:linear-gradient(180deg,#f7f8fa 0%,#ffffff 100%);border-bottom:1px solid #eceef2;}
+  .hero-in{display:flex;gap:44px;align-items:center;}
+  .pic{flex:0 0 420px;height:420px;background:#fff;border:1px solid #eceef2;border-radius:14px;
+       display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .pic img{width:100%;height:100%;object-fit:contain;}
+  .meta{flex:1 1 auto;min-width:0;}
+  .brand{font-size:15px;letter-spacing:3px;color:#c8501e;font-weight:700;margin-bottom:14px;}
+  .model{font-size:44px;font-weight:800;letter-spacing:.5px;line-height:1.15;word-break:break-all;}
+  .sub{font-size:19px;color:#6b7280;margin-top:12px;}
+  .tags{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px;}
+  .tag{font-size:15px;padding:7px 15px;border-radius:20px;background:#fff3ec;color:#c8501e;
+       border:1px solid #f7d9c9;font-weight:600;}
+  .tag.n{background:#f1f5f9;color:#475569;border-color:#e2e8f0;}
+  .h2{font-size:28px;font-weight:800;margin-bottom:8px;}
+  .h2::after{content:"";display:block;width:52px;height:4px;background:#c8501e;margin-top:12px;border-radius:2px;}
+  table{width:100%;border-collapse:collapse;margin-top:34px;font-size:19px;}
+  thead th{background:#1f2937;color:#fff;font-weight:700;font-size:18px;padding:15px 20px;text-align:left;}
+  tbody td{padding:15px 20px;border-bottom:1px solid #eef0f4;}
+  tbody tr:nth-child(even){background:#fafbfc;}
+  td.k{width:46%;color:#4b5563;}
+  td.v{width:32%;font-weight:800;font-size:21px;font-variant-numeric:tabular-nums;}
+  td.u{width:22%;color:#9ca3af;font-size:16px;}
+  .feats{margin-top:34px;display:grid;gap:14px;}
+  .f{display:flex;gap:18px;align-items:flex-start;padding:18px 20px;background:#fafbfc;
+     border:1px solid #eef0f4;border-radius:10px;}
+  .ft{flex:0 0 96px;font-size:17px;font-weight:800;color:#c8501e;}
+  .fd{flex:1 1 auto;font-size:17px;line-height:1.7;color:#374151;}
+  .foot{background:#1f2937;color:#9ca3af;padding:30px 64px;font-size:15px;line-height:1.9;}
+  .foot b{color:#e5e7eb;}
+</style></head><body>
+
+<div class="hero"><div class="sec"><div class="hero-in">
+  <div class="pic">__IMG__</div>
+  <div class="meta">
+    <div class="brand">__BRAND__</div>
+    <div class="model">__MODEL__</div>
+    <div class="sub">__SERIES__ · __CATNAME__</div>
+    <div class="tags">__TAGS__</div>
+  </div>
+</div></div></div>
+
+<div class="sec">
+  <div class="h2">电气参数</div>
+  <table>
+    <thead><tr><th>参数项</th><th>数值</th><th>测试条件</th></tr></thead>
+    <tbody>
+__ROWS__
+    </tbody>
+  </table>
+</div>
+
+<div class="sec" style="padding-top:0">
+  <div class="h2">产品特性</div>
+  <div class="feats">
+__FEATS__
+  </div>
+</div>
+
+<div class="foot">
+  <b>__MODEL__</b> ｜ 数据来源：__BRAND_FULL__ 原厂规格书 <b>__SERIES__</b>（未做任何改动）<br>
+  以上参数为 23 °C 环境下的典型值，实际器件特性随应用条件变化，请以原厂最新规格书为准。
+</div>
+
+</body></html>

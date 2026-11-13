@@ -199,6 +199,30 @@ def download(url, dest):
     return len(data)
 
 
+def _pick_detail_generator(lh):
+    """按料号前缀选四类详情图生成器之一。
+
+    分类绝不能混（总纲）——四类的 PDF 表格结构完全不同：
+      PPTC  每型号一行 10 列
+      电位器 系列共用段落 + 型号编码算阻值
+      TVS   4 列表格 Min/Typ/Max 分列
+      TBU   耐压 × 触发电流交叉表
+    """
+    u = (lh or "").upper()
+    if any(u.startswith(p) for p in ("3224", "3296", "3314", "3362", "3590", "TC33")):
+        name = "detail_pot.py"
+    elif u.startswith("CDSOT"):
+        name = "detail_tvs.py"
+    elif u.startswith("TBU"):
+        name = "detail_tbu.py"
+    elif u.startswith("MF-"):
+        name = "detail_pptc.py"
+    else:
+        return None
+    p = os.path.join(BASE_DIR, name)
+    return p if os.path.isfile(p) else None
+
+
 def generate(lh, img, usage, out):
     """生成单个素材（封面/白底/详情）——返回产物文件路径列表（可编程调用）"""
     if not KEY or not os.path.isfile(img):
@@ -318,29 +342,39 @@ def generate_all(lh, img, out):
                 saved.append(tagged)
         except Exception as e:
             print("[封面] 标注失败:", str(e)[:50])
-    # 详情图（HTML 渲染统一版式——填爬取数据）
+    # 详情图：按品类分派到四类生成器（PPTC / 电位器 / TVS / TBU，模板绝不混用）
     try:
-        detail_py = os.path.join(BASE_DIR, "detail_html.py")
-        if os.path.isfile(detail_py):
-            import subprocess
-            subprocess.run([sys.executable, detail_py, lh, cover_src], timeout=90, capture_output=True)
-            detail_file = os.path.join(out, "%s_详情图.png" % lh)
+        import subprocess
+        detail_py = _pick_detail_generator(lh)
+        if detail_py:
+            print("[详情] 用 %s" % os.path.basename(detail_py))
+            subprocess.run([sys.executable, detail_py, "--only", lh], timeout=240, capture_output=True)
+            detail_file = os.path.join(out, "%s_详情图.png" % lh.replace("/", "-"))
             if os.path.isfile(detail_file):
-                print("[详情] HTML 渲染完成 ✓")
+                print("[详情] 渲染完成 ✓")
                 saved.append(detail_file)
-        # 视频合成（封面+主图+详情+拍前须知 → 轮播淡入淡出）
+            else:
+                print("[详情] 未产出（生成器内部报错，抽不到参数就停手）")
+        else:
+            print("[详情] 无匹配品类生成器，跳过（料号 %s）" % lh)
+        # 视频合成（封面+详情+拍前须知 轮播）——make_video 在推广一键跑根目录
         try:
-            mv = os.path.join(BASE_DIR, "make_video.py")
-            if os.path.isfile(mv):
-                subprocess.run([sys.executable, mv, lh], timeout=240, capture_output=True)
-                vf = os.path.join(out, "%s_视频.mp4" % lh)
+            _tg = paths.get("tg_root")
+            mv = os.path.join(_tg, "make_video.py") if _tg else ""
+            if mv and os.path.isfile(mv):
+                subprocess.run([sys.executable, mv, lh], timeout=300, capture_output=True)
+                vf = os.path.join(out, "%s_视频.mp4" % lh.replace("/", "-"))
                 if os.path.isfile(vf):
                     print("[视频] 合成完成 ✓")
                     saved.append(vf)
+                else:
+                    print("[视频] 未产出")
+            else:
+                print("[视频] 找不到 make_video.py（tg_root=%s）" % _tg)
         except Exception as e:
-            print("[视频] 合成失败:", str(e)[:50])
+            print("[视频] 合成失败:", str(e)[:60])
     except Exception as e:
-        print("[详情] 渲染失败:", str(e)[:50])
+        print("[详情] 渲染失败:", str(e)[:60])
     return saved
 
 

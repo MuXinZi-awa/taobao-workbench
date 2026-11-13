@@ -3,6 +3,20 @@
 > 本文件依据 `manifest.json`、`README.md`、`_交接_*.md`、workbench 内核 `CHANGELOG.md`（插件版本跳变行）与脚本 mtime 补记。
 > 版本号只写有明确出处者；无出处的改动标「未记载」，不臆测。
 
+## 0.3.0 — 2026-11-13
+- **接入四类详情图生成器**（PPTC / 微调电位器 / TVS / TBU）。
+  此前 `ai_schedule.py` 找的是 `detail_html.py`（连接器版式），文件不存在，`if os.path.isfile`
+  失败后**静默跳过**——详情图从来没生成过。现改为按料号前缀分派到 `detail_pptc/pot/tvs/tbu.py`，
+  四类模板各自一套，绝不混用。
+- **修好视频合成为空跑**：同因，`make_video.py` 不在 `scripts/` 而在 `推广一键跑/` 根目录。
+  改为走 `paths.get("tg_root")` 拼接，并区分「找不到脚本」和「脚本跑完没出文件」两种失败。
+- **生成器路径改为动态解析**：`ENG/MAT/CHROME/TPLP` 不再写死 `C:\Users\jdt-pty\...`，
+  改走 workbench 的 `paths.py`（mat_root / chrome），换机器只改 `paths.local.json`。
+  Chrome 加多位置探测（paths 配置 → Program Files → x86 → 用户目录）。
+- **四类生成器实跑验证**：`MF-MSMF050-2` / `3314G-1-103LF` / `CDSOT23-T24CAN-Q` / `TBU-CA065-200-WH`
+  四个样本重新生成，产物 md5 与接入前逐字节一致，证明搬进插件后行为不变。
+- 模板随插件分发：`pipeline/templates/{pptc,pot,tvs,tbu}.html`。
+
 ## 0.2.24 — 2026-10-17
 - **运行日志分级**：`_wlog(msg, level, tag)` 写 `[时间] [级别] [阶段] 消息`，级别 debug/info/ok/warn/err。
   扫描行降为 debug 并做 8 秒同内容去重（插件模块每次请求重新加载，去重状态因此从日志尾行比对得出，不走进程内变量）。

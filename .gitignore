@@ -61,3 +61,6 @@ plugins/*/_tmp_*
 # 运行态文件（登录状态等，不该入库）
 plugins/tg-monitor/login_state.json
 
+
+# pipeline 详情图渲染中间产物（HTML 临时文件）
+plugins/pipeline/out/
