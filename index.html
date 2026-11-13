@@ -658,12 +658,16 @@ async function renderSiteBar(){
 async function renderConnList(){
  const list=document.getElementById('connList'); if(!list)return;
  const d=await api('/api/conn/list'); const items=d.items||[];
+ const site=d.site||'taobao';
  if(!items.length){ list.innerHTML='<div style="font-size:12px;color:var(--text-m);padding:8px 0">暂无连接——下方新增</div>'; }
  else{
   list.innerHTML=items.map(x=>{
    const t=x.type==='odoo'?'ERP':(x.type==='taobao'?'淘宝':(x.type==='1688'?'1688':'其他'));
+   // 已激活但不是当前站点→标出来；否则“两条都亮着”会让人以为切换生效了
+   const isCur=(x.type==='taobao'&&site==='taobao')||(x.type==='1688'&&site==='1688');
+   const actMark=x.active?(isCur?' · 已激活':' · 已激活（非当前站点）'):'';
    return '<div class="plug-item" style="margin-bottom:6px">'
-    +'<div style="flex:1;min-width:0"><div class="pn">'+esc(x.name||'(未命名)')+' <span class="pv">'+t+(x.active?' · 已激活':'')+'</span></div>'
+    +'<div style="flex:1;min-width:0"><div class="pn">'+esc(x.name||'(未命名)')+' <span class="pv">'+t+actMark+'</span></div>'
     +'<div class="pd">'+esc(x.username||'')+(x.url?' · '+esc(x.url):'')+(x.dbname?' · '+esc(x.dbname):'')+'</div></div>'
     +'<span class="cf-act" onclick="connAct('+Number(x.id)+')" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">激活</span>'
     +'<span class="cf-act" onclick="connTest('+Number(x.id)+')" style="cursor:pointer;font-size:11px;color:var(--accent-h);margin-left:6px">测试</span>'

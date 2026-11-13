@@ -180,12 +180,23 @@ def delete(cid):
     c.close()
 
 def activate(cid):
-    """按类型各自激活（淘宝与 ERP 互不影响——不同类各有一个当前）"""
+    """激活连接。
+
+    按类型各自激活（淘宝与 ERP 互不影响）；**店铺类（taobao/1688）激活时同步切站点**——
+    否则会出现梓帆碰到的那种情况：两条都亮着「已激活」，但 current_site 还是另一家，
+    以为切换了实际没切，功能继续用错账号。激活哪家就是哪家。
+    """
     c = _conn()
     row = c.execute("SELECT type FROM conn WHERE id=?", (cid,)).fetchone()
     if row:
-        c.execute("UPDATE conn SET active=0 WHERE type=?", (row[0],))
+        t = row[0]
+        c.execute("UPDATE conn SET active=0 WHERE type=?", (t,))
         c.execute("UPDATE conn SET active=1 WHERE id=?", (cid,))
+        c.commit()
+        c.close()
+        if t in ("taobao", "1688"):
+            set_current_site(t)
+        return
     c.commit()
     c.close()
 

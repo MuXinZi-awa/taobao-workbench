@@ -25,34 +25,33 @@ from playwright.sync_api import sync_playwright
 
 # --- workbench 路径兼容层：换机器只改 paths.local.json / WB_* 环境变量 ---
 def _wb_ws_root():
-    """返回工作区根（OH-WorkSpace）。先找 workbench 的 paths.py，再退回自身上溯。"""
+    """工作区根（OH-WorkSpace）。mat_root = <WS>\\办公室工作\\素材\\产品素材，上溯三级。"""
     import sys as _s
     _here = os.path.dirname(os.path.abspath(__file__))
-    for _base in (_here, os.path.dirname(_here), os.path.dirname(os.path.dirname(_here))):
-        _c = os.path.join(_base, "paths.py")
-        if os.path.isfile(_c):
+    for _base in (_here, os.path.dirname(_here), os.path.dirname(os.path.dirname(_here)),
+                  os.path.dirname(os.path.dirname(os.path.dirname(_here)))):
+        if os.path.isfile(os.path.join(_base, "paths.py")):
             if _base not in _s.path:
                 _s.path.insert(0, _base)
             import paths as _p
             _mr = _p.get("mat_root")
-            # mat_root = <WS>\\办公室工作\\素材\\产品素材 → 上溯三级才到 <WS>
             return os.path.dirname(os.path.dirname(os.path.dirname(_mr)))
+    _ev = os.environ.get("WB_WS_ROOT")
+    if _ev and os.path.isdir(_ev):
+        return _ev
     _x = _here
-    for _ in range(6):
+    for _ in range(8):
         if os.path.isdir(os.path.join(_x, "办公室工作")):
             return _x
         _nd = os.path.dirname(_x)
         if _nd == _x:
             break
         _x = _nd
-    return r"C:\Users\jdt-pty\Desktop\OH-WorkSpace"
+    return r"C:\\Users\\jdt-pty\\Desktop\\OH-WorkSpace"
 
-_WS  = _wb_ws_root()
-_MAT = os.path.join(_WS, "办公室工作", "素材", "产品素材")
-_ENG = os.path.join(_WS, "_工程_新品素材")
-_TG  = os.environ.get("WB_TG_ROOT") or r"C:\Users\jdt-pty\Desktop\推广一键跑"
+
+_WS = _wb_ws_root()
 # --- 兼容层结束 ---
-
 
 
 BASE = _WS
@@ -322,6 +321,21 @@ def main(lhs):
             for r in sel:
                 print('    %-24s %s %s' % (r['lianhao'], ('ID=' + r['hit_id']) if r['hit_id'] else '', r['note']))
     print('\n结果文件:', out_csv)
+
+    # 面板靠 JSON 取结果。同时写文件：stdout 可能被截断（_run_script 只留尾部），
+    # 而查重结果里 items 一长串，单靠一行 stdout 解析会静默失败。
+    _payload = {
+        "ok": True,
+        "site": "1688",
+        "counts": dict(c),
+        "items": results,
+        "csv": out_csv,
+    }
+    out_json = os.path.join(OUT, 'dup_result.json')
+    with open(out_json, 'w', encoding='utf-8') as f:
+        json.dump(_payload, f, ensure_ascii=False, indent=1)
+    print(json.dumps({"ok": True, "site": "1688", "counts": dict(c),
+                      "json": out_json, "total": len(results)}, ensure_ascii=False))
 
 
 if __name__ == '__main__':

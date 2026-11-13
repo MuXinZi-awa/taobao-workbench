@@ -853,6 +853,68 @@ STAGES = [
 ]
 
 
+def _run_1688_stage(key, lhs, qs):
+    """1688 站点能跑的阶段。
+
+    1688 与淘宝是两套 DOM/接口：全量在售走 MTOP、店铺分流也是淘宝口径，在 1688 上跑不了。
+    这里只放已经有实现的那一个（查重，含 SKU 深度核实），其余**明确报不支持**——
+    静默出错比报错危险得多（之前就因为静默回落拿错账号）。
+    """
+    if key in ("onsale", "triage"):
+        return {"ok": False, "ready": False, "site": "1688",
+                "error": "「%s」在 1688 还没实现——它依赖淘宝的商品枚举接口。"
+                         "1688 可先用「店铺查重」逐料号核对。" % key}
+    if key in ("dupcheck", "query"):
+        if not lhs:
+            return {"ok": False, "site": "1688", "error": "缺料号清单"}
+        _dp = os.path.join(SCRIPTS, "check_dup_1688.py")
+        if not os.path.isfile(_dp):
+            return {"ok": False, "site": "1688", "error": "找不到 check_dup_1688.py"}
+        # 先记下目录里最新的 dup_result.json，跑完看有没有更新的（stdout 会被截断，不能只靠它）
+        _dupdir = os.path.join(paths.ROOT, "..", "..", "_工程_新品素材")
+        ok, tail = _run_script(_dp, list(lhs), timeout=3600, tag="查重1688")
+
+        _sum = {}
+        # 优先读脚本写出的 JSON 文件（最可靠：不受 stdout 截断影响）
+        try:
+            _cands = []
+            for _c in (os.path.join(os.path.dirname(_dp), "runtime"),
+                       os.path.abspath(_dupdir)):
+                if os.path.isdir(_c):
+                    for _d in os.listdir(_c):
+                        if _d.startswith("dup_"):
+                            _f = os.path.join(_c, _d, "dup_result.json")
+                            if os.path.isfile(_f):
+                                _cands.append((os.path.getmtime(_f), _f))
+            if _cands:
+                _cands.sort(reverse=True)
+                _sum = json.load(io.open(_cands[0][1], encoding="utf-8"))
+        except Exception:
+            _sum = {}
+        # 退一步：从 stdout 尾部抽 JSON（旧口径，仅当文件对不上时）
+        if not _sum:
+            try:
+                _tail_str = tail or ""
+                _i = _tail_str.rfind('{"ok": true')
+                if _i < 0:
+                    _i = _tail_str.rfind('{')
+                if _i >= 0:
+                    _sum = json.loads(_tail_str[_i:])
+            except Exception:
+                _sum = {}
+        if not _sum:
+            return {"ok": False, "site": "1688",
+                    "error": "查重没返回结构化结果（脚本可能中途异常）——看日志"
+                             "｜tail：" + str(tail)[-200:]}
+        _wlog("[查重1688] %s" % ", ".join("%s %s" % (k, v) for k, v in
+                                         (_sum.get("counts") or {}).items()),
+              level="ok" if ok else "err", tag="查重")
+        return {"ok": ok, "site": "1688", "summary": _sum, "msg": tail,
+                "error": None if ok else "查重失败：" + str(tail)[:200]}
+    return {"ok": False, "ready": False, "site": "1688",
+            "error": "「%s」属于淘宝专属阶段" % key}
+
+
 def handle(action, qs):
     if action == "acct":
         _a = _acct()
@@ -1180,6 +1242,17 @@ def handle(action, qs):
         # 阶段执行入口：已就绪的转调原 action；未就绪的只提示不动作
         key = (qs.get("stage") or "").strip()
         lhs = [x.strip() for x in (qs.get("lhs") or "").split(",") if x.strip()]
+        # 当前站点：1688 与淘宝的可实现环节不同。素材/属性/整理/审核是通用的（本地或爬官网），
+        # 其余（在售枚举/分流/查重/查询/上品/推广）按站点分派，绝不混着跑。
+        _site = "taobao"
+        try:
+            import conn_store as _cs
+            _site = _cs.current_site() if hasattr(_cs, "current_site") else "taobao"
+        except Exception:
+            pass
+        _COMMON_STAGES = ("material", "attrs", "sort", "audit")
+        if _site == "1688" and key not in _COMMON_STAGES:
+            return _run_1688_stage(key, lhs, qs)
         st = None
         for _s in STAGES:
             if _s["key"] == key:
