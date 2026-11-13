@@ -41,13 +41,20 @@ def save_state(st):
     io.open(STATE_FP, "w", encoding="utf-8").write(json.dumps(st, ensure_ascii=False, indent=1))
 
 def _acct():
-    """当前激活店铺连接（多账号：面板显示 + 数据过滤）"""
+    """当前站点（淘宝 / 1688）的激活店铺连接。
+
+    原来硬取 active_of("taobao")：跑 1688 时会静默拿到淘宝账号，member_id
+    串成淘宝店的——日志不分店、推广记录会把 1688 的品读到淘宝状态。
+    站点由 conn_store.current_site() 决定（淘宝 / 1688 各自有独立的激活连接）。
+    """
     try:
         import sys as _s
         _wb = paths.ROOT
         if _wb not in _s.path:
             _s.path.insert(0, _wb)
         import conn_store
+        if hasattr(conn_store, "active_shop"):
+            return conn_store.active_shop() or {}
         return conn_store.active_of("taobao") or {}
     except Exception:
         return {}

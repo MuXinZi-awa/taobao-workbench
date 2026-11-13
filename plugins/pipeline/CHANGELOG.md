@@ -3,6 +3,25 @@
 > 本文件依据 `manifest.json`、`README.md`、`_交接_*.md`、workbench 内核 `CHANGELOG.md`（插件版本跳变行）与脚本 mtime 补记。
 > 版本号只写有明确出处者；无出处的改动标「未记载」，不臆测。
 
+## 0.4.0 — 2026-11-13
+- **账号链路支持 1688**（梓帆：「至少选了 1688 类型不会和 taobao 串」）。
+  之前全链硬取 `conn_store.active_of("taobao")`，1688 连接 `type=custom` 永远拿不到，
+  于是静默回落到默认 `chrome_profile`（淘宝那套）——**不报错，只用错账号**。
+  更下游的 `member_id` 恒空，导致日志不分店、推广记录把 1688 的品读到淘宝状态。
+- `conn_store` 新增：`SHOP_TYPES`、`setting` 表、`current_site()` / `set_current_site()`、
+  `active_shop(site)`、`shops()`。站点只允许 `taobao` / `1688`，其它值拒收。
+- `acct_profile.resolve(profile_hint, conn, site=None)` 加 `site`：不传则按 `current_site()`，
+  老调用方式不变。**没有连接时不回退另一家**：1688 走 `chrome_profile_1688`，淘宝走原默认目录。
+- `server.py` 的 `_acct()`、`workbench.py` 的 `_acct_profile()` / `active_token()` 全部改成按站点取。
+- 界面：连接类型新增「1688 店铺」；连接导航页顶部加「当前流水线站点」切换（淘宝 / 1688）；
+  列表标签与密码 placeholder 按类型显示；新增 `/api/conn/site` 接口。
+- 数据迁移：`id=17 1688保险丝子账号` 从 `type=custom` 迁为 `type=1688`（迁移前已备份 conn.db）。
+- 验证：`active_shop('taobao')→id=16`、`active_shop('1688')→id=17`；
+  `resolve(site='1688')` 落 `chrome_profile_1688保险丝子账号`，不再落淘宝目录；
+  界面实测通过（类型下拉含 1688、切站点后按钮态与列表同步）。
+- `acct_profile.py` 增加 profile 根探测：插件里那份镜像也能独立解析（先看自身目录，
+  再问 `paths.get("tg_root")`，最后退固定位置），不会指到 `scripts\chrome_profile`。
+
 ## 0.3.2 — 2026-11-13
 - **视频时长改为按张数反推**。原来是写死 `DUR = 2.5`，4 段算下来 8.2 秒刚好贴 1688 的 8 秒线；
   但 3314 只有 3 张图（封面+详情+拍前须知），3 段只有 7.8 秒，还是不过。

@@ -91,26 +91,35 @@ def core_version():
     return "0.0.0"
 
 
-def _acct_profile(tg):
-    """激活连接对应的浏览器 profile（复用 acct_profile.resolve）；取不到回退默认"""
+def _acct_profile(tg, site=None):
+    """当前站点的激活连接对应浏览器 profile（复用 acct_profile.resolve）。
+
+    site 不传则按 conn_store.current_site()（淘宝/1688），取不到就用站点专属默认目录。
+    """
     try:
         if tg not in sys.path:
             sys.path.insert(0, tg)
         import acct_profile
-        return acct_profile.resolve()
+        try:
+            return acct_profile.resolve(site=site)
+        except TypeError:
+            return acct_profile.resolve()          # 旧版 acct_profile 没 site 参数
     except Exception:
-        return os.path.join(tg, "chrome_profile"), None
+        _s = (site or "").strip().lower()
+        _d = "chrome_profile_1688" if _s == "1688" else "chrome_profile"
+        return os.path.join(tg, _d), None
 
 
 def active_token():
-    """当前激活店铺连接的指纹（插件前端轮询用）——变了 = 切号了，各面板自行重载"""
+    """当前站点激活店铺连接的指纹（插件前端轮询用）——变了 = 切号了，各面板自行重载"""
     try:
         import conn_store
-        a = conn_store.active_of("taobao")
+        _site = conn_store.current_site() if hasattr(conn_store, "current_site") else "taobao"
+        a = conn_store.active_shop(_site) if hasattr(conn_store, "active_shop") else conn_store.active_of("taobao")
         if not a:
-            return {"token": "", "name": ""}
-        return {"token": "%s:%s" % (a.get("id"), a.get("member_id") or ""),
-                "name": a.get("name") or ""}
+            return {"token": "", "name": "", "site": _site}
+        return {"token": "%s:%s:%s" % (_site, a.get("id"), a.get("member_id") or ""),
+                "name": a.get("name") or "", "site": _site}
     except Exception as e:
         return {"token": "", "name": "", "error": str(e)[:60]}
 
@@ -649,7 +658,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 act = p[len("/api/conn/"):].split("?")[0]
                 try:
                     if act == "list":
-                        return self._json({"ok": True, "items": conn_store.list_all()})
+                        return self._json({"ok": True, "items": conn_store.list_all(),
+                                           "site": conn_store.current_site() if hasattr(conn_store, "current_site") else "taobao"})
+                    if act == "site":
+                        # GET ?set=taobao|1688 切换当前流水线站点（POST 也走这里）
+                        _s = (q.get("set", [""])[0] or "").strip().lower()
+                        if _s:
+                            ok = conn_store.set_current_site(_s) if hasattr(conn_store, "set_current_site") else False
+                            return self._json({"ok": bool(ok), "site": _s if ok else None,
+                                               "error": "" if ok else "站点只能是 taobao / 1688"})
+                        return self._json({"ok": True,
+                                           "site": conn_store.current_site() if hasattr(conn_store, "current_site") else "taobao"})
                     if act == "save":
                         return self._json({"ok": False, "error": "save 用 POST"})
                     if act == "del":

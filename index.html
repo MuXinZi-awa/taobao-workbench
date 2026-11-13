@@ -634,8 +634,26 @@ function openSetPage(page){ document.querySelectorAll('.set-nav .item').forEach(
  else renderAbout(document.getElementById('setContent')); }
 async function renderConn(c){
  c.innerHTML='<h3>连接导航</h3><div class="desc">店铺 / ERP 凭据（密码 Windows DPAPI 加密存储，绝不落明文）· 可保存多个、切换当前</div>'
+  +'<div id="siteBar" style="margin:10px 0 12px"></div>'
   +'<div id="connList"></div><div id="connForm" style="margin-top:14px"></div>';
+ renderSiteBar();
  renderConnList();
+}
+// 当前流水线站点：淘宝 / 1688 各有独立的激活连接，切换后各阶段走对应账号
+async function renderSiteBar(){
+ const bar=document.getElementById('siteBar'); if(!bar)return;
+ let cur='taobao';
+ try{ const d=await api('/api/conn/site'); cur=(d&&d.site)||'taobao'; }catch(e){}
+ const mk=function(v,label){ return '<button class="'+(cur===v?'':'ghost')+'" data-site="'+v+'" style="margin-right:6px">'+label+(cur===v?' ✓':'')+'</button>'; };
+ bar.innerHTML='<div style="font-size:12px;color:var(--text-m);margin-bottom:6px">当前流水线站点（决定用哪家的登录态与账号）</div>'
+  +'<div>'+mk('taobao','淘宝')+mk('1688','1688')+'</div>';
+ bar.querySelectorAll('[data-site]').forEach(function(b){
+  b.addEventListener('click', async function(){
+   const r=await api('/api/conn/site?set='+b.dataset.site);
+   if(r&&r.ok){ renderSiteBar(); renderConnList(); }
+   else alert('切换失败：'+((r&&r.error)||'未知'));
+  });
+ });
 }
 async function renderConnList(){
  const list=document.getElementById('connList'); if(!list)return;
@@ -643,7 +661,7 @@ async function renderConnList(){
  if(!items.length){ list.innerHTML='<div style="font-size:12px;color:var(--text-m);padding:8px 0">暂无连接——下方新增</div>'; }
  else{
   list.innerHTML=items.map(x=>{
-   const t=x.type==='odoo'?'ERP':(x.type==='taobao'?'店铺':'其他');
+   const t=x.type==='odoo'?'ERP':(x.type==='taobao'?'淘宝':(x.type==='1688'?'1688':'其他'));
    return '<div class="plug-item" style="margin-bottom:6px">'
     +'<div style="flex:1;min-width:0"><div class="pn">'+esc(x.name||'(未命名)')+' <span class="pv">'+t+(x.active?' · 已激活':'')+'</span></div>'
     +'<div class="pd">'+esc(x.username||'')+(x.url?' · '+esc(x.url):'')+(x.dbname?' · '+esc(x.dbname):'')+'</div></div>'
@@ -676,6 +694,7 @@ function connFormHtml(d){
  const row=(k,id,val,ph,pw)=>'<div class="crow"><span class="ck">'+k+'</span><input id="'+id+'" '+(pw?'type="password" ':'')+'value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'"></div>';
  let body='<div class="crow"><span class="ck">类型</span><select id="cfType" onchange="CONN_EDIT=Object.assign({},CONN_EDIT||{},{type:this.value});renderConnForm()">'
   +'<option value="taobao"'+(ty==='taobao'?' selected':'')+'>淘宝店铺</option>'
+  +'<option value="1688"'+(ty==='1688'?' selected':'')+'>1688 店铺</option>'
   +'<option value="odoo"'+(ty==='odoo'?' selected':'')+'>Odoo ERP</option>'
   +'<option value="custom"'+(ty==='custom'?' selected':'')+'>其他</option></select></div>'
   +row('名称','cfName',d.name,'<SHOP> / 公司ERP');
@@ -687,7 +706,7 @@ function connFormHtml(d){
    +row('密码','cfPass',d.id?'':d.secret||'',d.id?'留空=不修改':'ERP 密码',true);
  }else{
   body+=row('账号','cfUser',d.username,'')
-   +row('密码','cfPass',d.id?'':d.secret||'',d.id?'留空=不修改':'淘宝密码',true)
+   +row('密码','cfPass',d.id?'':d.secret||'',d.id?'留空=不修改':(ty==='1688'?'1688 密码':'淘宝密码'),true)
    +row('Profile','cfProfile',d.profile,'留空=默认；多账号各配一个')
    +row('备注','cfNote',d.note,'');
  }

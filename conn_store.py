@@ -75,12 +75,70 @@ def _conn():
         type TEXT, name TEXT, url TEXT, port TEXT, dbname TEXT,
         username TEXT, secret BLOB, note TEXT, profile TEXT,
         active INTEGER DEFAULT 0, created TEXT)""")
+    # 设置表（当前流水线站点等）
+    c.execute("""CREATE TABLE IF NOT EXISTS setting(
+        k TEXT PRIMARY KEY, v TEXT)""")
     # 迁移：旧库补列
     cols = [r[1] for r in c.execute("PRAGMA table_info(conn)").fetchall()]
     for col, ddl in (("port", "TEXT"), ("profile", "TEXT"), ("member_id", "TEXT")):
         if col not in cols:
             c.execute("ALTER TABLE conn ADD COLUMN %s %s" % (col, ddl))
     return c
+
+
+# ---------- 站点 ----------
+# 店铺类连接的类型：淘宝 / 1688 / 其他（custom 是历史的“其他”，算店铺）
+SHOP_TYPES = ("taobao", "1688", "custom")
+SITE_LABEL = {"taobao": "淘宝", "1688": "1688", "custom": "其他"}
+
+
+def current_site():
+    """当前流水线站点（taobao / 1688）。
+
+    为什么需要这个：淘宝和 1688 是两家不同的店，各自有独立的激活连接（activate()
+    按 type 隔离）。但流水线脚本原先硬取 active_of("taobao")，跑 1688 时会静默
+    拿淘宝的登录态——不报错，只用错账号。所以显式存一个“现在跑哪家”。
+    """
+    try:
+        c = _conn()
+        r = c.execute("SELECT v FROM setting WHERE k='current_site'").fetchone()
+        c.close()
+        v = (r[0] if r else "") or ""
+        return v if v in ("taobao", "1688") else "taobao"
+    except Exception:
+        return "taobao"
+
+
+def set_current_site(site):
+    s = (site or "").strip().lower()
+    if s not in ("taobao", "1688"):
+        return False
+    try:
+        c = _conn()
+        c.execute("INSERT INTO setting(k,v) VALUES('current_site',?) "
+                  "ON CONFLICT(k) DO UPDATE SET v=excluded.v", (s,))
+        c.commit()
+        c.close()
+        return True
+    except Exception:
+        return False
+
+
+def active_shop(site=None):
+    """拿当前站点的激活店铺连接。
+
+    site 不传就用 current_site()。没有激活连接时回 None——**不静默回退到另一家**，
+    宁可让调用方看到空，也不要拿错账号跑完整条流水线。
+    """
+    s = site or current_site()
+    if s == "1688":
+        return active_of("1688") or active_of("custom")
+    return active_of("taobao")
+
+
+def shops():
+    """所有店铺类型连接（不分站点），带 active 标记"""
+    return [x for x in list_all() if (x.get("type") or "") in SHOP_TYPES]
 
 def list_all(mask=True):
     c = _conn()
