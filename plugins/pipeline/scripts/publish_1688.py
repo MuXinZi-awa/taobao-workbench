@@ -67,22 +67,37 @@ def _wb_paths():
     return None
 
 
-def _xuzhi_path():
-    """拍前须知图（详情图最后一张，货号无关，全店共用）。
+def _plugin_dir():
+    """插件根目录。本文件在 plugins/pipeline/scripts/ 下，上溯两层就是 plugins/pipeline。"""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    坑：之前用 `__file__` 上溯两层拼 `素材/模板/...`，得到 `_工程_新品素材\\素材\\模板`
-    根本不存。而兜底用的 `_wb_paths()` 在这个文件里压根没定义——
-    NameError 被 `except` 吞了，于是详情图静默少插一张，日志里看不出来。
-    """
-    cands = []
+
+def _mat_root():
+    """素材库根（<WS>\\办公室工作\\素材\\产品素材）"""
     try:
         _p = _wb_paths()
         if _p:
-            _mr = _p.get('mat_root')          # <WS>\办公室工作\素材\产品素材
-            if _mr:
-                _mat = os.path.dirname(_mr)   # <WS>\办公室工作\素材
-                cands.append(os.path.join(_mat, '模板', 'paigian_xuzhi_1600.png'))
-                cands.append(os.path.join(_mat, '模板', 'paigian_xuzhi.png'))
+            _mr = _p.get('mat_root')
+            if _mr and os.path.isdir(_mr):
+                return _mr
+    except Exception:
+        pass
+    return r'C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\产品素材'
+
+
+def _xuzhi_path():
+    """拍前须知图（全店共用，不跟货号走）。
+
+    顺序：**插件自带优先**（打包必带、换机器一定有）→ 素材库模板目录 → 固定位置。
+    之前只用素材库那一份，换机器/挪目录就丢，且找不到时静默跳过。
+    """
+    cands = [
+        os.path.join(_plugin_dir(), 'assets', 'paigian_xuzhi.png'),
+    ]
+    try:
+        _mat = os.path.dirname(_mat_root())      # <WS>\办公室工作\素材
+        cands.append(os.path.join(_mat, '模板', 'paigian_xuzhi_1600.png'))
+        cands.append(os.path.join(_mat, '模板', 'paigian_xuzhi.png'))
     except Exception:
         pass
     cands.append(r'C:\Users\jdt-pty\Desktop\OH-WorkSpace\办公室工作\素材\模板\paigian_xuzhi_1600.png')
@@ -90,6 +105,42 @@ def _xuzhi_path():
         if c and os.path.isfile(c):
             return c
     return ''
+
+
+def detail_images_for(skus, override=None):
+    """要上的品的详情图 + 拍前须知。**不写死张数**。
+
+    规则：spec.skus 里有几个型号，就找几张 <型号>_详情图.png；最后固定接一张拍前须知。
+    所以双 SKU 就是 2 张参数图 + 1 张拍前须知 = 3 张，单 SKU 就是 2 张。
+    override（spec.media.detail）非空时以它为准，方便临时手调。
+    """
+    if override:
+        out = [p for p in override if p and os.path.isfile(p)]
+        xz = _xuzhi_path()
+        if xz and xz not in out:
+            out.append(xz)
+        return out
+
+    mr = _mat_root()
+    out = []
+    for s in (skus or []):
+        lh = (s.get('型号') or '').strip()
+        if not lh:
+            continue
+        safe = lh.replace('/', '-')
+        for c in (os.path.join(mr, lh, safe + '_详情图.png'),
+                  os.path.join(mr, lh, lh + '_详情图.png')):
+            if os.path.isfile(c):
+                out.append(c)
+                break
+        else:
+            log('    ⚠ %s 在素材库里没有详情图（先跑 detail_*.py）' % lh)
+    xz = _xuzhi_path()
+    if xz:
+        out.append(xz)
+    else:
+        log('    ⚠ 没找到拍前须知图')
+    return out
 
 
 class Stop(Exception):
@@ -1007,14 +1058,9 @@ def main():
                     except Stop as e:
                         log('      SKU %d 失败：%s' % (i + 1, e))
 
-            # 图文详情：参数图 + 拍前须知
-            details = list(media.get('detail') or [])
-            xz = _xuzhi_path()
-            if xz:
-                details.append(xz)
-                log('    拍前须知: %s' % os.path.basename(xz))
-            else:
-                log('    ⚠ 没找到拍前须知图（详情会少一张）')
+            # 图文详情：按 SKU 自动推导（不写死张数）+ 拍前须知
+            details = detail_images_for(spec.get('skus') or [], media.get('detail'))
+            log('    详情图 %d 张: %s' % (len(details), [os.path.basename(x) for x in details]))
             try:
                 fill_detail_images(pub, details)
             except Stop as e:

@@ -3,6 +3,18 @@
 > 本文件依据 `manifest.json`、`README.md`、`_交接_*.md`、workbench 内核 `CHANGELOG.md`（插件版本跳变行）与脚本 mtime 补记。
 > 版本号只写有明确出处者；无出处的改动标「未记载」，不臆测。
 
+## 0.6.2 — 2026-11-13
+- **详情图不再写死张数**（梓帆要求）。新增 detail_images_for(skus, override)：
+  读 spec.skus，有几个型号就找几张 <型号>_详情图.png，末尾固定接一张拍前须知。
+  双 SKU = 3 张，单 SKU = 2 张，不靠手工在 spec 里列 media.detail。
+  spec.media.detail 仍可覆盖（临时手调）。
+  实测：双 SKU 3 张、单 SKU 2 张、空 1 张（只有拍前须知）。
+- **拍前须知进插件自带资源** plugins/pipeline/assets/paigian_xuzhi.png（184 KB）。
+  原来只有素材库 办公室工作\素材\模板\ 那一份，换机器/挪目录就丢。
+  查找顺序：插件 assets → 素材库模板目录 → 固定位置；找不到打 warn，不静默。
+- 详情图模板一直就在 plugins/pipeline/templates/（pptc/pot/tvs/tbu 四个），
+  和工程目录那份逐字节一致，打包时从插件取，不会丢。
+
 ## 0.6.1 — 2026-11-13
 - **修：详情图少了拍前须知**（梓帆发现的）。publish_1688.py 里用 __file__ 上溯两层
   拼 素材/模板/...，得到的是 _工程_新品素材\素材\模板\...，根本不存在；
