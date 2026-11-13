@@ -146,7 +146,28 @@ def open_select(ctx, reuse=True):
 
 
 def pick_category(page, kw, expect_path):
-    """搜类目 → 点第一个可点的同名叶子 → 校验已选路径 → 点「确认类目继续完善」→ 返回新发布页"""
+    """搜类目 → 从下拉候选里挑出**路径匹配**的那个 → 校验 → 确认 → 返回发布页。
+
+    为何不能盲点第一个：同名候选一堆（电位器就有 4 个），分属不同父类目：
+      电子元器件>电阻器>电位器                       ← 目标
+      电子元器件>集成电路（IC）>模拟芯片>数字电位器芯片
+      电子元器件>电子材料/零部件>电子五金材料>电位器旋钮
+      电工电气>低压电器>电阻器（电位器）
+    每个 `.search-select-span` 的父级元素里就含着完整路径，读它再比，不用猜。
+    """
+    # 先清空再输（残留状态下不先清空，下拉不会刷新）
+    page.evaluate("""() => {
+        const inp = Array.from(document.querySelectorAll('input'))
+            .find(e => (e.placeholder || '').indexOf('类目搜索') >= 0);
+        if (!inp) return;
+        inp.focus();
+        const d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+        d.set.call(inp, '');
+        inp.dispatchEvent(new Event('input', {bubbles: true}));
+        inp.dispatchEvent(new Event('change', {bubbles: true}));
+    }""")
+    page.wait_for_timeout(500)
+
     r = page.evaluate("""(kw) => {
         const inp = Array.from(document.querySelectorAll('input'))
             .find(e => (e.placeholder || '').indexOf('类目搜索') >= 0);
@@ -160,79 +181,109 @@ def pick_category(page, kw, expect_path):
     }""", kw)
     if r != 'ok':
         raise Stop('类目搜索框不可用: %s' % r)
-    page.wait_for_timeout(3000)
 
-    clicked = page.evaluate("""(kw) => {
-        const cands = [];
+    # 等候选出现（不等于一定对）
+    got = False
+    for _ in range(12):
+        page.wait_for_timeout(700)
+        n = page.evaluate("() => document.querySelectorAll('.search-select-span').length")
+        if n:
+            got = True
+            break
+    if not got:
+        raise Stop('搜「%s」后没出候选（下拉没刷新？先把 select.htm 的类目选择清掉）' % kw)
+
+    # 读每个候选的完整路径，挑匹配的那个
+    cands = page.evaluate("""() => {
+        const out = [];
+        document.querySelectorAll('.search-select-span').forEach(e => {
+            const r = e.getBoundingClientRect();
+            let path = '';
+            let cur = e.parentElement;
+            for (let i = 0; i < 4 && cur; i++) {
+                const t = (cur.innerText || '').replace(/\\s+/g, ' ').trim();
+                if (t.indexOf('>') >= 0) { path = t; break; }
+                cur = cur.parentElement;
+            }
+            out.push({x: Math.round(r.x), y: Math.round(r.y), path: path, self: (e.innerText||'').trim()});
+        });
+        return out;
+    }""")
+    log('[2] 共 %d 个候选' % len(cands))
+    pick = None
+    for c in cands:
+        mark = '✓' if (expect_path and expect_path in c['path']) else ' '
+        log('    %s %s' % (mark, c['path'][:80] or c['self']))
+        if mark.strip() and pick is None:
+            pick = c
+    if expect_path and pick is None:
+        raise Stop('候选里没有路径含「%s」的项' % expect_path)
+    if pick is None:
+        pick = cands[0]
+
+    # 给目标打 id，用 Playwright 真实点击（elementFromPoint 会被浮层挡住，点了没反应）
+    tagged = page.evaluate("""([x, y, expect]) => {
+        // 重新按「路径匹配」找一次，不依赖坐标（页面可能重排过）
+        let target = null;
+        document.querySelectorAll('.search-select-span').forEach(e => {
+            let cur = e.parentElement, p = '';
+            for (let i = 0; i < 4 && cur; i++) {
+                const t = (cur.innerText || '').replace(/\\s+/g, ' ').trim();
+                if (t.indexOf('>') >= 0) { p = t; break; }
+                cur = cur.parentElement;
+            }
+            if (expect && p.indexOf(expect) >= 0 && !target) target = e;
+        });
+        if (!target) {
+            const all = Array.from(document.querySelectorAll('.search-select-span'));
+            target = all[0] || null;
+        }
+        if (!target) return 'none';
+        target.id = '__wb_pick_cat';
+        return 'tagged';
+    }""", [pick['x'], pick['y'], expect_path or ''])
+    if tagged != 'tagged':
+        raise Stop('没能标记目标类目项')
+
+    try:
+        page.locator('#__wb_pick_cat').click(timeout=8000)
+        log('    已点击目标候选')
+    except Exception as e:
+        # 退路：JS 直接点（有的自定义项用 click() 才认）
+        page.evaluate("() => { const e = document.getElementById('__wb_pick_cat'); if (e) e.click(); }")
+        log('    Playwright 点击失败，退回 JS 点击: %s' % str(e)[:50])
+    page.wait_for_timeout(2200)
+
+    # 校验已选类目：只读「已选区域」里的文本，不扫全页
+    # （全页扫 > 会把左侧类目树展开的路径一起读进来，得到一堆无关路径，
+    #   比如点对了「电位器」却读到「五金、工具>紧固件...」，误判成失败）
+    got = page.evaluate("""() => {
+        // 「确认类目继续完善」按钮上方 260px 内的短文本 = 已选区
+        let by = null;
+        Array.from(document.querySelectorAll('button, a, span, div')).forEach(e => {
+            if (e.children.length > 0) return;
+            if ((e.textContent || '').replace(/\\s+/g, '').trim() !== '确认类目继续完善') return;
+            const r = e.getBoundingClientRect();
+            if (r.width > 0) by = r.y;
+        });
+        if (by === null) return {ok: false, texts: []};
+        const texts = [];
         document.querySelectorAll('*').forEach(e => {
             if (e.children.length > 0) return;
-            const t = (e.textContent || '').replace(/\\s+/g, '').trim();
-            if (t !== kw) return;
+            const t = (e.textContent || '').replace(/\\s+/g, ' ').trim();
+            if (!t || t.length > 40) return;
             const r = e.getBoundingClientRect();
-            if (r.width < 20 || r.height < 8) return;
-            cands.push({y: r.y, el: e});
+            if (r.y < by - 260 || r.y > by || r.width === 0) return;
+            if (texts.indexOf(t) < 0) texts.push(t);
         });
-        if (!cands.length) return 'no-candidate';
-        cands.sort((a, b) => a.y - b.y);
-        cands[0].el.click();
-        return 'clicked';
-    }""", kw)
-    if clicked != 'clicked':
-        raise Stop('类目「%s」没有可点结果: %s' % (kw, clicked))
-    page.wait_for_timeout(2000)
-
-    def _path():
-        return page.evaluate("""() => {
-            const bc = Array.from(document.querySelectorAll('*'))
-                .filter(e => e.children.length === 0)
-                .map(e => (e.textContent || '').replace(/\\s+/g, '').trim())
-                .filter(t => t && t.length < 30 && t.indexOf('>') >= 0);
-            return bc.join(' | ');
-        }""")
-
-    path = _path()
-    log('[2] 已选路径: %s' % (path or '(未读到)'))
-
-    # 不匹配就换下一个候选：页面状态残留时，第一个同名项往往不是目标类目
-    if expect_path and expect_path not in (path or ''):
-        log('    首个候选路径不符，逐个换候选')
-        ok = False
-        n = page.evaluate("""(kw) => {
-            const cands = [];
-            document.querySelectorAll('*').forEach(e => {
-                if (e.children.length > 0) return;
-                const t = (e.textContent || '').replace(/\\s+/g, '').trim();
-                if (t !== kw) return;
-                const r = e.getBoundingClientRect();
-                if (r.width < 20 || r.height < 8) return;
-                cands.push(r.y);
-            });
-            return cands.length;
-        }""", kw)
-        for i in range(1, min(n, 6)):
-            page.evaluate("""([kw, idx]) => {
-                const cands = [];
-                document.querySelectorAll('*').forEach(e => {
-                    if (e.children.length > 0) return;
-                    const t = (e.textContent || '').replace(/\\s+/g, '').trim();
-                    if (t !== kw) return;
-                    const r = e.getBoundingClientRect();
-                    if (r.width < 20 || r.height < 8) return;
-                    cands.push({y: r.y, el: e});
-                });
-                cands.sort((a, b) => a.y - b.y);
-                if (cands[idx]) cands[idx].el.click();
-            }""", [kw, i])
-            page.wait_for_timeout(1500)
-            path = _path()
-            log('    候选 %d → %s' % (i, (path or '')[:70]))
-            if expect_path and expect_path in (path or ''):
-                ok = True
-                break
-        if not ok:
-            raise Stop('类目路径不符：期望含「%s」，试了 %d 个候选都不对，最后 %r'
-                       % (expect_path, min(n, 6), (path or '')[:80]))
-    log('    ✓ 路径匹配')
+        return {ok: true, texts: texts};
+    }""")
+    log('[3] 已选区文本: %s' % (', '.join(got.get('texts', [])[:8]) or '(空)'))
+    # 叶子名（取 expect_path 最后一段）必须出现在已选区里
+    leaf = (expect_path or '').split('>')[-1] if expect_path else ''
+    if leaf and leaf not in ' '.join(got.get('texts', [])):
+        raise Stop('已选区里没看到「%s」，类目可能没选上' % leaf)
+    log('    ✓ 已选类目含「%s」' % leaf)
 
     # 点击前先记住已有页面：浏览器里长期挂着旧编辑页（URL 也含 publish.htm 但带 id=），
     # 不先记快照就会抓到旧页，填完发现改的是别的商品（昨天就是这招差点把 3314 写成 MF-R110）
@@ -423,18 +474,32 @@ def import_sku_excel(page, xlsx):
 def fill_price_and_weight(page, skus):
     """逐行填批发价 / 可售数量 / 件重尺。
 
+    前置：默认是「按产品数量报价」，报价表根本不存在，必须先切「按产品规格报价」，
+    否则找不到批发价表（之前就卡在这里）。
+
     两个关键教训：
-    1. **必须逐行，不能用「批量设置」**——梓帆明确说过：多个 SKU 批量设价格会乱
-       （两个型号本来价不同，批量会把它们设成同一个值）。列头那个「批量设置」是给
-       “所有 SKU 同价”场景用的，这里不用。
+    1. **必须逐行，不能用「批量设置」**——多个 SKU 价格不同，批量会把它们设成同一个值。
     2. **next-table 把表头和数据拆成两个 <table>**：
          .next-table-header-inner table  → 只有 thead
          .next-table-body table         → 才是 tbody 数据行
-       直接遍历 document.querySelectorAll('table') 找含「批发价」的表，拿到的是表头那半，
-       tbody tr 永远是 0——看起来像「报价表没生成」，实际行一直在那里。
+       直接遍历 document.querySelectorAll('table') 找含「批发价」的表，拿到的是表头那半。
     """
     if not skus:
         return {}
+
+    # 先切「按产品规格报价」
+    sw = page.evaluate("""() => {
+        const e = Array.from(document.querySelectorAll('.ant-radio-wrapper, label'))
+            .find(x => (x.textContent || '').replace(/\\s+/g, '').trim() === '按产品规格报价');
+        if (!e) return 'no-radio';
+        const i = e.querySelector('input[type=radio]');
+        if (i && i.checked) return 'already';
+        (i || e).click();
+        return 'clicked';
+    }""")
+    log('[8] 报价方式 → 按产品规格报价: %s' % sw)
+    page.wait_for_timeout(2500)
+
     log('[9] 填报价与件重尺（逐行）')
     data = [{
         'price': str(s.get('price', '')), 'qty': str(s.get('qty', '')),
@@ -534,6 +599,222 @@ def fill_price_and_weight(page, skus):
     return back
 
 
+# ────────────────────────── 阶段 5：主图上传（picman）──────────────────────────
+
+def _picman_frame(page, timeout_s=20):
+    """等 picman 弹窗出现并返回它的 frame。"""
+    for _ in range(int(timeout_s / 0.8)):
+        page.wait_for_timeout(800)
+        for f in page.frames:
+            if 'picman' in (f.url or ''):
+                return f
+    return None
+
+
+def upload_image_picker(page, img_path):
+    """走 picman 传一张图到当前槽位。
+
+    流程（梓帆纠正过一次，少走一半弯路）：
+      点槽位「添加图片」→ picman iframe → 切「我的电脑」
+      → 上传 → 等「上传成功」→ **就地直接点「插入图片」**
+
+    **不需要切回「图片管家」相册**。之前我切回去找图，结果相册里残留着上次的选中状态，
+    一点就把旧图一起插进来了（多选）。就地插入只带本次上传的那张。
+
+    另一个坑：按钮叫「**插入图片**」，不是「插入」——只找「插入」会以为没有，
+    然后傻傻地切回相册。
+    """
+    if not os.path.isfile(img_path):
+        raise Stop('图片不存在: %s' % img_path)
+
+    fr = _picman_frame(page)
+    if fr is None:
+        raise Stop('picman 弹窗没出现')
+
+    # 切「我的电脑」
+    fr.evaluate("""() => {
+        const el = Array.from(document.querySelectorAll('li')).find(e =>
+            (e.textContent || '').replace(/\\s+/g, '').trim() === '我的电脑');
+        if (el) el.click();
+    }""")
+    page.wait_for_timeout(2000)
+
+    n = fr.evaluate("() => document.querySelectorAll('input[type=file]').length")
+    if not n:
+        raise Stop('「我的电脑」里没有 input[type=file]')
+    fr.locator('input[type=file]').first.set_input_files(img_path, timeout=10000)
+
+    # 等上传成功
+    ok = False
+    for _ in range(12):
+        page.wait_for_timeout(1500)
+        if fr.evaluate("() => (document.body.innerText || '').indexOf('上传成功') >= 0"):
+            ok = True
+            break
+    if not ok:
+        raise Stop('上传后 18 秒没出现「上传成功」')
+
+    # 就地插入——不切回相册（切回去会把残留的旧选中一起插进来）
+    page.wait_for_timeout(800)
+    r = fr.evaluate("""() => {
+        const all = () => Array.from(document.querySelectorAll('button, a, [class*=btn]'));
+        const pick = (pred) => all().find(pred);
+        const isBtn = (e) => {
+            const t = (e.textContent || '').replace(/\\s+/g, '').trim();
+            const r = e.getBoundingClientRect();
+            return r.width > 0 && t === '插入图片' && String(e.className).indexOf('disabled') < 0;
+        };
+        const el = pick(e => isBtn(e) && String(e.className).indexOf('submit') >= 0)
+                || pick(isBtn);
+        if (!el) {
+            // 诊断：把当前可见按钮名字回传，省得下次又猜
+            const names = all().map(e => (e.textContent || '').replace(/\\s+/g, '').trim())
+                              .filter(t => t && t.length < 8);
+            return 'not-found:' + Array.from(new Set(names)).slice(0, 10).join('/');
+        }
+        el.id = '__wb_ins';
+        return 'found';
+    }""")
+    if not r.startswith('found'):
+        raise Stop('上传后没找到「插入图片」按钮（可见按钮：%s）' % r[10:])
+    fr.locator('#__wb_ins').click(timeout=6000)
+    page.wait_for_timeout(3000)
+    log('      ✓ 已插入 %s' % os.path.basename(img_path))
+
+
+def main_img_slots(page):
+    return page.evaluate("""() => Array.from(
+        document.querySelectorAll('div.picture-sort-list div.module-picture-cover-wrapper')
+    ).map((e, i) => ({i: i, empty: String(e.className).indexOf('cover-empty') >= 0}))""")
+
+
+def clear_main_images(page):
+    n = page.evaluate("""() => {
+        let n = 0;
+        document.querySelectorAll('div.picture-sort-list div.module-picture-cover-wrapper').forEach(s => {
+            if (String(s.className).indexOf('cover-empty') >= 0) return;
+            const del = Array.from(s.querySelectorAll('a')).find(a => (a.textContent || '').trim() === '删除');
+            if (del) { del.click(); n++; }
+        });
+        return n;
+    }""")
+    page.wait_for_timeout(1500)
+    return n
+
+
+def fill_ship_time(page, value='48小时发货'):
+    """选发货时间。
+
+    坑：这个 select 常在视口外（y 为负），不先 scrollIntoView 点不到；
+    下拉选项在 `.ant-select-dropdown` 里，只在该层里找，不扫全页。
+    """
+    log('[10] 发货时间 → %s' % value)
+    r = page.evaluate("""([val]) => {
+        const els = Array.from(document.querySelectorAll('.ant-select')).filter(e => {
+            const t = (e.innerText || '').replace(/\\s+/g, '').trim();
+            const r = e.getBoundingClientRect();
+            return r.width > 0 && (t.indexOf('发货时间') >= 0 || t === '请选择发货时间');
+        });
+        if (!els.length) return 'no-select';
+        els[0].id = '__wb_ship';
+        els[0].scrollIntoView({block: 'center'});
+        return 'tagged';
+    }""", [value])
+    if r != 'tagged':
+        raise Stop('找不到发货时间下拉')
+    page.wait_for_timeout(1000)
+
+    try:
+        page.locator('#__wb_ship').click(timeout=6000)
+    except Exception:
+        page.evaluate("() => { const e = document.getElementById('__wb_ship'); if (e) { const s = e.querySelector('.ant-select-selector'); (s || e).click(); } }")
+    page.wait_for_timeout(1800)
+
+    hit = page.evaluate("""(val) => {
+        const out = [];
+        document.querySelectorAll('.ant-select-dropdown, .next-overlay-inner').forEach(L => {
+            L.querySelectorAll('*').forEach(e => {
+                if (e.children.length > 0) return;
+                const t = (e.textContent || '').replace(/\\s+/g, '').trim();
+                if (t !== val) return;
+                const r = e.getBoundingClientRect();
+                if (r.width > 4) out.push({x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2)});
+            });
+        });
+        if (!out.length) return 'not-found';
+        return out[0].x + ',' + out[0].y;
+    }""", value)
+    if hit == 'not-found':
+        raise Stop('发货时间下拉里没有「%s」' % value)
+    x, y = [int(v) for v in hit.split(',')]
+    page.evaluate("""([x, y, val]) => {
+        const el = document.elementFromPoint(x, y);
+        if (!el) return;
+        let cur = el;
+        for (let i = 0; i < 4 && cur; i++) {
+            if ((cur.textContent || '').replace(/\\s+/g, '').trim() === val) { cur.click(); return; }
+            cur = cur.parentElement;
+        }
+        el.click();
+    }""", [x, y, value])
+    page.wait_for_timeout(2000)
+
+    got = page.evaluate("() => { const e = document.getElementById('__wb_ship'); return e ? (e.innerText || '').replace(/\\s+/g, ' ').trim() : ''; }")
+    if value not in got:
+        raise Stop('发货时间读回不符：%r' % got[:40])
+    log('      ✓ 读回: %s' % got[:30])
+
+
+def fill_detail_images(page, imgs):
+    """在上品「图文详情」（TinyMCE 3.5.8）里插图片。
+
+    流程：点工具栏 `#tinyMCE-0_image` → picman → 我的电脑 → 上传 → 立刻点「插入图片」。
+    和主图/SKU 图同一套 picman，**不需要切回相册**。
+
+    已知问题：插完后页面上「请填写图文详情」的诊断**不会实时消失**，
+    即使 TinyMCE 模型里确实有内容（getContent 有 <img>）。
+    可能是页面加载时算一次的静态校验，也可能真的要求别的。
+    所以这里不拿诊断当判据，改而验证 TinyMCE 模型本身。
+    """
+    if not imgs:
+        return 0
+    log('[11] 图文详情：插 %d 张图' % len(imgs))
+    done = 0
+    for i, img in enumerate(imgs):
+        if not os.path.isfile(img):
+            log('      [跳过] 不存在: %s' % img)
+            continue
+        r = page.evaluate("""() => {
+            const e = document.getElementById('tinyMCE-0_image');
+            if (!e) return 'no-btn';
+            e.scrollIntoView({block: 'center'});
+            e.click();
+            return 'clicked';
+        }""")
+        if r != 'clicked':
+            log('      第 %d 张：找不到插入图片按钮' % (i + 1))
+            continue
+        page.wait_for_timeout(3500)
+        try:
+            upload_image_picker(page, img)
+            done += 1
+        except Stop as e:
+            log('      第 %d 张失败：%s' % (i + 1, e))
+        page.wait_for_timeout(1500)
+
+    # 校验 TinyMCE 模型（不看诊断）
+    st = page.evaluate("""() => {
+        const ed = (tinymce.editors || []).find(e => e.id.indexOf('tinyMCE') >= 0);
+        if (!ed) return {err: 'no-editor'};
+        const c = ed.getContent() || '';
+        return {len: c.length, imgs: (c.match(/<img/g) || []).length};
+    }""")
+    log('    TinyMCE 模型: 长度 %s，图片 %s 张' % (st.get('len'), st.get('imgs')))
+    if (st.get('imgs') or 0) < 1:
+        raise Stop('详情图插了 %d 次，但 TinyMCE 模型里没有图' % done)
+    return done
+
+
 # ────────────────────────── 诊断 ──────────────────────────
 
 def diagnostics(page):
@@ -558,7 +839,9 @@ def main():
     ap.add_argument('--spec', required=True)
     ap.add_argument('--submit', action='store_true')
     ap.add_argument('--dry-run', action='store_true')
+    ap.add_argument('--skip-media', action='store_true', help='跳过图片/视频（图片上传不稳时用）')
     a = ap.parse_args()
+    skip_media = a.skip_media
 
     spec = json.load(io.open(a.spec, encoding='utf-8'))
     log('=== 1688 上品 ===')
@@ -593,11 +876,87 @@ def main():
             log('[6] 跳过多 SKU 导入（找不到 %s）' % xlsx)
 
         fill_price_and_weight(pub, spec.get('skus') or [])
+        fill_ship_time(pub, spec.get('ship') or '48小时发货')
 
-        log('[10] 诊断: %s' % diagnostics(pub))
+        # 主图（可跳过：图片上传不稳时不阻塞其余阶段）
+        media = spec.get('media') or {}
+        mains = media.get('main') or []
+        if mains and not skip_media:
+            log('[11] 上传主图 %d 张' % len(mains))
+            clear_main_images(pub)
+            for i, img in enumerate(mains):
+                try:
+                    r = pub.evaluate("""(i) => {
+                        const slots = document.querySelectorAll('div.picture-sort-list div.module-picture-cover-wrapper');
+                        const s = slots[i];
+                        if (!s) return 'no-slot';
+                        const add = Array.from(s.querySelectorAll('*')).find(e => {
+                            if (e.children.length > 0) return false;
+                            return (e.textContent || '').replace(/\\s+/g, '').trim() === '添加图片';
+                        });
+                        if (!add) return 'no-add-btn';
+                        add.id = '__wb_addslot';
+                        add.scrollIntoView({block: 'center'});
+                        return 'tagged';
+                    }""", i)
+                    if r != 'tagged':
+                        log('      槽位 %d: %s（跳过）' % (i, r))
+                        continue
+                    pub.locator('#__wb_addslot').click(timeout=6000)
+                    pub.wait_for_timeout(3000)
+                    upload_image_picker(pub, img)
+                except Stop as e:
+                    log('      ⚠ 第 %d 张失败：%s' % (i + 1, e))
+            slots = main_img_slots(pub)
+            log('    主图槽位: %s' % [(s['i'], '有' if not s['empty'] else '空') for s in slots])
+
+            # SKU 图：图框只有 28x28，locator 会被遮挡超时，必须用鼠标事件直接打
+            sku_imgs = media.get('sku') or []
+            if sku_imgs:
+                log('[12] 上传 SKU 图 %d 张' % len(sku_imgs))
+                for i, img in enumerate(sku_imgs):
+                    if not os.path.isfile(img):
+                        continue
+                    r = pub.evaluate("""(i) => {
+                        const boxes = document.querySelectorAll('div.ind-table-img-box');
+                        const box = boxes[i];
+                        if (!box) return 'no-box';
+                        if (String(box.className).indexOf('ind-has-img') >= 0) return 'already';
+                        box.scrollIntoView({block: 'center'});
+                        const ev = (t) => box.dispatchEvent(new MouseEvent(t, {bubbles: true, cancelable: true, view: window}));
+                        ev('mousedown'); ev('mouseup'); ev('click');
+                        return 'dispatched';
+                    }""", i)
+                    if r != 'dispatched':
+                        log('      SKU %d: %s（跳过）' % (i + 1, r))
+                        continue
+                    pub.wait_for_timeout(3000)
+                    try:
+                        upload_image_picker(pub, img)
+                    except Stop as e:
+                        log('      SKU %d 失败：%s' % (i + 1, e))
+
+            # 图文详情：参数图 + 拍前须知
+            details = list(media.get('detail') or [])
+            xz = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              '素材', '模板', 'paigian_xuzhi_1600.png')
+            if not os.path.isfile(xz):
+                try:
+                    _p = _wb_paths()
+                    xz = os.path.join(os.path.dirname(os.path.dirname(_p.get('mat_root'))), '素材', '模板', 'paigian_xuzhi_1600.png')
+                except Exception:
+                    pass
+            if os.path.isfile(xz):
+                details.append(xz)
+            try:
+                fill_detail_images(pub, details)
+            except Stop as e:
+                log('    ⚠ 详情图：%s' % e)
+
+        log('[12] 诊断: %s' % diagnostics(pub))
         log('')
-        log('第 1-4 段完成（类目 / 基础信息 / SKU 导入 / 报价件重尺）。')
-        log('待做：发货时间、主图、SKU 图、图文详情、视频、提交。')
+        log('第 1-6 段完成（类目/基础/SKU/报价件重尺/发货时间/主图/SKU图/详情图）。')
+        log('待做：视频、提交。')
         return 0
 
 
