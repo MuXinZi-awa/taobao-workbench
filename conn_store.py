@@ -119,6 +119,7 @@ def set_current_site(site):
                   "ON CONFLICT(k) DO UPDATE SET v=excluded.v", (s,))
         c.commit()
         c.close()
+        bump_rev()  # 站点变更 → 通知各插件清状态
         return True
     except Exception:
         return False
@@ -196,6 +197,7 @@ def activate(cid):
         c.close()
         if t in ("taobao", "1688"):
             set_current_site(t)
+        bump_rev()  # 账户切换 → 通知各插件清状态
         return
     c.commit()
     c.close()
@@ -206,6 +208,7 @@ def set_member_id(cid, mid):
     c.execute("UPDATE conn SET member_id=? WHERE id=?", (str(mid or ""), cid))
     c.commit()
     c.close()
+    bump_rev()  # member_id 变更 → 插件清状态
 
 
 def set_profile(cid, p):
@@ -214,6 +217,67 @@ def set_profile(cid, p):
     c.execute("UPDATE conn SET profile=? WHERE id=?", (str(p or ""), cid))
     c.commit()
     c.close()
+
+
+# ---------- 账户上下文（所有插件唯一入口）----------
+# 背景：各插件原先各自调 active_of("taobao")，member_id 为空时又各自回退到
+# 历史/全局数据，导致新店铺（如伯恩斯专卖店）显示别家的计划与容量。
+# 统一规则：**未知归属绝不显示别人的数据**。
+def acct_rev():
+    """账户版本号。激活 / 切站点 / 绑 member_id 都 +1。
+
+    前端轮询这个值，变了就清空本地状态重载——这是「账户广播」的最小实现，
+    不需要 WebSocket，也不会漏掉任何一次切换。
+    """
+    try:
+        c = _conn()
+        r = c.execute("SELECT v FROM setting WHERE k='acct_rev'").fetchone()
+        c.close()
+        return int((r[0] if r else 0) or 0)
+    except Exception:
+        return 0
+
+
+def bump_rev():
+    """账户变更时调用，版本号 +1。失败不影响主流程。"""
+    try:
+        c = _conn()
+        c.execute("INSERT INTO setting(k,v) VALUES('acct_rev','1') "
+                  "ON CONFLICT(k) DO UPDATE SET v=CAST(CAST(v AS INTEGER)+1 AS TEXT)")
+        c.commit()
+        c.close()
+        return True
+    except Exception:
+        return False
+
+
+def acct_context(site=None):
+    """★ 所有插件取账户信息的唯一入口。
+
+    返回:
+      site      taobao / 1688
+      rev       版本号（变了说明账户切过，前端要清状态）
+      conn      连接 dict 或 None
+      name      连接名
+      member_id 推广账户 ID（可能为空）
+      bound     True = 有连接且 member_id 非空，可以正常取数据
+      has_conn  是否有激活连接
+      reason    "" / "no_conn" / "no_member_id"
+
+    **bound=False 时调用方必须显示空态，绝不回退历史数据。**
+    """
+    s = site or current_site()
+    rev = acct_rev()
+    conn = active_shop(s)
+    if not conn:
+        return {"site": s, "rev": rev, "conn": None, "name": "",
+                "member_id": "", "bound": False, "has_conn": False,
+                "reason": "no_conn"}
+    mid = str(conn.get("member_id") or "").strip()
+    return {"site": s, "rev": rev, "conn": conn,
+            "name": conn.get("name") or "",
+            "member_id": mid, "bound": bool(mid), "has_conn": True,
+            "reason": "" if mid else "no_member_id"}
 
 
 def active_of(ctype):

@@ -182,10 +182,20 @@ async function stopBatch(){
  setTimeout(load,3000);
 }
 async function refreshCap(){
- const bm=document.getElementById('bmsg'); bm.innerHTML='⏳ 容量刷新中…（约30s，静默）';
- const d=await fetch(P+'refresh-caps').then(r=>r.json());
- bm.innerHTML=d.msg||d.error||'完成';
- setTimeout(load,32000);
+ const bm=document.getElementById('bmsg');
+ // 快版：纯 HTTP 并发，实际 ~1.8s。旧版跑批脚本要 30s，所以这里曾写死 setTimeout(32000)。
+ const t0=performance.now();
+ bm.innerHTML='⏳ 刷新中…';
+ let d={};
+ try{ d=await fetch(P+'refresh-caps').then(r=>r.json()); }
+ catch(e){ bm.innerHTML='✗ 请求失败：'+(e.message||e); return; }
+ const dt=Math.round(performance.now()-t0);
+ if(d.ok){
+  bm.innerHTML='✓ '+(d.msg||('已刷新 '+dt+'ms'));
+  await load();                 // 立刻刷新，不再等 32 秒
+ } else {
+  bm.innerHTML='✗ '+(d.error||'刷新失败')+(d.log?('<br><span style="color:#888;font-size:11px">'+(d.log||'').replace(/\n/g,'<br>')+'</span>'):'');
+ }
 }
 function pickLhCol(head){ for(let i=0;i<head.length;i++){ if(/料号|型号|part|mpn|sku/i.test(head[i])&&!/价|名/.test(head[i])) return i; } return head.findIndex(h=>/料号/.test(h)); }
 const drop=document.getElementById('drop');

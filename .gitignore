@@ -64,3 +64,8 @@ plugins/tg-monitor/login_state.json
 
 # pipeline 详情图渲染中间产物（HTML 临时文件）
 plugins/pipeline/out/
+
+# 店铺登录态（storage_state，含 unb/cookie2 等凭据）——绝不入库
+state/
+**/state/*.json
+plugins/pipeline/state/

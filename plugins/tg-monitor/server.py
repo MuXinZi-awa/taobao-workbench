@@ -6,7 +6,7 @@
   3. 计划容量：runtime/plan_state.json（tuiguang_auto 每批跑完写——尚未加，先读存在则显示）
   4. 进程/登录态：查 tuiguang_auto 进程 + _dual_one 探测
 """
-import os, io, csv, json, subprocess, datetime
+import os, io, csv, json, subprocess, shutil, datetime
 
 import sys as _sys
 _d = os.path.dirname(os.path.abspath(__file__))
@@ -57,17 +57,27 @@ def _acct_fp(name):
 
 def plans_cur():
     """当前账号的计划列表（计划ID → 名字）
-    已绑账号 → 只读该账号的 plan_names（没有就是空表，不回退默认 11 个，防串号）
-    未绑 → 用默认列表（历史兼容）"""
-    mid = str(_acct().get("member_id") or "")
+
+    铁律：**未知归属绝不显示别人的数据**。
+      无激活连接       → 空
+      有连接但未绑 mid  → 空（提示去绑定）
+      已绑但没数据     → 空
+    以前最后一条会回退到硬编码的 11 个计划，于是未绑定的新店铺会看到
+    连接器店的计划（串号）。现在彻底去掉这个回退。
+    """
+    a = _acct()
+    if not a:
+        return []
+    mid = str(a.get("member_id") or "")
+    if not mid:
+        return []
     fp = _acct_fp("plan_names.json")
     pn = {}
-    if mid:
-        try:
-            import state_db
-            pn = {k: (v.get("name") or k) for k, v in (state_db.get_plans(mid) or {}).items() if v}
-        except Exception:
-            pn = {}
+    try:
+        import state_db
+        pn = {k: (v.get("name") or k) for k, v in (state_db.get_plans(mid) or {}).items() if v}
+    except Exception:
+        pn = {}
     if not pn and os.path.isfile(fp):
         try:
             pn = json.load(io.open(fp, encoding="utf-8"))
@@ -75,9 +85,7 @@ def plans_cur():
             pn = {}
     if pn:
         return [{"id": pid, "name": pn.get(pid, pid)} for pid in pn]
-    if mid:
-        return []
-    return [{"id": pid, "name": pid} for pid in _PLAN_ORDER]
+    return []
 
 
 def _read_rows(fp):
@@ -111,7 +119,11 @@ def _units_total(plan_state):
 
 
 def _pool_stats(rec_lh):
-    """默认池进度：总料号 / 已跑（在记录） / 剩余"""
+    """默认池进度：总料号 / 已跑（在记录） / 剩余
+
+    未绑定 member_id 时 rec_lh 为空，但池子文件是全局的——
+    直接把 done 计为 0，不拿别家记录凑数。
+    """
     pool = os.path.join(TG, "runtime", "推广池_0905.csv")
     total = done = 0
     try:
@@ -119,7 +131,7 @@ def _pool_stats(rec_lh):
             for r in csv.reader(f):
                 if r and r[0].strip() and "料号" not in r[0] and "型号" not in r[0]:
                     total += 1
-                    if r[0].strip() in rec_lh:
+                    if rec_lh and r[0].strip() in rec_lh:
                         done += 1
     except Exception:
         pass
@@ -170,48 +182,118 @@ def _lg_read():
 
 def _lg_write(v, msg=""):
     try:
+        # level 从 msg 前缀提取（_login 写的格式是 "[valid] ..."）
+        _lv = "valid" if v is True else ("error" if v is None else "invalid")
+        for _k in ("valid", "partial", "none", "error"):
+            if "[%s]" % _k in msg:
+                _lv = _k
+                break
         io.open(LG_FP, "w", encoding="utf-8").write(
-            json.dumps({"v": v, "t": __import__("time").time(), "msg": msg}))
+            json.dumps({"v": v, "t": __import__("time").time(),
+                        "msg": msg, "level": _lv}, ensure_ascii=False))
     except Exception:
         pass
 
 
-def _login(force=False):
-    """登录态探测：跑 _dual_one.py 一次（**不带 --headless**）+ 90s 缓存。
+def _profile_of_acct():
+    """当前激活店铺的 Chrome profile 目录（不弹窗、不 import 内核）。"""
+    try:
+        a = _acct() or {}
+        prof = (a.get("profile") or "").strip()
+        if prof:
+            p = prof if os.path.isabs(prof) else os.path.join(TG, prof)
+            if os.path.isdir(p):
+                return p
+        name = (a.get("name") or "").strip()
+        if name:
+            p = os.path.join(TG, "chrome_profile_" + name)
+            if os.path.isdir(p):
+                return p
+        return os.path.join(TG, "chrome_profile")
+    except Exception:
+        return os.path.join(TG, "chrome_profile")
 
-    为什么不带 --headless：无头起浏览器没有登录态（cookie 不在那个会话里），判定必然失败；
-    内核那条 /api/browser-status 就是不带无头跑的，两条路要一样的参数才可能给一样的结论。
-    失败不吞：把原因写进 login_state.json 的 msg，"检测"按钮会弹出来。
+
+def _cookie_login_check():
+    """读 Chrome profile 的 Cookies 数据库判断登录态 —— 不开浏览器、不填密码。
+
+    返回 (ok, level, msg)
+      True  valid    unb + cookie2 都在
+      False partial  有会话 cookie 但缺 unb（没登完整）
+      False none     关键 cookie 都没有
+      None  error    读不出来（不冤枉登录态）
+    """
+    import sqlite3
+    prof = _profile_of_acct()
+    cands = [os.path.join(prof, "Default", "Network", "Cookies"),
+             os.path.join(prof, "Default", "Cookies")]
+    fp = next((x for x in cands if os.path.isfile(x)), "")
+    if not fp:
+        return None, "error", "profile 里没有 Cookies 文件：%s" % os.path.basename(prof)
+
+    tmp = os.path.join(BASE, "_cookies_tmp.db")
+    names = {}
+    try:
+        shutil.copy2(fp, tmp)
+        for ext in ("-wal", "-shm"):
+            if os.path.isfile(fp + ext):
+                shutil.copy2(fp + ext, tmp + ext)
+        con = sqlite3.connect(tmp)
+        cur = con.cursor()
+        cur.execute("SELECT name FROM cookies WHERE host_key LIKE '%taobao.com%'")
+        for (n,) in cur.fetchall():
+            names[n] = 1
+        con.close()
+    except Exception as e:
+        return None, "error", "读 Cookies 失败：%s" % str(e)[:80]
+    finally:
+        for p in (tmp, tmp + "-wal", tmp + "-shm"):
+            try:
+                if os.path.isfile(p):
+                    os.remove(p)
+            except Exception:
+                pass
+
+    has_unb = "unb" in names
+    has_c2 = "cookie2" in names
+    has_sg = "sgcookie" in names
+    tag = os.path.basename(prof)
+    if has_unb and has_c2:
+        return True, "valid", "登录态完整（unb + cookie2 + sgcookie，profile=%s）" % tag
+    if has_c2 or has_sg:
+        return False, "partial", ("登录态不完整：缺 unb（没真正进卖家后台）。"
+                                  "走 设置→浏览器→引导登录 再登一次，登完看到商品列表再关。")
+    return False, "none", "没有检测到淘宝登录态（profile=%s）" % tag
+
+
+def _login(force=False):
+    """登录态检测：**读 cookie，不开浏览器、不填密码**。
+
+    历史教训（2026-11-14）：
+      原先跑 _dual_one.py 查硬编码商品 1379668 判断登录态——
+      商品不在当前店铺就打印「未搜到」，被当成「登录态失效」，误判了一整天。
+      日志里明明有 `[mtop] 就绪（token=...）`，说明登录是好的。
+      而且没传 --probe，auto_login 自动填密码，淘宝风控每次都发短信。
+
+    现在：只读 profile 的 Cookies 数据库，不发任何网络请求。
     """
     import time as _t
     _d = _lg_read()
     if not force and _d.get("v") is not None and _t.time() - _d.get("t", 0) < 90:
         return _d.get("v")
-    _py = os.path.join(TG, "runtime", "python.exe")
-    _script = os.path.join(TG, "_dual_one.py")
     try:
-        r = subprocess.run([_py, "-X", "utf8", "-u", _script, "1379668", ""],
-                           capture_output=True, timeout=90)
+        ok, level, msg = _cookie_login_check()
     except Exception as e:
-        _bslog("来源=插件 结果=探测失败 python=%s 原因=%s" % (_py, str(e)[:120]))
-        _lg_write(None, "探测失败：%s" % str(e)[:120])
-        return None
-    out = (r.stdout or b"").decode("utf-8", "replace")
-    err = (r.stderr or b"").decode("utf-8", "replace")
-    # 判据与内核一致：只认这三个词算"有登录态"；"未搜到"不算（那是没导到数据，不是登录成功）
-    ok = any(k in out for k in ("已双百", "未双百", "流量加速中"))
-    if ok:
-        msg = "登录态有效（cookie 在 chrome_profile）"
-    elif "未搜到" in out:
-        msg = "未检测到登录态：查询没搜到数据（多半是登录态失效）"
-    elif r.returncode != 0:
-        msg = "探测失败：脚本退出码 %s；%s" % (r.returncode,
-                                              (err or out).strip().replace("\n", " / ")[-140:])
-    else:
-        msg = "登录态失效（输出里没看到有效的登录态标志）"
-    _bslog("来源=插件 脚本=_dual_one.py 参数='1379668 \"\"' headless=否 python=%s cwd=%s rc=%s 判定=%s 结论=%s"
-           % (_py, os.getcwd(), r.returncode, "有效" if ok else "失效", msg))
-    _lg_write(ok, msg)
+        ok, level, msg = None, "error", "检测异常：%s" % str(e)[:100]
+    try:
+        _bslog("来源=插件 方式=cookie level=%s profile=%s 结论=%s"
+               % (level, os.path.basename(_profile_of_acct()), msg))
+    except Exception:
+        pass
+    try:
+        _lg_write(ok, "[%s] %s" % (level, msg))
+    except Exception:
+        pass
     return ok
 
 def progress():
@@ -234,11 +316,14 @@ def status():
     _rows = rec_rows
     if _rows and _rows[0] and ("料号" in (_rows[0][0] or "") or "状态" in " ".join(_rows[0])):
         _rows = _rows[1:]
+    _mid_rec = str(_acct().get("member_id") or "")
     for r in _rows:
         if len(r) >= 2 and r[0].strip():
             _racct = (r[3].strip() if len(r) > 3 else "") or "<MEMBER_ID>"   # 第4列 account（老数据归店铺1）
-            _mid = str(_acct().get("member_id") or "")
-            if _mid and _racct and _racct != _mid:
+            # 未绑定 member_id → 不统计任何记录（宁可空，不显示别家的）
+            if not _mid_rec:
+                continue
+            if _racct and _racct != _mid_rec:
                 continue
             rec_lh.add(r[0].strip())
             if len(r) >= 3 and r[2].strip().startswith(today):
@@ -250,6 +335,7 @@ def status():
     # 计划容量按账号存在状态库里（sqlite）。以前是 json，同一个东西两份
     # （plan_state.json / plan_state_<member>.json），刷新写 A、面板读 B，数字就对不上了。
     _mid_now = str(_acct().get("member_id") or "")
+    _has_conn = bool(_acct())
     _stale_note = ""
     if _mid_now:
         try:
@@ -257,12 +343,18 @@ def status():
             plan_state = state_db.get_plans(_mid_now) or {}
             if not plan_state:
                 _stale_note = ("状态库里还没有账号 %s 的容量数据——点「刷新容量」拉一次（约 30s）。"
-                               % _mid_now)
+                               "若拉取失败，多半是这个账号在万相台没权限。" % _mid_now)
         except Exception as e:
             _stale_note = "状态库读不到：%s" % str(e)[:80]
+    elif _has_conn:
+        # 有激活连接但没绑 member_id——绝不能退回读全局旧文件，那会把别的店的计划当成自己的。
+        _stale_note = ("当前账号「%s」读不到推广计划。两个常见原因："
+                       "① 该店铺没绑推广账户 ID（member_id）；"
+                       "② 该店铺是淘宝子账号，主账号没在「子账号管理」里给它开万相台权限。"
+                       "自助确认：浏览器登万相台 one.alimama.com 看能不能进去；"
+                       "能进就在 设置→连接 里填 member_id（推广后台地址栏或接口里能看到）。"
+                       % (_acct().get("name") or "未命名"))
     else:
-        # 没有激活账号：**不显示数**。以前这里退回读全局旧文件，于是面板一直挂着几十天前的数字，
-        # 看着像"数据丢了"。正确做法是引导登录取账号——按账号入库的东西，没账号就不该有数。
         _stale_note = ("当前没有激活的店铺账号——先到 设置→连接 保存/激活账号（登录在 设置→浏览器"
                        "里的「引导登录」），再点「刷新容量」。容量按账号存，认到账号才有数。")
     for p in plans_cur():
@@ -270,8 +362,7 @@ def status():
         st = plan_state.get(pid, {})
         count = st.get("count")
         ts = st.get("time", "")
-        plans.append({"id": pid, "name": p["name"], "count": count, "time": ts,
-                      "full_known": pid in ("72264315693", "83306736168")})
+        plans.append({"id": pid, "name": p["name"], "count": count, "time": ts})
     running = _running()
     # login 只读缓存——自动探测已禁（probe headless 抢 chrome_profile → 批/手动 launch 全被顶掉）
     # 登录态用手动「检测」按钮；批跑时状态看 running；容量批自更新+手动刷新
@@ -279,8 +370,10 @@ def status():
     _a = _acct()
     return {
         "ok": True,
-        "account": {"name": _a.get("name") or "", "member_id": _a.get("member_id") or ""},
+        "account": {"name": _a.get("name") or "", "member_id": _a.get("member_id") or "",
+                    "bound": bool(_mid_now), "has_conn": _has_conn},
         "login": login,
+        "login_level": (_lg_read().get("level") or ("valid" if login else "none")),
         "running": running,
         "stats": {"rec": len(rec_lh), "today": rec_today, "units": _units_total(plan_state),
                  "pool": _pool_stats(rec_lh)},
@@ -304,21 +397,45 @@ def handle(action, qs):
         _d = _lg_read()
         return {"ok": True, "login": _d.get("v"), "msg": _d.get("msg") or ""}
     if action == "refresh-caps":
-        # 刷新容量：subprocess detach 跑 refresh_caps.py（headless 静默——约 25-30s）
+        # 刷新容量（快版）：纯 HTTP + 并发，约 1.6 秒。
+        # 旧版跑 runtime\refresh_caps.py（persistent_context + 串行，~35s，
+        # 而且 headless 下登录态带不出 → 静默失败）。
         import subprocess as _sp
+        import time as _t
         rt = os.path.join(TG, "runtime", "python.exe")
+        script = os.path.join(BASE, "refresh_caps_fast.py")
+        if not os.path.isfile(script):
+            return {"ok": False, "error": "找不到 refresh_caps_fast.py（插件目录下）"}
+        t0 = _t.time()
+        try:
+            r = _sp.run([rt, "-X", "utf8", "-u", script],
+                        cwd=TG, capture_output=True, timeout=120)
+        except Exception as e:
+            return {"ok": False, "error": "执行失败：%s" % str(e)[:100]}
+        dt = int((_t.time() - t0) * 1000)
+        out = (r.stdout or b"").decode("utf-8", "replace")
+        err = (r.stderr or b"").decode("utf-8", "replace")
+        # 落日志（排障用）
         try:
             lg = os.path.join(TG, "runtime", "refresh_caps.log")
-            _f = io.open(lg, "a", encoding="utf-8", errors="replace")
-            _f.write("\n==== %s 刷新容量开始 ====\n" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            _f.flush()
-            # 输出必须接住：以前是 fire-and-forget，失败也看不见（"点了没反应"就是这么来的）
-            _sp.Popen([rt, "-X", "utf8", "-u", os.path.join(TG, "runtime", "refresh_caps.py")],
-                      cwd=TG, creationflags=0x08000000, stdout=_f, stderr=_sp.STDOUT)
-            return {"ok": True,
-                    "msg": "容量刷新已启动（约 30s）。完成后点刷新。日志：runtime\\refresh_caps.log"}
-        except Exception as e:
-            return {"ok": False, "error": str(e)[:80]}
+            with io.open(lg, "a", encoding="utf-8", errors="replace") as _f:
+                _f.write("\n==== %s 快版刷新（%d ms，rc=%s）====\n%s\n" % (
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    dt, r.returncode, out))
+        except Exception:
+            pass
+        ok = (r.returncode == 0) and ("已写入" in out)
+        # 从输出里抓几个关键行给前端
+        brief = [ln.strip() for ln in out.splitlines()
+                 if ln.startswith(("计划数", "容量", "已写入", "合计"))]
+        if not ok:
+            tail = (err or out).strip().splitlines()[-6:]
+            return {"ok": False, "ms": dt,
+                    "error": "刷新失败（rc=%s）" % r.returncode,
+                    "log": "\n".join(tail)[-600:]}
+        return {"ok": True, "ms": dt,
+                "msg": "容量已刷新（%d ms）：%s" % (dt, " | ".join(brief)),
+                "log": out[-800:]}
     if action == "start-batch":
         """面板手动起批：默认池或指定 csv（qs.file=绝对路径）；返回本次待推清单头几个"""
         import subprocess as _sp
