@@ -37,6 +37,99 @@ CDP = os.environ.get('HANA_CDP') or 'http://127.0.0.1:9222'
 SELECT_URL = 'https://offer-new.1688.com/select.htm'
 
 
+def _chrome_path():
+    """Chrome 可执行文件。和 paths.py 同一口径，优先本地覆盖。"""
+    env = os.environ.get('WB_CHROME') or os.environ.get('CHROME_PATH')
+    if env and os.path.isfile(env):
+        return env
+    try:
+        _p = _wb_paths()
+        if _p:
+            c = _p.get('chrome')
+            if c and os.path.isfile(c):
+                return c
+    except Exception:
+        pass
+    for c in (r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+              r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+              os.path.expanduser(r'~\AppData\Local\Google\Chrome\Application\chrome.exe')):
+        if os.path.isfile(c):
+            return c
+    return ''
+
+
+def _profile_1688():
+    """1688 站点的浏览器 profile 目录（acct_profile.resolve 按站点取）。
+
+    三级兜底：paths.get(tg_root) → 从素材根反推工作区再拼「推广一键跑」→ 不猜。
+    """
+    tg = ''
+    try:
+        _p = _wb_paths()
+        if _p:
+            tg = _p.get('tg_root') or ''
+    except Exception:
+        pass
+
+    if not tg or not os.path.isdir(tg):
+        # 素材根是 <WS>\办公室工作\素材\产品素材，上三级回工作区，兄弟目录就是推广一键跑
+        try:
+            ws = os.path.dirname(os.path.dirname(os.path.dirname(_mat_root())))  # <WS>
+            _c = os.path.join(os.path.dirname(ws), '推广一键跑')
+            if os.path.isdir(_c):
+                tg = _c
+        except Exception:
+            pass
+
+    if not tg:
+        log('⚠ 找不到「推广一键跑」目录，无法定位 1688 profile')
+        return ''
+
+    if tg not in sys.path:
+        sys.path.insert(0, tg)
+    try:
+        import acct_profile
+        try:
+            r = acct_profile.resolve(site='1688')
+        except TypeError:
+            r = acct_profile.resolve()
+        return r[0] if isinstance(r, (tuple, list)) else str(r)
+    except Exception as e:
+        log('⚠ 取 1688 profile 失败: %s' % e)
+        return ''
+
+
+def open_browser(p):
+    """开浏览器：有已开的调试端口就用它（方便看现场），没有就自己起。
+
+    **这一点很重要**：原来写死 `connect_over_cdp('http://127.0.0.1:9222')`，
+    意味着必须先手工开一个带 --remote-debugging-port 的 Chrome 才能跑。
+    不依赖人的用法应该是——直接双击跑，脚本自己拉浏览器。
+
+    返回 (ctx, owned)。owned=True 表示是自己起的，结束时该关。
+    """
+    try:
+        b = p.chromium.connect_over_cdp(CDP)
+        if b and b.contexts:
+            log('已连上现有浏览器 (%s)' % CDP)
+            return b.contexts[0], False
+    except Exception:
+        pass
+
+    prof = _profile_1688()
+    chrome = _chrome_path()
+    if not prof:
+        raise Stop('拿不到 1688 的 profile 目录，无法启动浏览器')
+    if not chrome:
+        raise Stop('找不到 Chrome，请设环境变量 WB_CHROME 指到 chrome.exe')
+    log('启动浏览器: profile=%s' % os.path.basename(prof.rstrip('\\')))
+    ctx = p.chromium.launch_persistent_context(
+        prof, executable_path=chrome, headless=False,
+        viewport={'width': 1500, 'height': 950}, locale='zh-CN',
+        args=['--disable-blink-features=AutomationControlled'])
+    return ctx, True
+
+
 # ── workbench 路径兼容层（换机器只改 paths.local.json）──
 def _wb_paths():
     """找 workbench 的 paths.py。本脚本可能在工程目录，也可能在插件 scripts 下。"""
@@ -962,6 +1055,8 @@ def main():
     ap.add_argument('--submit', action='store_true')
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--skip-media', action='store_true', help='跳过图片/视频（图片上传不稳时用）')
+    ap.add_argument('--keep-open', action='store_true',
+                    help='跑完不关浏览器（自己起的才有效；默认关，连已有的不影响）')
     a = ap.parse_args()
     skip_media = a.skip_media
 
@@ -972,10 +1067,14 @@ def main():
     log('  提交: %s' % ('是' if a.submit else '否（只填不提交）'))
 
     with sync_playwright() as p:
-        b = p.chromium.connect_over_cdp(CDP)
-        ctx = b.contexts[0]
-        sel = open_select(ctx)
-        pub = pick_category(sel, spec.get('cat_kw', ''), spec.get('cat_path', ''))
+        ctx, _owned = open_browser(p)
+        try:
+            sel = open_select(ctx)
+            pub = pick_category(sel, spec.get('cat_kw', ''), spec.get('cat_path', ''))
+        except Exception:
+            if _owned:
+                ctx.close()
+            raise
 
         if a.dry_run:
             log('[dry-run] 停在这里，读一下页面结构')
@@ -1070,6 +1169,12 @@ def main():
         log('')
         log('第 1-6 段完成（类目/基础/SKU/报价件重尺/发货时间/主图/SKU图/详情图）。')
         log('待做：视频、提交。')
+        # 自己起的浏览器跑完就关；连的是别人的就不动（梓帆要看得见现场）
+        if _owned and not a.keep_open:
+            log('浏览器已关闭（想留着看现场加 --keep-open）')
+            ctx.close()
+        elif _owned:
+            log('浏览器保持打开（--keep-open）')
         return 0
 
 

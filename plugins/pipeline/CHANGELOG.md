@@ -3,6 +3,15 @@
 > 本文件依据 `manifest.json`、`README.md`、`_交接_*.md`、workbench 内核 `CHANGELOG.md`（插件版本跳变行）与脚本 mtime 补记。
 > 版本号只写有明确出处者；无出处的改动标「未记载」，不臆测。
 
+## 0.6.3 — 2026-11-14
+- **1688 上品脚本不再依赖手工开的调试端口**（梓帆问「能不能不依赖你直接用」时暴露的）。
+  原来写死 connect_over_cdp('http://127.0.0.1:9222')，必须先手工开一个带
+  --remote-debugging-port=9222 的 Chrome 才能跑——这就不叫「能自己用」。
+  现在改成 open_browser(p)：有已开的调试端口就用它（方便看现场），
+  没有就自己 launch_persistent_context（和淘宝 publish_auto 一个口径）。
+  profile 走 cct_profile.resolve(site='1688')，三级兜底推导「推广一键跑」目录。
+  新增 --keep-open：自己起的浏览器默认跑完关掉，要留着看现场就加这个参数。
+
 ## 0.6.2 — 2026-11-13
 - **详情图不再写死张数**（梓帆要求）。新增 detail_images_for(skus, override)：
   读 spec.skus，有几个型号就找几张 <型号>_详情图.png，末尾固定接一张拍前须知。
