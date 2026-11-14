@@ -1077,8 +1077,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                        "account": (conn or {}).get("name") or "",
                                        "cookies": ck.get("cookies") or {},
                                        "cdp": _cdp_note,
+                                       # CDP 连不上通常只是没走引导登录那条路，
+                                       # 只要数据库判定通过就不必拿它去吓人。
                                        "msg": (ck.get("detail") or "")
-                                              + ("｜CDP: " + _cdp_note if _cdp_note else "")})
+                                              + ("" if ck.get("login")
+                                                 else ("｜CDP: " + _cdp_note
+                                                       if _cdp_note else ""))})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:80]})
             if p == "/api/browser-login":
