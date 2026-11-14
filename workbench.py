@@ -94,18 +94,49 @@ def core_version():
 def _acct_profile(tg, site=None):
     """当前站点的激活连接对应浏览器 profile（复用 acct_profile.resolve）。
 
-    site 不传则按 conn_store.current_site()（淘宝/1688），取不到就用站点专属默认目录。
+    —— 这里踩过一个很贵的坑：引导登录和检测登录态用了**不同的 profile**。
+       resolve(site=None) 一旦拿不到连接，会回退 _default_profile_for(None)，
+       也就是笼统的 chrome_profile；而 _mtop_api 那边按激活连接算出的是
+       chrome_profile_<连接名>。两个目录不同 → 你在引导登录里登进去了，
+       检测时读的却是另一个空目录 → 自动填账号密码 → 淘宝风控发短信。
+       表现就是「每次登录都要短信验证」。
+
+    所以：站点必须显式定；兜底也必须按激活连接名推导，绝不退回 chrome_profile。
     """
     try:
         if tg not in sys.path:
             sys.path.insert(0, tg)
         import acct_profile
+        # 显式定站点（resolve 内部对 site=None 的处理不可靠）
+        if not site:
+            try:
+                import conn_store
+                site = conn_store.current_site() if hasattr(conn_store, "current_site") else "taobao"
+            except Exception:
+                site = "taobao"
         try:
             return acct_profile.resolve(site=site)
         except TypeError:
-            return acct_profile.resolve()          # 旧版 acct_profile 没 site 参数
-    except Exception:
-        _s = (site or "").strip().lower()
+            return acct_profile.resolve()          # 旧版没有 site 参数
+    except Exception as e:
+        # 兜底：按激活连接名推导，不用笼统的 chrome_profile
+        _s = (site or "taobao").strip().lower()
+        _conn = None
+        try:
+            import conn_store
+            if hasattr(conn_store, "active_shop"):
+                _conn = conn_store.active_shop(_s)
+            else:
+                _conn = conn_store.active_of("taobao")
+        except Exception:
+            pass
+        if _conn:
+            _p = (_conn.get("profile") or "").strip()
+            if _p:
+                return (os.path.join(tg, _p) if not os.path.isabs(_p) else _p), _conn
+            _name = (_conn.get("name") or "").strip()
+            if _name:
+                return os.path.join(tg, "chrome_profile_" + _name), _conn
         _d = "chrome_profile_1688" if _s == "1688" else "chrome_profile"
         return os.path.join(tg, _d), None
 
