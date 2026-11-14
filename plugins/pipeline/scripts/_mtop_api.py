@@ -82,7 +82,7 @@ class MtopClient:
         self.token = ""
         os.makedirs(RUNTIME_DIR, exist_ok=True)
 
-    def open(self, headless=False):
+    def open(self, headless=False, auto_login=True):
         """headless=True：无头启动（登录态探测等静默场景——不弹窗）
         CDP 优先：梓帆手开的 Chrome（--remote-debugging-port）持着登录态，连上去用它；
         连不上才自起浏览器。不靠环境变量传递——工作台起子进程不传 env。
@@ -118,14 +118,19 @@ class MtopClient:
             self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
         self.page.goto(SELL_URL, timeout=60000, wait_until="domcontentloaded")
         self.page.wait_for_timeout(3000)
-        self._login()
+        self._login(allow_fill=auto_login)
         self.page.wait_for_timeout(2500)
         self._refresh_token()
         print("[mtop] 就绪（token=%s...）" % self.token[:16])
         return self
 
-    def _login(self):
-        """内嵌登录：检测登录框 → 填账号密码 → 登录（已登录直接过）"""
+    def _login(self, allow_fill=True):
+        """内嵌登录：检测登录框 → 填账号密码 → 登录（已登录直接过）
+
+        allow_fill=False 时只报告状态，**绝不填密码**——
+        这是「检测登录态」该有的行为。检测动作触发密码登录，
+        淘宝风控会判为异常设备并要求短信验证（每次检测都要验证码就是这么来的）。
+        """
         try:
             if self.page.locator("span.next-btn-helper:has-text('发布商品')").count() > 0:
                 print("[登录] 已登录（发布商品按钮在）")
@@ -143,6 +148,10 @@ class MtopClient:
                     continue
             if not need:
                 print("[登录] 已登录")
+                return
+            if not allow_fill:
+                # 只探测，不登录：把状态说清楚，别拿密码去撞风控
+                print("[登录] 未登录（检测模式：不自动填密码）——请点「引导登录」手工登录")
                 return
             try:
                 lf.fill("#fm-login-id", ACCOUNT)
@@ -190,19 +199,12 @@ class MtopClient:
         self._refresh_token()
         if not self.token:
             raise RuntimeError("无 _m_h5_tk——需重新登录")
-        # fetch 必须带超时：淘宝对个别料号会一直不回话（正常品 0.5s 就回），
-        # 没超时的话这一个调用就无限等，一个品能把整批拖死。（1026 从线上版回并）
         resp = self.page.evaluate(
             """async (a) => {
-                const c = new AbortController();
-                const t = setTimeout(() => c.abort(), a.ms);
-                try {
-                    const r = await fetch(a.u, {method: 'POST', credentials: 'include',
-                        signal: c.signal,
-                        headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: a.b});
-                    return await r.text();
-                } finally { clearTimeout(t); }
-            }""", {"u": url, "b": body, "ms": 45000})
+                const r = await fetch(a.u, {method: 'POST', credentials: 'include',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: a.b});
+                return await r.text();
+            }""", {"u": url, "b": body})
         return json.loads(resp)
 
     def search_items(self, kw, page=1, page_size=20):
