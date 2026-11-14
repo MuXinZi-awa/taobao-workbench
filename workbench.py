@@ -141,6 +141,78 @@ def _acct_profile(tg, site=None):
         return os.path.join(tg, _d), None
 
 
+def check_login_cookie(prof):
+    """读 Chrome profile 的 cookie 数据库判断登录态——**不开浏览器**。
+
+    为什么不开：Playwright 起的浏览器带自动化特征，淘宝会拦在登录页；
+    而且 profile 若正被真实 Chrome 占着，launch_persistent_context 会撞目录锁。
+    判定登录态只需要知道 cookie 在不在，读 SQLite 就够。
+
+    返回 {login, level, detail, cookies:{name:状态}}
+      level: valid   cookie2+sgcookie 都在，且 unb 在 → 真登录过
+             partial 有会话 cookie 但缺 unb → 像是没登完整
+             none    没有关键 cookie
+    """
+    import sqlite3
+    import shutil
+    import tempfile
+    import time as _t
+
+    EPOCH_1601 = 11644473600
+    now = _t.time()
+    cands = [os.path.join(prof, "Default", "Network", "Cookies"),
+             os.path.join(prof, "Default", "Cookies")]
+    src = next((c for c in cands if os.path.isfile(c)), None)
+    if not src:
+        return {"login": False, "level": "none", "cookies": {},
+                "detail": "profile 里没有 Cookies 文件: %s" % os.path.basename(prof)}
+
+    tmp = os.path.join(tempfile.gettempdir(),
+                       "wb_ck_%d_%d.db" % (int(now), os.getpid()))
+    try:
+        shutil.copy2(src, tmp)          # 复制再读：Chrome 开着会锁原文件
+        con = sqlite3.connect(tmp)
+        rows = con.execute(
+            "SELECT name, expires_utc FROM cookies "
+            "WHERE host_key LIKE '%taobao.com%'").fetchall()
+        con.close()
+    except Exception as e:
+        return {"login": False, "level": "none", "cookies": {},
+                "detail": "读 Cookies 失败: %s" % str(e)[:60]}
+    finally:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+
+    got = {}
+    for name, exp in rows:
+        if exp and exp > 0:
+            left = exp / 1000000 - EPOCH_1601 - now
+            got[name] = ("有效" if left > 0 else "已过期")
+        else:
+            got[name] = "会话"
+
+    has = lambda k: k in got and got[k] != "已过期"
+    core = has("cookie2") and has("sgcookie")
+    # unb 是硬判据：实测登录成功的号（保险丝子账号1/2、1688）都有 unb，
+    # 而只走到登录页中段的 profile 都缺它。lgc 只有 1688 才有，不能当条件。
+    real = has("unb")
+    tk = has("_m_h5_tk")
+
+    if core and real:
+        return {"login": True, "level": "valid", "cookies": got,
+                "detail": "登录态完整（cookie2 + sgcookie + unb）；MTOP票据: %s"
+                          % ("在" if tk else "缺（跑一次查询会自刷新）")}
+    if core:
+        return {"login": False, "level": "partial", "cookies": got,
+                "detail": "有 cookie2/sgcookie 但缺 unb——没真正登录成功。"
+                          "请在引导登录开的窗口里登录，直到看见卖家中心首页（商品列表），"
+                          "停 20 秒再关窗口"}
+    return {"login": False, "level": "none", "cookies": got,
+            "detail": "缺 cookie2 / sgcookie——没有登录态，点「引导登录」登录"}
+
+
 def active_token():
     """当前站点激活店铺连接的指纹（插件前端轮询用）——变了 = 切号了，各面板自行重载"""
     try:
@@ -905,22 +977,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     _log_err("GET", e, path=p[:160])
                     return self._json({"error": str(e)[:80]}, 500)
             if p == "/api/browser-status":
-                # 浏览器登录态检测（chrome_profile cookie 有效性——跑一次查询探测）
+                # 登录态检测：**只读 cookie 数据库，不开浏览器**。
+                # 老做法跑 _dual_one.py 探测，但 Playwright 起的浏览器带自动化特征，
+                # 淘宝会拦在登录页；profile 若正被真实 Chrome 占着还会撞目录锁。
+                # 判登录态根本不需要开浏览器。
                 try:
-                    import subprocess
-                    TG = paths.TG_ROOT
-                    RT = os.path.join(TG, "runtime", "python.exe")
-                    # --probe：只探测登录态，不自动填密码。
-                    # 否则「检测登录态」= 用密码登录一次，淘宝风控每次都要短信验证。
-                    r = subprocess.run([RT, "-X", "utf8", "-u", os.path.join(TG, "_dual_one.py"), "1379668", "", "--probe"],
-                                       capture_output=True, timeout=90)
-                    out = (r.stdout or b"").decode("utf-8", "replace")
-                    ok = "已双百" in out or "未双百" in out or "流量加速中" in out
-                    _bslog("来源=内核 脚本=_dual_one.py 参数='1379668 \"\"' headless=否 python=%s cwd=%s rc=%s 判定=%s 输出尾=%s"
-                           % (RT, os.getcwd(), r.returncode, "有效" if ok else "失效",
-                              out.strip().replace("\n", " / ")[-160:]))
-                    return self._json({"ok": True, "login": ok,
-                                       "msg": "登录态有效（cookie 在 chrome_profile）" if ok else "登录态失效"})
+                    prof, conn = _acct_profile(paths.TG_ROOT)
+                    ck = check_login_cookie(prof)
+                    _bslog("来源=内核 方式=cookie直读 profile=%s level=%s 判定=%s %s"
+                           % (os.path.basename(prof), ck.get("level"),
+                              "有效" if ck.get("login") else "失效",
+                              (ck.get("detail") or "")[:120]))
+                    return self._json({"ok": True, "login": ck.get("login"),
+                                       "level": ck.get("level"),
+                                       "profile": os.path.basename(prof),
+                                       "account": (conn or {}).get("name") or "",
+                                       "cookies": ck.get("cookies") or {},
+                                       "msg": ck.get("detail") or ""})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:80]})
             if p == "/api/browser-login":
