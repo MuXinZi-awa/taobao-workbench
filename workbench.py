@@ -8,6 +8,7 @@ import http.server
 import socketserver
 import json
 import os
+import sys
 import glob
 import re
 
@@ -139,6 +140,41 @@ def _acct_profile(tg, site=None):
                 return os.path.join(tg, "chrome_profile_" + _name), _conn
         _d = "chrome_profile_1688" if _s == "1688" else "chrome_profile"
         return os.path.join(tg, _d), None
+
+
+LOGIN_CDP_PORT = 9223          # 引导登录专用调试端口（避开手开的 9222）
+
+
+def read_cookie_via_cdp(port=None):
+    """连**正在运行的** Chrome 读淘宝 cookie（会话 cookie 也能读到）。
+
+    为什么需要这条路：cookie2 / _tb_token_ / unb 是会话级 cookie，
+    Chrome 关闭就清；把 restore_on_startup 设成 1 实测也没保住。
+    但只要 Chrome 还开着，这些 cookie 就在内存里，CDP 能读出来。
+
+    为什么走子进程：工作台的 HTTP 服务是多线程的，Playwright 的 sync API
+    不支持子线程（会报 "function() argument 'code' must be code"）。
+    所以交给 _probe_cookie_cdp.py 在独立进程里读。
+    """
+    import subprocess
+
+    port = int(port or LOGIN_CDP_PORT)
+    RT = os.path.join(paths.TG_ROOT, "runtime", "python.exe")
+    SC = os.path.join(paths.TG_ROOT, "_probe_cookie_cdp.py")
+    if not os.path.isfile(SC):
+        return {"ok": False, "cookies": {}, "detail": "找不到 _probe_cookie_cdp.py"}
+    if not os.path.isfile(RT):
+        RT = sys.executable
+    try:
+        r = subprocess.run([RT, "-X", "utf8", "-u", SC, str(port)],
+                           capture_output=True, timeout=45)
+        out = (r.stdout or b"").decode("utf-8", "replace").strip()
+        if not out:
+            err = (r.stderr or b"").decode("utf-8", "replace")[-160:]
+            return {"ok": False, "cookies": {}, "detail": "子进程无输出 %s" % err}
+        return __import__("json").loads(out.splitlines()[-1])
+    except Exception as e:
+        return {"ok": False, "cookies": {}, "detail": "调子进程失败: %s" % str(e)[:60]}
 
 
 def _ensure_session_restore(prof):
@@ -1019,6 +1055,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # 判登录态根本不需要开浏览器。
                 try:
                     prof, conn = _acct_profile(paths.TG_ROOT)
+                    # 先试从运行中的 Chrome 读（会话 cookie 只有这条路读得到）
+                    cd = read_cookie_via_cdp()
+                    if cd.get("ok"):
+                        _bslog("来源=内核 方式=CDP直读 profile=%s %s"
+                               % (os.path.basename(prof), cd.get("detail")))
+                        return self._json({"ok": True, "login": True, "level": "valid",
+                                           "profile": os.path.basename(prof),
+                                           "account": (conn or {}).get("name") or "",
+                                           "cookies": cd.get("cookies") or {},
+                                           "msg": cd.get("detail") or ""})
+                    _cdp_note = cd.get("detail") or ""
                     ck = check_login_cookie(prof)
                     _bslog("来源=内核 方式=cookie直读 profile=%s level=%s 判定=%s %s"
                            % (os.path.basename(prof), ck.get("level"),
@@ -1029,7 +1076,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                        "profile": os.path.basename(prof),
                                        "account": (conn or {}).get("name") or "",
                                        "cookies": ck.get("cookies") or {},
-                                       "msg": ck.get("detail") or ""})
+                                       "cdp": _cdp_note,
+                                       "msg": (ck.get("detail") or "")
+                                              + ("｜CDP: " + _cdp_note if _cdp_note else "")})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:80]})
             if p == "/api/browser-login":
@@ -1050,7 +1099,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     _u = "https://myseller.taobao.com/home.htm/SellManage/on_sale"
                     if "url=login" in p:
                         _u = "https://login.taobao.com/member/login.jhtml"
-                    subprocess.Popen([chrome, "--user-data-dir=" + prof, _u])
+                    # 带调试端口启动：这样登录后能直接从运行中的 Chrome 读 cookie，
+                    # 不依赖会话 cookie 落盘（实测落盘靠不住，关窗口就清）
+                    subprocess.Popen([chrome, "--user-data-dir=" + prof,
+                                      "--remote-debugging-port=%d" % LOGIN_CDP_PORT, _u])
                     nm = (conn or {}).get("name") or "默认"
                     return self._json({"ok": True, "profile": os.path.basename(prof), "account": nm,
                                        "session_restore": _smsg,
