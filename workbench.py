@@ -934,8 +934,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     # 入口选卖家中心而不是 login.taobao.com：
                     # 专门的登录页是淘宝风控重点，从卖家中心被重定向过去上下文更自然。
                     # 想回旧入口加 ?url=login
+                    # 注意：do_GET 里没有 qs 变量（只有 p = self.path），
+                    # 这里直接从 URL 串判断，别再引用未定义的名字。
                     _u = "https://myseller.taobao.com/home.htm/SellManage/on_sale"
-                    if (qs.get("url") or [""])[0] == "login":
+                    if "url=login" in p:
                         _u = "https://login.taobao.com/member/login.jhtml"
                     subprocess.Popen([chrome, "--user-data-dir=" + prof, _u])
                     nm = (conn or {}).get("name") or "默认"
