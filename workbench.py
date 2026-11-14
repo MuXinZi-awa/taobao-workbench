@@ -141,6 +141,42 @@ def _acct_profile(tg, site=None):
         return os.path.join(tg, _d), None
 
 
+def _ensure_session_restore(prof):
+    """让 Chrome 正常关闭时**不清会话 cookie**。
+
+    Chrome 的 cookie2 / _tb_token_ / unb 都是会话级 cookie。默认设置下
+    （restore_on_startup=5，「打开新标签页」）Chrome 正常退出时会主动清掉它们
+    —— 所以你登录成功、关掉窗口，登录态就没了。
+
+    把 session.restore_on_startup 设成 1（继续浏览上次打开的网页），
+    Chrome 就不再清会话 cookie。必须在 Chrome 启动前写，开着的时候会被覆盖。
+    """
+    pf = os.path.join(prof, "Default", "Preferences")
+    try:
+        os.makedirs(os.path.dirname(pf), exist_ok=True)
+        d = {}
+        if os.path.isfile(pf):
+            try:
+                with open(pf, encoding="utf-8") as f:
+                    d = json.load(f)
+            except Exception:
+                d = {}
+        if not isinstance(d, dict):
+            d = {}
+        sess = d.get("session")
+        if not isinstance(sess, dict):
+            sess = {}
+        if sess.get("restore_on_startup") == 1:
+            return True, "已是 1（会保留会话 cookie）"
+        sess["restore_on_startup"] = 1
+        d["session"] = sess
+        with open(pf, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        return True, "已设为 1（会保留会话 cookie）"
+    except Exception as e:
+        return False, "设置失败: %s（Chrome 开着就先关掉）" % str(e)[:60]
+
+
 def check_login_cookie(prof):
     """读 Chrome profile 的 cookie 数据库判断登录态——**不开浏览器**。
 
@@ -1004,6 +1040,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     TG = paths.TG_ROOT
                     prof, conn = _acct_profile(TG)
                     os.makedirs(prof, exist_ok=True)
+                    # 关键：先让 Chrome 保留会话 cookie，否则登录成功、关窗口就丢
+                    _sok, _smsg = _ensure_session_restore(prof)
                     # 入口选卖家中心而不是 login.taobao.com：
                     # 专门的登录页是淘宝风控重点，从卖家中心被重定向过去上下文更自然。
                     # 想回旧入口加 ?url=login
@@ -1015,7 +1053,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     subprocess.Popen([chrome, "--user-data-dir=" + prof, _u])
                     nm = (conn or {}).get("name") or "默认"
                     return self._json({"ok": True, "profile": os.path.basename(prof), "account": nm,
-                                       "msg": "已打开【%s】的登录页（profile: %s）——登录完成后点「检测」" % (nm, os.path.basename(prof))})
+                                       "session_restore": _smsg,
+                                       "msg": "已打开【%s】（profile: %s）。%s。"
+                                              "登录后看见卖家中心商品列表就算成功——正常关窗口不会丢 cookie"
+                                              % (nm, os.path.basename(prof), _smsg)})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)[:80]})
             if p == "/api/browser-clear":
