@@ -910,7 +910,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     import subprocess
                     TG = paths.TG_ROOT
                     RT = os.path.join(TG, "runtime", "python.exe")
-                    r = subprocess.run([RT, "-X", "utf8", "-u", os.path.join(TG, "_dual_one.py"), "1379668", ""],
+                    # --probe：只探测登录态，不自动填密码。
+                    # 否则「检测登录态」= 用密码登录一次，淘宝风控每次都要短信验证。
+                    r = subprocess.run([RT, "-X", "utf8", "-u", os.path.join(TG, "_dual_one.py"), "1379668", "", "--probe"],
                                        capture_output=True, timeout=90)
                     out = (r.stdout or b"").decode("utf-8", "replace")
                     ok = "已双百" in out or "未双百" in out or "流量加速中" in out
@@ -929,8 +931,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     TG = paths.TG_ROOT
                     prof, conn = _acct_profile(TG)
                     os.makedirs(prof, exist_ok=True)
-                    subprocess.Popen([chrome, "--user-data-dir=" + prof,
-                                      "https://login.taobao.com/member/login.jhtml"])
+                    # 入口选卖家中心而不是 login.taobao.com：
+                    # 专门的登录页是淘宝风控重点，从卖家中心被重定向过去上下文更自然。
+                    # 想回旧入口加 ?url=login
+                    _u = "https://myseller.taobao.com/home.htm/SellManage/on_sale"
+                    if (qs.get("url") or [""])[0] == "login":
+                        _u = "https://login.taobao.com/member/login.jhtml"
+                    subprocess.Popen([chrome, "--user-data-dir=" + prof, _u])
                     nm = (conn or {}).get("name") or "默认"
                     return self._json({"ok": True, "profile": os.path.basename(prof), "account": nm,
                                        "msg": "已打开【%s】的登录页（profile: %s）——登录完成后点「检测」" % (nm, os.path.basename(prof))})
